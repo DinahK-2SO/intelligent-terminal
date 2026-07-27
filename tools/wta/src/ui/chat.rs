@@ -250,10 +250,31 @@ fn build_completed_turn_lines<'a>(
         theme::DIM
     };
 
+    // The collapsed header is always a single `Line` by design (see
+    // `turn_height`'s "Collapsed view = single Line" comment above), so a
+    // multi-line prompt (Shift+Enter) can't keep its line breaks here. Without
+    // this, the embedded '\n' would vanish invisibly and run the two lines
+    // together with no separator at all (e.g. "remember,And ..."), since
+    // ratatui doesn't render embedded newlines as whitespace. Replace each
+    // '\n' with a space so the collapsed preview stays readable.
+    // Only allocate when the collapse step actually rewrote the text (i.e.
+    // the prompt had an embedded '\n'); the common single-line, non-wrapped
+    // prompt stays a zero-copy borrow of `turn.prompt` for the `'a` lifetime.
+    let collapsed_prompt = collapse_newlines_for_preview(&turn.prompt);
+    let prompt_text: Cow<'a, str> = match collapsed_prompt {
+        Cow::Borrowed(_) => truncate_render_text(&turn.prompt),
+        // `collapsed` is already an owned `String`; only clone again if
+        // truncation actually shortens it; otherwise reuse it as-is instead
+        // of cloning a second time via `truncate_render_text(..).into_owned()`.
+        Cow::Owned(collapsed) => match truncate_render_text(&collapsed) {
+            Cow::Borrowed(_) => Cow::Owned(collapsed),
+            Cow::Owned(truncated) => Cow::Owned(truncated),
+        },
+    };
     let mut lines = vec![Line::from(vec![
         Span::styled(chevron, chevron_style),
         Span::styled("> ", prompt_style),
-        Span::styled(truncate_render_text(&turn.prompt), prompt_style),
+        Span::styled(prompt_text, prompt_style),
     ])];
 
     // Index of the line that should receive an inline trailing marker (eg
@@ -506,10 +527,7 @@ fn build_message_lines<'a>(
     let mut lines = Vec::new();
     match msg {
         ChatMessage::User(text) => {
-            lines.push(Line::from(vec![
-                Span::styled("> ", theme::USER_PROMPT),
-                Span::styled(truncate_render_text(text), theme::USER_PROMPT),
-            ]));
+            push_prompt_prefixed_lines(&mut lines, text, wrap_width);
             lines.push(Line::default());
         }
         ChatMessage::Agent(text) => {
@@ -643,6 +661,81 @@ fn push_dot_prefixed_lines<'a>(
             }
         }
     }
+}
+
+/// Mirrors `push_dot_prefixed_lines`, but for the user's own submitted
+/// prompt: splits on embedded `\n` (from Shift+Enter multi-line input) and
+/// wraps each paragraph so every line is a real `ratatui::Line` — ratatui
+/// does not turn an embedded `\n` inside a single `Span`/`Line` into
+/// multiple rows, so without this split any line after the first would
+/// never appear in the rendered transcript (see issue #492). The first
+/// rendered row gets the `"> "` prompt marker; continuation rows get a
+/// matching 2-cell indent, consistent with `message_height`'s
+/// `wrap_count`-based row estimate for `ChatMessage::User`.
+fn push_prompt_prefixed_lines<'a>(lines: &mut Vec<Line<'a>>, text: &'a str, wrap_width: usize) {
+    let body_width = wrap_width.saturating_sub(2).max(1);
+    let mut first_row = true;
+
+    for paragraph in text.split('\n') {
+        if paragraph.is_empty() {
+            // Unlike `push_dot_prefixed_lines`, the prompt marker must never
+            // be dropped: an empty submitted prompt, or one starting with a
+            // newline, still needs a "> " row so the transcript shows the
+            // user turn happened at all.
+            if first_row {
+                lines.push(Line::from(Span::styled("> ", theme::USER_PROMPT)));
+                first_row = false;
+            } else {
+                lines.push(Line::default());
+            }
+            continue;
+        }
+
+        // `textwrap::wrap` borrows from `paragraph` (itself borrowed from the
+        // `'a` input) whenever a piece needs no reflowing, so the typical
+        // short single-line prompt renders with zero allocations here;
+        // `truncate_render_cow` preserves that borrow unless the piece is
+        // actually rewrapped or exceeds `MAX_RENDER_LINE_CHARS`.
+        let wrapped = textwrap::wrap(paragraph, body_width);
+        for piece in wrapped {
+            let piece_str = truncate_render_cow(piece);
+            if first_row {
+                lines.push(Line::from(vec![
+                    Span::styled("> ", theme::USER_PROMPT),
+                    Span::styled(piece_str, theme::USER_PROMPT),
+                ]));
+                first_row = false;
+            } else {
+                lines.push(Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(piece_str, theme::USER_PROMPT),
+                ]));
+            }
+        }
+    }
+}
+
+/// Applies `truncate_render_text`'s length cap to an already-computed
+/// `Cow`, without forcing an allocation when the input is borrowed and
+/// under the limit (unlike `truncate_render_text(&cow).into_owned()`).
+fn truncate_render_cow<'a>(text: Cow<'a, str>) -> Cow<'a, str> {
+    match text {
+        Cow::Borrowed(s) => truncate_render_text(s),
+        Cow::Owned(s) => match truncate_render_text(&s) {
+            Cow::Borrowed(_) => Cow::Owned(s),
+            Cow::Owned(truncated) => Cow::Owned(truncated),
+        },
+    }
+}
+
+/// Collapses embedded newlines (from a Shift+Enter multi-line prompt) into
+/// single spaces so a single-line preview (the folded completed-turn header)
+/// doesn't silently run separate lines together with no visible separator.
+fn collapse_newlines_for_preview(text: &str) -> Cow<'_, str> {
+    if !text.contains('\n') {
+        return Cow::Borrowed(text);
+    }
+    Cow::Owned(text.replace('\n', " "))
 }
 
 fn truncate_render_text(text: &str) -> Cow<'_, str> {
@@ -926,5 +1019,73 @@ mod tests {
             line_text(&lines[1]).starts_with("  "),
             "continuation rows get a 2-cell hanging indent"
         );
+    }
+
+    // ── push_prompt_prefixed_lines (regression: issue #492) ─────────────────
+    //
+    // Multi-line prompts (Shift+Enter) must render as multiple ratatui Lines:
+    // ratatui does not split an embedded '\n' inside a single Span/Line into
+    // separate rows, so lines after the first were silently dropped from the
+    // transcript before this helper existed.
+
+    #[test]
+    fn prompt_prefix_renders_each_embedded_newline_as_its_own_line() {
+        let mut lines = Vec::new();
+        push_prompt_prefixed_lines(&mut lines, concat!("line one\n", "line two"), 40);
+        let texts: Vec<String> = lines.iter().map(line_text).collect();
+        assert_eq!(texts, vec!["> line one".to_string(), "  line two".to_string()]);
+    }
+
+    #[test]
+    fn prompt_prefix_single_line_keeps_prior_rendering() {
+        let mut lines = Vec::new();
+        push_prompt_prefixed_lines(&mut lines, "hello", 40);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(line_text(&lines[0]), "> hello");
+    }
+
+    #[test]
+    fn prompt_prefix_preserves_blank_line_between_paragraphs() {
+        let mut lines = Vec::new();
+        push_prompt_prefixed_lines(&mut lines, "A\n\nB", 40);
+        let texts: Vec<String> = lines.iter().map(line_text).collect();
+        assert_eq!(texts, vec!["> A".to_string(), String::new(), "  B".to_string()]);
+    }
+
+    #[test]
+    fn prompt_prefix_keeps_marker_on_empty_prompt() {
+        // Prompt submission doesn't validate non-empty input, so an empty
+        // `ChatMessage::User` must still render its "> " marker instead of
+        // silently disappearing from the transcript.
+        let mut lines = Vec::new();
+        push_prompt_prefixed_lines(&mut lines, "", 40);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(line_text(&lines[0]), "> ");
+    }
+
+    #[test]
+    fn prompt_prefix_keeps_marker_when_text_starts_with_newline() {
+        let mut lines = Vec::new();
+        push_prompt_prefixed_lines(&mut lines, concat!("\n", "second line"), 40);
+        let texts: Vec<String> = lines.iter().map(line_text).collect();
+        assert_eq!(texts, vec!["> ".to_string(), "  second line".to_string()]);
+    }
+
+    // ── collapse_newlines_for_preview ────────────────────────────────────────
+
+    #[test]
+    fn collapse_newlines_replaces_embedded_newline_with_space() {
+        assert_eq!(
+            collapse_newlines_for_preview("remember,\nAnd I would like"),
+            "remember, And I would like"
+        );
+    }
+
+    #[test]
+    fn collapse_newlines_borrows_when_no_newline_present() {
+        assert!(matches!(
+            collapse_newlines_for_preview("no newline here"),
+            Cow::Borrowed(_)
+        ));
     }
 }
