@@ -149,6 +149,10 @@ system.cannot_resume_phantom_via_flag: "Nedá sa obnoviť relácia %{agent} %{se
 system.cannot_resume_phantom_via_load: "Nedá sa obnoviť relácia %{agent} %{session_id}: bola spustená, ale nikdy nenazbierala žiadnu konverzáciu, takže %{agent} by načítanie odmietol. Riadok sa odstraňuje."
 system.fallback.this_agent: "tento agent"
 system.fallback.connected_agent: "pripojený agent"
+system.yolo_auto_approved: "Automaticky schválené (režim yolo): %{description}"  # {Locked="/yolo"}
+system.yolo_enabled: "Režim yolo je pre túto reláciu povolený — volania nástrojov sa budú automaticky schvaľovať bez výzvy, kým nespustíte /new. Používajte opatrne."  # {Locked="/yolo","/new"}
+system.yolo_blocked_by_policy: "Režim yolo je zakázaný politikou vašej organizácie."  # {Locked="/yolo"}
+
 
 # ── Runtime CLI output (src/main.rs) ────────────────────────────────────────
 output.no_windows: "Nenašli sa žiadne okná."
@@ -215,6 +219,8 @@ system.agent_switch_unavailable: "Prepínanie agentov nie je k dispozícii mimo 
 # ── Model picker (/model) ───────────────────────────────────────────────────
 commands.model.summary: "Vyberte model pre túto tablu (/model <id> na priame prepnutie)"  # {Locked="/model","<id>"}
 commands.move.summary: "Presunúť panel agenta pre túto kartu (/move <position>)"  # {Locked="/move","<position>"}
+commands.yolo.summary: "Automaticky schvaľovať volania nástrojov iba pre túto reláciu (do /new)"  # {Locked="/yolo","/new"}
+
 model_picker.title: "Vybrať model (↑ ↓ • Enter • Esc)"  # {Locked="↑","↓","Enter","Esc"}
 system.no_models: "Pripojený agent neohlásil žiadne vybrateľné modely."
 system.model_set: "Model pre túto tablu je nastavený na %{model}."  # {Locked="%{model}"}

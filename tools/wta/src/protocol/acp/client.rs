@@ -1510,12 +1510,31 @@ struct ClientState {
     event_tx: mpsc::UnboundedSender<AppEvent>,
     shell_mgr: Arc<ShellManager>,
     prompt_timing: Arc<PromptTimingState>,
+    /// Global "Yolo mode" — see `App::global_auto_approve_tools` for the
+    /// full explanation. Set once at helper startup; never mutated.
+    global_auto_approve_tools: bool,
+    /// Per-session `/yolo` override set, shared with `App` (which owns the
+    /// mutating side via the `/yolo` slash command). See
+    /// `App::yolo_sessions`.
+    yolo_sessions: Arc<Mutex<HashSet<String>>>,
 }
 
 /// Our Client trait implementation — handles incoming agent requests and notifications.
 #[derive(Clone)]
 struct WtaClient {
     state: Arc<ClientState>,
+}
+
+/// Pick the best "allow" option for yolo-mode auto-approval. Prefers an
+/// `allow_always` kind (fewer future prompts for this session) over a
+/// one-shot `allow_once`, falling back to the first `is_allow()` option in
+/// whatever order the agent sent them. Returns `None` if the agent offered
+/// no allow-shaped option at all (shouldn't normally happen).
+fn pick_allow_option(options: &[PermOption]) -> Option<&PermOption> {
+    options
+        .iter()
+        .find(|o| o.kind.eq_ignore_ascii_case("allow_always") || o.kind.eq_ignore_ascii_case("AllowAlways"))
+        .or_else(|| options.iter().find(|o| o.is_allow()))
 }
 
 fn session_update_kind(update: &acp::schema::v1::SessionUpdate) -> &'static str {
@@ -1561,6 +1580,41 @@ impl WtaClient {
                 kind: format!("{:?}", o.kind),
             })
             .collect();
+
+        // Yolo mode: either the global `--auto-approve-tools` helper flag is
+        // set, or this session ran `/yolo`. In either case, skip the UI
+        // prompt entirely and pick the best "allow" option ourselves —
+        // preferring `allow_always` (fewer future prompts) over a one-shot
+        // `allow_once`, matching what a user doing this manually would pick.
+        let is_yolo = self.state.global_auto_approve_tools
+            || self
+                .state
+                .yolo_sessions
+                .lock()
+                .unwrap()
+                .contains(&session_id);
+        if is_yolo {
+            if let Some(option) = pick_allow_option(&options) {
+                acp_log(&format!(
+                    "request_permission auto-approved via yolo mode: session={} option={}",
+                    session_id, option.id
+                ));
+                self.state
+                    .prompt_timing
+                    .permission_resolved(&session_id, "auto_approved");
+                return Ok(acp::schema::v1::RequestPermissionResponse::new(
+                    acp::schema::v1::RequestPermissionOutcome::Selected(
+                        acp::schema::v1::SelectedPermissionOutcome::new(option.id.clone()),
+                    ),
+                ));
+            }
+            // No allow-shaped option offered (unexpected) — fall through to
+            // the normal interactive flow rather than silently rejecting.
+            acp_log(&format!(
+                "request_permission: yolo mode active but no allow option found for session={}, falling back to prompt",
+                session_id
+            ));
+        }
 
         let (resp_tx, resp_rx) = tokio::sync::oneshot::channel();
 
@@ -2113,6 +2167,8 @@ pub async fn run_acp_client_over_pipe(
     shell_mgr: Arc<ShellManager>,
     wt_connected: bool,
     post_login_reconnect: bool,
+    global_auto_approve_tools: bool,
+    yolo_sessions: Arc<Mutex<HashSet<String>>>,
 ) -> Result<()> {
     let startup_probe = StartupProbe::new();
     startup_probe.log(&format!(
@@ -2213,6 +2269,8 @@ pub async fn run_acp_client_over_pipe(
         event_tx: event_tx.clone(),
         shell_mgr: shell_mgr.clone(),
         prompt_timing: prompt_timing.clone(),
+        global_auto_approve_tools,
+        yolo_sessions: yolo_sessions.clone(),
     });
 
     let client = WtaClient {
@@ -4604,8 +4662,9 @@ mod tests {
         };
         use crate::shell::ShellManager;
         use agent_client_protocol::{self as acp};
+        use std::collections::HashSet;
         use std::path::PathBuf;
-        use std::sync::Arc;
+        use std::sync::{Arc, Mutex};
         use tokio::sync::mpsc;
 
         fn make_client() -> (WtaClient, mpsc::UnboundedReceiver<AppEvent>) {
@@ -4614,6 +4673,8 @@ mod tests {
                 event_tx: tx,
                 shell_mgr: Arc::new(ShellManager::new()),
                 prompt_timing: Arc::new(super::super::PromptTimingState::default()),
+                global_auto_approve_tools: false,
+                yolo_sessions: Arc::new(Mutex::new(HashSet::new())),
             });
             (WtaClient { state }, rx)
         }
