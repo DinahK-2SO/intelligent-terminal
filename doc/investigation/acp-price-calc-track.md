@@ -41,6 +41,8 @@ code it describes.
 | 14. Standard turn Usage and Gemini runtime | Independent metrics merge; standard end-turn Usage wins; exact Gemini private identity is the only fallback | Extend the Rust domain, wire prompt responses, and use the official Gemini ACP launch | Complete |
 | 15. Self-contained provider capture harness | Missing script and command/question/output drift fail the local contract | One PowerShell 7 JSON-RPC client with the five exact prototype commands | Complete |
 | 16. Real provider comparison results | Missing, malformed, mismatched-question, or credential-bearing results fail validation | Run all five local ACP agents and save one sanitized JSON result each | Complete |
+| 17. Dynamic same-session provider turns | Fixed one-question plans and stale result files fail the harness contract | Drive an indexed question array in one session per provider and clean result before capture | Complete |
+| 18. Two-turn provider comparison results | Missing rounds or different session IDs fail result validation | Regenerate ten real ACP JSON files and compare first/second-turn Usage | Pending |
 
 ## Completed Steps
 
@@ -119,6 +121,42 @@ code it describes.
 - `doc/investigation/per-provider-investigation/Test-Invoke-Providers.ps1`
 - `doc/investigation/per-provider-investigation/Test-Results.ps1`
 - `doc/investigation/per-provider-investigation/result/*.json`
+- `doc/investigation/acp-price-calc-track.md`
+
+### Step 17 - Dynamic Same-Session Provider Turns
+
+**RED**
+
+- Expanded the harness contract to two questions. The old single-question plan failed with
+  `Expected 10 provider turns, got 5`.
+- The contract requires per-provider turn indices and derives expected filenames from the question
+  array index; no provider filename is manually enumerated.
+- Added a cleanup contract that creates stale `summary.md` and `old.json` files and requires the
+  script's `-CleanOnly` path to leave the result directory empty.
+
+**GREEN**
+
+- Replaced the scalar question with an ordered array and generated a flattened provider/turn plan
+  using the loop index (`provider-N.json`). Future questions only require one array entry.
+- Each provider process now initializes and creates one ACP session, optionally selects its model
+  once, and loops through every planned prompt in that same session.
+- Session updates are sliced per turn before each JSON file is written, while initialize,
+  new-session, and model-selection evidence remains available in every result.
+- Every real capture run removes and recreates the whole result directory before launching a
+  provider. `-CleanOnly` reuses the same cleanup boundary for deterministic tests.
+
+**Validation**
+
+- RED contract: expected 10 turns but received 5.
+- GREEN plan/numbering/model/cleanup contract: PASS under PowerShell 7.
+- Old five single-turn JSON files and `summary.md` were removed before validation.
+
+**Committed files**
+
+- `doc/investigation/per-provider-investigation/Invoke-Providers.ps1`
+- `doc/investigation/per-provider-investigation/Test-Invoke-Providers.ps1`
+- `doc/investigation/per-provider-investigation/README.md`
+- Previous `doc/investigation/per-provider-investigation/result/*` files (deleted)
 - `doc/investigation/acp-price-calc-track.md`
 
 ### Step 13 - Token Breakdown Bottom Bar
