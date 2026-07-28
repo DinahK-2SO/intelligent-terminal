@@ -18,11 +18,13 @@ $commands = [ordered]@{
     gemini = 'gemini --acp'
     opencode = 'opencode acp'
 }
+$models = @{ opencode = 'opencode/deepseek-v4-flash-free' }
 $resultDirectory = Join-Path $PSScriptRoot 'result'
 $plan = @($Provider | ForEach-Object {
         [pscustomobject]@{
             provider = $_
             command = $commands[$_]
+            model = $models[$_]
             question = $question
             output = Join-Path $resultDirectory "$_.json"
         }
@@ -91,33 +93,54 @@ function Invoke-AcpCapture {
                 clientInfo = @{ name = 'intelligent-terminal-provider-investigation'; version = '1.0.0' }
             } }
         $initialize = Read-Response 1
-        if ($initialize.error) { throw "$($Entry.provider) initialize failed: $($initialize.error.message)" }
+        $error = $initialize.PSObject.Properties['error']
+        if ($error) { throw "$($Entry.provider) initialize failed: $($error.Value.message)" }
 
         Send-Message @{ jsonrpc = '2.0'; id = 2; method = 'session/new'; params = @{
                 cwd = [IO.Path]::GetFullPath($Cwd); mcpServers = @()
             } }
         $newSession = Read-Response 2
-        if ($newSession.error) { throw "$($Entry.provider) session/new failed: $($newSession.error.message)" }
+        $error = $newSession.PSObject.Properties['error']
+        if ($error) { throw "$($Entry.provider) session/new failed: $($error.Value.message)" }
         $sessionId = [string]$newSession.result.sessionId
 
-        Send-Message @{ jsonrpc = '2.0'; id = 3; method = 'session/prompt'; params = @{
+        $modelSelection = $null
+        $promptId = 3
+        if ($Entry.model) {
+            Send-Message @{ jsonrpc = '2.0'; id = 3; method = 'session/set_config_option'; params = @{
+                    sessionId = $sessionId; configId = 'model'; value = $Entry.model
+                } }
+            $modelSelection = Read-Response 3
+            $error = $modelSelection.PSObject.Properties['error']
+            if ($error) { throw "$($Entry.provider) model selection failed: $($error.Value.message)" }
+            $promptId = 4
+        }
+
+        Send-Message @{ jsonrpc = '2.0'; id = $promptId; method = 'session/prompt'; params = @{
                 sessionId = $sessionId
                 prompt = @(@{ type = 'text'; text = $question })
             } }
-        $promptResponse = Read-Response 3
-        if ($promptResponse.error) { throw "$($Entry.provider) prompt failed: $($promptResponse.error.message)" }
+        $promptResponse = Read-Response $promptId
+        $error = $promptResponse.PSObject.Properties['error']
+        if ($error) { throw "$($Entry.provider) prompt failed: $($error.Value.message)" }
 
-        $updates = @($messages | Where-Object { $_.method -eq 'session/update' } |
+        $updates = @($messages | Where-Object {
+                $_.PSObject.Properties['method'] -and $_.method -eq 'session/update'
+            } |
                 ForEach-Object { $_.params.update })
-        $answer = ($updates | Where-Object { $_.sessionUpdate -eq 'agent_message_chunk' } |
+        $answer = ($updates | Where-Object {
+                $_.PSObject.Properties['sessionUpdate'] -and $_.sessionUpdate -eq 'agent_message_chunk'
+            } |
                 ForEach-Object { [string]$_.content.text }) -join ''
         $result = [ordered]@{
             provider = $Entry.provider
             command = $Entry.command
+            model = $Entry.model
             question = $question
             capturedAt = (Get-Date -Format o)
             initialize = $initialize.result
             newSession = $newSession.result
+            modelSelection = if ($modelSelection) { $modelSelection.result } else { $null }
             sessionUpdates = $updates
             promptResponse = $promptResponse.result
             answer = $answer

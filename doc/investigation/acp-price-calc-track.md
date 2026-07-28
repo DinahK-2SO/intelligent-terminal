@@ -40,7 +40,7 @@ code it describes.
 | 13. Token breakdown Bottom Bar | Input/output metrics render as `(in)`/`(out)` with reported cost in a bounded third slot | Extend only the pure C++ display policy | Complete |
 | 14. Standard turn Usage and Gemini runtime | Independent metrics merge; standard end-turn Usage wins; exact Gemini private identity is the only fallback | Extend the Rust domain, wire prompt responses, and use the official Gemini ACP launch | Complete |
 | 15. Self-contained provider capture harness | Missing script and command/question/output drift fail the local contract | One PowerShell 7 JSON-RPC client with the five exact prototype commands | Complete |
-| 16. Real provider comparison results | Missing, malformed, mismatched-question, or credential-bearing results fail validation | Run all five local ACP agents and save one sanitized JSON result each | Pending |
+| 16. Real provider comparison results | Missing, malformed, mismatched-question, or credential-bearing results fail validation | Run all five local ACP agents and save one sanitized JSON result each | Complete |
 
 ## Completed Steps
 
@@ -73,6 +73,52 @@ code it describes.
 
 - `doc/investigation/per-provider-investigation/Invoke-Providers.ps1`
 - `doc/investigation/per-provider-investigation/Test-Invoke-Providers.ps1`
+- `doc/investigation/acp-price-calc-track.md`
+
+### Step 16 - Real Provider Comparison Results
+
+**RED**
+
+- Added a result validator before the output directory existed. It failed with
+  `Missing result directory`.
+- The first live run exposed a strict-mode defect when successful JSON-RPC responses omitted the
+  optional `error` member. The script was fixed to inspect properties explicitly.
+- Claude, Codex, Copilot, and Gemini completed. OpenCode established its ACP session but its current
+  default `opencode/big-pickle` failed the prompt with `No provider available`.
+- Added a plan contract requiring an explicit OpenCode model; it failed because the plan did not
+  expose one. After adding model selection, the uniform-result-schema validator failed because the
+  four earlier files lacked the new field.
+
+**GREEN**
+
+- Made mixed response/notification handling strict-mode safe without weakening malformed stdout
+  failures.
+- Kept the exact prototype launch command `opencode acp` and selected the locally advertised,
+  direct-health-checked `opencode/deepseek-v4-flash-free` model through standard ACP
+  `session/set_config_option`.
+- Regenerated all five files with one schema. Every agent received exactly
+  `The answer to life, the universe and everything?` and returned an answer containing `42`.
+- Results retain raw structured ACP response objects and session updates, not a hand-authored
+  provider summary.
+
+**Validation**
+
+- Script/command/question/model/output contract: PASS.
+- Five-result schema/question/answer/credential guard: PASS.
+- Exactly five JSON files exist: `claude.json`, `codex.json`, `copilot.json`, `gemini.json`, and
+  `opencode.json`.
+- Captured versions: Claude ACP 0.59.0, Codex ACP 1.1.2, Copilot 1.0.75, Gemini CLI 0.51.0,
+  OpenCode 1.18.3.
+- Exact configured Gemini key and common Google/OpenAI/GitHub/JWT credential shapes were absent
+  from every result.
+
+**Committed files**
+
+- `doc/investigation/per-provider-investigation/README.md`
+- `doc/investigation/per-provider-investigation/Invoke-Providers.ps1`
+- `doc/investigation/per-provider-investigation/Test-Invoke-Providers.ps1`
+- `doc/investigation/per-provider-investigation/Test-Results.ps1`
+- `doc/investigation/per-provider-investigation/result/*.json`
 - `doc/investigation/acp-price-calc-track.md`
 
 ### Step 13 - Token Breakdown Bottom Bar

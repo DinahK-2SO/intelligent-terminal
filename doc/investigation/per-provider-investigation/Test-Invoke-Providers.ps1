@@ -31,6 +31,10 @@ foreach ($provider in $expected.Keys) {
     if ($entry.output -ne (Join-Path $PSScriptRoot "result\$provider.json")) {
         throw "Unexpected $provider output: $($entry.output)"
     }
+    $expectedModel = if ($provider -eq 'opencode') { 'opencode/deepseek-v4-flash-free' } else { $null }
+    if ($entry.model -ne $expectedModel) {
+        throw "Unexpected $provider model: $($entry.model)"
+    }
 }
 
 'Per-provider ACP capture contract: PASS'
