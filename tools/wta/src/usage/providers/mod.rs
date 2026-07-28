@@ -12,6 +12,8 @@ pub enum PrivateUsagePolicy {
     StandardAcpOnly,
     /// A provider-specific adapter slot exists, but no private schema is trusted yet.
     Reserved,
+    /// A verified provider-private schema is enabled behind exact reporter identity.
+    VerifiedPrivate,
     /// Provider-specific usage is intentionally excluded from the current product scope.
     OutOfScope,
 }
@@ -57,6 +59,8 @@ pub struct ProviderUsageMetric {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProviderUsageContribution {
     pub context: Option<ProviderContextUsage>,
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
     pub cost: Option<UsageCost>,
     pub metrics: Vec<ProviderUsageMetric>,
 }

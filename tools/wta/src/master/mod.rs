@@ -3963,7 +3963,7 @@ mod tests {
         // No host allowlist (manual run / older host) ⇒ any known id is
         // honored, and the command is REBUILT from the id.
         let (cmd, id) = resolve(None, Some("gemini"), None);
-        assert_eq!(cmd, "gemini --experimental-acp");
+        assert_eq!(cmd, "gemini --acp");
         assert_eq!(id.as_deref(), Some("gemini"));
     }
 
@@ -3971,7 +3971,7 @@ mod tests {
     fn model_is_folded_in_for_native_agents_and_ignored_for_adapters() {
         // Native agent (gemini) takes --model on the command line.
         let (cmd, _) = resolve(None, Some("gemini"), Some("gemini-2.5-pro"));
-        assert_eq!(cmd, "gemini --experimental-acp --model gemini-2.5-pro");
+        assert_eq!(cmd, "gemini --acp --model gemini-2.5-pro");
 
         // Adapter agent (claude via npx) ignores the model here — it's
         // applied later via setSessionModel — so the command is stable.
@@ -3983,7 +3983,7 @@ mod tests {
     #[test]
     fn id_is_case_insensitive() {
         let (cmd, id) = resolve(Some(&allow_set(&["gemini"])), Some("GeMiNi"), None);
-        assert_eq!(cmd, "gemini --experimental-acp");
+        assert_eq!(cmd, "gemini --acp");
         assert_eq!(id.as_deref(), Some("gemini"));
     }
 
@@ -4127,7 +4127,7 @@ mod tests {
         let allowed = allow_set(&["gemini"]);
         // gemini is listed ⇒ honored.
         let (cmd, _) = resolve(Some(&allowed), Some("gemini"), None);
-        assert_eq!(cmd, "gemini --experimental-acp");
+        assert_eq!(cmd, "gemini --acp");
         // copilot is a *known* agent but NOT in the GPO-filtered set ⇒
         // refused, fall back to default. (Defends against a peer helper
         // selecting a policy-blocked agent.)
@@ -4153,7 +4153,7 @@ mod tests {
         );
         let wta = crate::session_registry::extract_wta_meta(&mut meta);
         let (cmd, _) = resolve(None, wta.agent_id.as_deref(), wta.model.as_deref());
-        assert_eq!(cmd, "gemini --experimental-acp");
+        assert_eq!(cmd, "gemini --acp");
         assert!(!cmd.contains("calc.exe"), "pipe command must never appear");
     }
 

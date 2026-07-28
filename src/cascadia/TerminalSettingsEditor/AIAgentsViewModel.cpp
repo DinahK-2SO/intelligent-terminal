@@ -1093,7 +1093,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         }
         else if (lower == "gemini")
         {
-            cmd += L" --experimental-acp";
+            cmd += L" --acp";
         }
 
         if (lower == "copilot" || lower == "gemini")

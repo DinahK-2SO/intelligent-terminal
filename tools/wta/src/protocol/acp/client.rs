@@ -136,6 +136,21 @@ pub struct PromptSubmission {
     pub images: Vec<crate::clipboard_image::PastedImage>,
 }
 
+#[derive(Debug, Clone, Default)]
+struct PromptUsageIdentity {
+    family_id: Option<String>,
+    reporter_id: Option<String>,
+}
+
+fn is_redundant_startup_model_error(
+    identity: &PromptUsageIdentity,
+    error: &acp::Error,
+) -> bool {
+    identity.family_id.as_deref() == Some(crate::agent_registry::GEMINI_AGENT_ID)
+        && identity.reporter_id.as_deref() == Some("gemini-cli")
+        && error.code == acp::ErrorCode::MethodNotFound
+}
+
 /// User-initiated cancel of an in-flight prompt. The App emits one of
 /// these on Ctrl+C; the ACP client task fires `session/cancel` to the
 /// agent and signals the per-prompt oneshot so the local task drops
@@ -846,6 +861,54 @@ async fn complete_prompt_request<T>(
             });
         }
     }
+}
+
+fn normalize_prompt_response_usage(
+    family_id: Option<&str>,
+    reporter_id: Option<&str>,
+    response: &acp::schema::v1::PromptResponse,
+) -> std::result::Result<Option<crate::usage::UsageSnapshot>, crate::usage::providers::ProviderUsageError> {
+    if let Some(usage) = &response.usage {
+        return Ok(Some(crate::usage::UsageSnapshot {
+            context: None,
+            input_tokens: Some(usage.input_tokens),
+            output_tokens: Some(usage.output_tokens),
+            cost: None,
+        }));
+    }
+    let Some(family_id) = family_id else {
+        return Ok(None);
+    };
+    let Some(adapter) = crate::usage::providers::lookup(family_id) else {
+        return Ok(None);
+    };
+    let Some(meta) = response.meta.as_ref() else {
+        return Ok(None);
+    };
+    let meta = serde_json::to_value(meta).map_err(|_| crate::usage::providers::ProviderUsageError {
+        family_id: adapter.family_id(),
+        schema_id: "acp.v1.prompt-response-meta",
+        class: "serialization_failed",
+    })?;
+    let contribution = adapter.extract_private_usage(
+        crate::usage::providers::ProviderUsageRequest {
+            reporter_id,
+            input: crate::usage::providers::ProviderUsageInput::PromptResponseMeta(&meta),
+        },
+    )?;
+    if contribution == crate::usage::providers::ProviderUsageContribution::default() {
+        return Ok(None);
+    }
+
+    Ok(Some(crate::usage::UsageSnapshot {
+        context: contribution.context.map(|context| crate::usage::UsageContext {
+            used: context.used,
+            size: context.size,
+        }),
+        input_tokens: contribution.input_tokens,
+        output_tokens: contribution.output_tokens,
+        cost: contribution.cost,
+    }))
 }
 
 fn truncate_for_prompt(text: &str, max_chars: usize) -> String {
@@ -2153,6 +2216,10 @@ pub async fn run_acp_client_over_pipe(
     post_login_reconnect: bool,
 ) -> Result<()> {
     let startup_probe = StartupProbe::new();
+    let usage_family_id = agent_id.as_deref().and_then(|agent_id| {
+        let family_id = agent_id.trim().to_ascii_lowercase();
+        crate::agent_registry::is_known_id(&family_id).then_some(family_id)
+    });
     startup_probe.log(&format!(
         "run_acp_client_over_pipe task start pipe={} acp_model={:?} wt_connected={}",
         pipe_name, acp_model_override, wt_connected
@@ -2352,10 +2419,7 @@ pub async fn run_acp_client_over_pipe(
                 // "unknown selection" warn on every connect and then fall back
                 // to the default anyway. Sending `None` makes that fallback
                 // silent (master applies its own `--agent` default).
-                agent_id: agent_id.and_then(|s| {
-                    let id = s.trim().to_ascii_lowercase();
-                    crate::agent_registry::is_known_id(&id).then_some(id)
-                }),
+                agent_id: usage_family_id.clone(),
                 model: acp_model_override
                     .clone()
                     .filter(|s| !s.trim().is_empty()),
@@ -2391,6 +2455,10 @@ pub async fn run_acp_client_over_pipe(
             );
             anyhow::anyhow!("initialize over master pipe failed: {}", e)
         })?;
+    let prompt_usage_identity = PromptUsageIdentity {
+        family_id: usage_family_id,
+        reporter_id: init_resp.agent_info.as_ref().map(|info| info.name.clone()),
+    };
     // Connection milestone at info so a clean handshake is visible in release.
     tracing::info!(
         target: "helper",
@@ -2658,23 +2726,36 @@ pub async fn run_acp_client_over_pipe(
                 "Setting ACP session model to {} (over pipe)",
                 requested_model
             ));
-            crate::protocol::acp::model_select::apply_session_model(
+            let model_result = crate::protocol::acp::model_select::apply_session_model(
                 &conn,
                 session_id.clone(),
                 requested_model.clone(),
             )
-            .await
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "failed to set requested model {}: {}",
-                    requested_model,
-                    e
-                )
-            })?;
-            startup_probe.log(&format!(
-                "ACP session model set to {} (over pipe)",
-                requested_model
-            ));
+            .await;
+            match model_result {
+                Ok(()) => startup_probe.log(&format!(
+                    "ACP session model set to {} (over pipe)",
+                    requested_model
+                )),
+                Err(error) if is_redundant_startup_model_error(&prompt_usage_identity, &error) => {
+                    tracing::warn!(
+                        target: "helper",
+                        model = %requested_model,
+                        "Gemini CLI does not implement session/set_model; using the model already supplied on its launch command"
+                    );
+                    startup_probe.log(&format!(
+                        "Gemini startup model {} already applied by launch command",
+                        requested_model
+                    ));
+                }
+                Err(error) => {
+                    return Err(anyhow::anyhow!(
+                        "failed to set requested model {}: {}",
+                        requested_model,
+                        error
+                    ));
+                }
+            }
         }
     }
 
@@ -2849,6 +2930,7 @@ pub async fn run_acp_client_over_pipe(
                     &event_tx,
                     &shell_mgr,
                     &prompt_timing,
+                    &prompt_usage_identity,
                     wt_connected,
                     is_agent_pane,
                 );
@@ -3512,6 +3594,7 @@ fn dispatch_prompt(
     event_tx: &mpsc::UnboundedSender<AppEvent>,
     shell_mgr: &Arc<ShellManager>,
     prompt_timing: &Arc<PromptTimingState>,
+    usage_identity: &PromptUsageIdentity,
     wt_connected: bool,
     is_agent_pane: bool,
 ) {
@@ -3539,6 +3622,7 @@ fn dispatch_prompt(
     let event_tx_task = event_tx.clone();
     let shell_mgr_task = Arc::clone(shell_mgr);
     let prompt_timing_task = Arc::clone(prompt_timing);
+    let usage_identity_task = usage_identity.clone();
     let tab_key_task = tab_key.clone();
 
     tokio::task::spawn_local(dispatch_prompt_body(
@@ -3551,6 +3635,7 @@ fn dispatch_prompt(
         event_tx_task,
         shell_mgr_task,
         prompt_timing_task,
+        usage_identity_task,
         tab_key_task,
         wt_connected,
         is_agent_pane,
@@ -3571,6 +3656,7 @@ async fn dispatch_prompt_body(
     event_tx_task: mpsc::UnboundedSender<AppEvent>,
     shell_mgr_task: Arc<ShellManager>,
     prompt_timing_task: Arc<PromptTimingState>,
+    usage_identity: PromptUsageIdentity,
     tab_key_task: String,
     wt_connected: bool,
     is_agent_pane: bool,
@@ -3736,6 +3822,30 @@ async fn dispatch_prompt_body(
                 .as_ref()
                 .ok()
                 .and_then(|resp| SoftStopReason::from_stop_reason(resp.stop_reason));
+            if let Ok(response) = &result {
+                match normalize_prompt_response_usage(
+                    usage_identity.family_id.as_deref(),
+                    usage_identity.reporter_id.as_deref(),
+                    response,
+                ) {
+                    Ok(Some(snapshot)) => {
+                        let _ = event_tx_task.send(AppEvent::UsageReported {
+                            session_id: prompt_session_id_str.clone(),
+                            snapshot,
+                        });
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        tracing::warn!(
+                            target: "usage",
+                            family = error.family_id,
+                            schema = error.schema_id,
+                            error_class = error.class,
+                            "provider prompt usage rejected"
+                        );
+                    }
+                }
+            }
             complete_prompt_request(
                 result,
                 soft_stop,
@@ -3777,9 +3887,10 @@ async fn dispatch_prompt_body(
 #[cfg(test)]
 mod tests {
     use super::{
-        acp_result_failure_fields, complete_prompt_request, inject_wta_pane_meta, shell_from_active,
-        post_login_authenticate_error, timeout_result_failure_fields, user_locale_tag,
-        PromptTimingState, SoftStopReason,
+        acp_result_failure_fields, complete_prompt_request, inject_wta_pane_meta,
+        is_redundant_startup_model_error, normalize_prompt_response_usage,
+        post_login_authenticate_error, shell_from_active, timeout_result_failure_fields,
+        user_locale_tag, PromptTimingState, PromptUsageIdentity, SoftStopReason,
     };
     use super::acp;
     use crate::protocol::acp::failure::{AgentFailure, HandshakeStage};
@@ -3974,6 +4085,134 @@ mod tests {
             crate::agent_registry::extract_model_from_args(&args, profile),
             Some("claude-haiku-4.5")
         );
+    }
+
+    #[test]
+    fn gemini_method_not_found_is_a_redundant_startup_model_error() {
+        let identity = PromptUsageIdentity {
+            family_id: Some("gemini".to_string()),
+            reporter_id: Some("gemini-cli".to_string()),
+        };
+
+        assert!(is_redundant_startup_model_error(
+            &identity,
+            &acp::Error::method_not_found(),
+        ));
+        assert!(!is_redundant_startup_model_error(
+            &PromptUsageIdentity {
+                family_id: Some("copilot".to_string()),
+                reporter_id: Some("gemini-cli".to_string()),
+            },
+            &acp::Error::method_not_found(),
+        ));
+        assert!(!is_redundant_startup_model_error(
+            &PromptUsageIdentity {
+                family_id: Some("gemini".to_string()),
+                reporter_id: Some("lookalike-gemini".to_string()),
+            },
+            &acp::Error::method_not_found(),
+        ));
+        assert!(!is_redundant_startup_model_error(
+            &identity,
+            &acp::Error::internal_error(),
+        ));
+    }
+
+    #[test]
+    fn verified_gemini_prompt_response_projects_input_and_output_tokens() {
+        let response: acp::schema::v1::PromptResponse = serde_json::from_value(serde_json::json!({
+            "stopReason": "end_turn",
+            "_meta": {
+                "quota": {
+                    "token_count": {
+                        "input_tokens": 10_270,
+                        "output_tokens": 9
+                    },
+                    "model_usage": [{
+                        "model": "gemini-3.5-flash",
+                        "token_count": {
+                            "input_tokens": 10_270,
+                            "output_tokens": 9
+                        }
+                    }]
+                }
+            }
+        }))
+        .expect("verified Gemini prompt response");
+
+        let snapshot = normalize_prompt_response_usage(
+            Some("gemini"),
+            Some("gemini-cli"),
+            &response,
+        )
+        .expect("valid private usage")
+        .expect("Gemini usage snapshot");
+
+        assert_eq!(snapshot.input_tokens, Some(10_270));
+        assert_eq!(snapshot.output_tokens, Some(9));
+        assert!(snapshot.context.is_none());
+        assert!(snapshot.cost.is_none());
+    }
+
+    #[test]
+    fn standard_prompt_response_usage_projects_input_and_output_tokens() {
+        let response: acp::schema::v1::PromptResponse = serde_json::from_value(serde_json::json!({
+            "stopReason": "end_turn",
+            "usage": {
+                "inputTokens": 460,
+                "outputTokens": 11,
+                "totalTokens": 6_118,
+                "thoughtTokens": 15,
+                "cachedReadTokens": 5_632
+            },
+            "_meta": {}
+        }))
+        .expect("verified OpenCode prompt response");
+
+        let snapshot = normalize_prompt_response_usage(
+            Some("opencode"),
+            Some("OpenCode"),
+            &response,
+        )
+        .expect("valid standard turn usage")
+        .expect("standard turn usage snapshot");
+
+        assert_eq!(snapshot.input_tokens, Some(460));
+        assert_eq!(snapshot.output_tokens, Some(11));
+        assert!(snapshot.context.is_none());
+        assert!(snapshot.cost.is_none());
+    }
+
+    #[test]
+    fn standard_prompt_usage_wins_over_private_metadata() {
+        let response: acp::schema::v1::PromptResponse = serde_json::from_value(serde_json::json!({
+            "stopReason": "end_turn",
+            "usage": {
+                "inputTokens": 100,
+                "outputTokens": 20,
+                "totalTokens": 120
+            },
+            "_meta": {
+                "quota": {
+                    "token_count": {
+                        "input_tokens": 999,
+                        "output_tokens": 888
+                    }
+                }
+            }
+        }))
+        .expect("standard and private Usage response");
+
+        let snapshot = normalize_prompt_response_usage(
+            Some("gemini"),
+            Some("gemini-cli"),
+            &response,
+        )
+        .expect("valid standard usage")
+        .expect("standard usage snapshot");
+
+        assert_eq!(snapshot.input_tokens, Some(100));
+        assert_eq!(snapshot.output_tokens, Some(20));
     }
 
     #[tokio::test]

@@ -6,9 +6,10 @@ code it describes.
 
 ## Scope Guardrails
 
-- First release consumes only stable ACP v1 `SessionUpdate::UsageUpdate`.
-- No Gemini-specific provider work, private provider adapters, provider APIs, or local price
-  conversion.
+- First release consumes stable ACP v1 `SessionUpdate::UsageUpdate`, optional standard
+  `PromptResponse.usage`, and one verified Gemini private prompt-response schema.
+- No local price conversion, credential access, billing API calls, or unverified private payload
+  parsing.
 - Rust owns validation, normalization, state, coalescing, and projection. C++/XAML only cache and
   render normalized data.
 - Development paths fail fast. One outer Usage containment boundary is added only after the inner
@@ -37,7 +38,7 @@ code it describes.
 | 11. Provider extension boundary | Every known family has a module; unverified private payloads yield no data | Add a typed provider registry with empty trust allowlists | Complete |
 | 12. PowerShell 7 E2E host | E2E rejects the wrong host and children use the canonical executable | Pin `C:\Program Files\PowerShell\7\pwsh.exe` in the existing harness | Complete |
 | 13. Token breakdown Bottom Bar | Input/output metrics render as `(in)`/`(out)` with reported cost in a bounded third slot | Extend only the pure C++ display policy | Complete |
-| 14. Standard turn Usage and Gemini runtime | Independent metrics merge; standard end-turn Usage wins; exact Gemini private identity is the only fallback | Extend the Rust domain, wire prompt responses, and use the official Gemini ACP launch | Pending |
+| 14. Standard turn Usage and Gemini runtime | Independent metrics merge; standard end-turn Usage wins; exact Gemini private identity is the only fallback | Extend the Rust domain, wire prompt responses, and use the official Gemini ACP launch | Complete |
 
 ## Completed Steps
 
@@ -67,6 +68,75 @@ code it describes.
 - `src/cascadia/TerminalApp/AgentUsage.h/.cpp`
 - `src/cascadia/ut_app/AgentUsageTests.cpp`
 - `doc/investigation/acp-price-calc-track.md`
+
+### Step 14 - Standard Turn Usage and Gemini Runtime
+
+**RED**
+
+- Added input/output projection and same-session merge contracts before `UsageSnapshot` had
+  independent optional fields. The focused Rust build failed with missing-field errors.
+- Added a real OpenCode `PromptResponse.usage` contract before enabling the ACP SDK's
+  `unstable_end_turn_token_usage` feature and consuming turn usage.
+- Added strict Gemini quota contracts before wiring private prompt metadata. Tests require the
+  trusted host family to be exactly `gemini`, the real initialize reporter to be exactly
+  `gemini-cli`, and the source to be `PromptResponse._meta`.
+- Added official-launch tests while the registry and both C++ launch builders still emitted the
+  deprecated `--experimental-acp` flag; the tests failed with the old command.
+- The first real desktop run authenticated and created a Gemini ACP session, then failed because
+  Gemini CLI 0.51.0 returns `Method not found` for the redundant startup `session/set_model` RPC.
+  A focused compatibility test was added before the exact identity/error predicate existed and
+  failed to compile.
+
+**GREEN**
+
+- Extended the typed snapshot with optional context/input/output/cost and merged only fields
+  present in each incoming report. App state still resolves every update through SessionId to the
+  owner tab and resets at the existing session lifecycle boundaries.
+- Enabled standard ACP end-turn Usage. A standard response always wins; provider-private metadata
+  is consulted only when the standard field is absent.
+- Wired Gemini's verified `_meta.quota.token_count` adapter through independent host family and
+  real initialize reporter identities. It emits input/output only and never invents context,
+  currency, or cost.
+- Migrated Gemini launch and Settings probe paths to official `gemini --acp`.
+- Treats `MethodNotFound` as redundant only at initial model application for the exact
+  `gemini + gemini-cli` identity, where the model was already supplied on the launch command.
+  Runtime model switches and every other error/provider remain strict; the compatibility path
+  emits a warning.
+
+**Validation**
+
+- Persisted Gemini user configuration: official CLI 0.51.0 returned
+  `GEMINI_USER_CONFIG_READY` without process-local credential injection.
+- Focused startup-model identity/error test: passed.
+- Usage/provider and ACP mock-dispatch tests: passed, including standard-over-private precedence
+  and exact Gemini reporter/source rejection.
+- Full WTA Rust suite: 1156 passed, 0 failed.
+- x64 Debug WTA + CascadiaPackage build/deploy: succeeded; deployed WTA SHA256 matched the Cargo
+  artifact.
+- Real Gemini desktop E2E with `gemini-3.1-flash-lite`: prompt marker received; Bottom Bar showed
+  separate input/output counts; currency remained hidden. Local screenshot:
+  `test/e2e/artifacts/real-gemini-acp/gemini-official-input-output.png`.
+- Local Step 7/9/10 UI regressions passed for context+cost fallback, malformed containment,
+  cost-only, tokens-only, error, and no-report states.
+- Gemini settings, trusted-folder override, synthetic workspace, package settings backups, and
+  Dev processes were absent/restored after E2E. API key values were not logged or committed.
+
+**Committed files**
+
+- `tools/wta/Cargo.toml`
+- `tools/wta/src/agent_registry.rs`
+- `tools/wta/src/usage.rs`
+- `tools/wta/src/usage/providers/{mod,gemini,opencode}.rs`
+- `tools/wta/src/protocol/acp/client.rs`
+- `tools/wta/src/protocol/acp/mock_agent_tests.rs`
+- `tools/wta/src/master/mod.rs`
+- `tools/wta/src/app.rs`
+- `src/cascadia/TerminalApp/TerminalPage.cpp`
+- `src/cascadia/TerminalSettingsEditor/AIAgentsViewModel.cpp`
+- `doc/investigation/acp-price-calc.md`
+- `doc/investigation/investigate-gemini.md`
+- `doc/investigation/acp-price-calc-track.md`
+- Local E2E framework, wire captures, and screenshots remain git-ignored and uncommitted.
 
 ### Step 0 - Provider and Build Baseline
 

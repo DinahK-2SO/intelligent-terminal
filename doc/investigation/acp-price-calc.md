@@ -1,10 +1,11 @@
 # ACP Usage / Cost 调查与统一展示设计
 
-- **状态**：首版实现完成；TDD Step 0-12 与本地完整pipeline/edge-state验证已完成
+- **状态**：首版实现完成；TDD Step 0-14 与真实provider/本地完整pipeline验证已完成
 - **首次调查**：2026-07-17
-- **最后核验**：2026-07-23
+- **最后核验**：2026-07-28
 - **协议基线**：ACP protocol version 1
-- **本仓库依赖**：`agent-client-protocol = 1.0.0`，`agent-client-protocol-schema = 1.1.0`
+- **本仓库依赖**：`agent-client-protocol = 1.2.0`，启用
+  `unstable_end_turn_token_usage`
 - **当前开发验证包（固定版本，已落入启动映射）**：
   - Claude ACP：`@agentclientprotocol/claude-agent-acp@0.59.0`
   - Codex ACP：`@agentclientprotocol/codex-acp@1.1.2`
@@ -16,7 +17,8 @@
    - `size`：上下文窗口总 token 数；
    - `cost`：可选的会话累计费用，使用 ISO 4217 货币码。
 2. 单轮 input/output/cache/reasoning token 拆分仍受
-   `unstable_end_turn_token_usage` feature 门控，不能作为当前稳定实现的基础。
+  `unstable_end_turn_token_usage` feature 门控。首版已显式启用该feature，只投影标准
+  `PromptResponse.usage`中的input/output；cache/reasoning保留在协议边界，不进入Bottom Bar。
 3. ACP 只定义 contract，不强制 agent 一定发送 usage/cost；每个 agent 必须实测。
 4. GitHub Copilot 的 **AI Units**（本机 CLI 1.0.71 用语；较早文档/changelog 使用
   **AI Credits**）是 provider 专有单位，不是 ISO 4217 货币，ACP 标准 `Cost` 无法直接
@@ -35,10 +37,13 @@
 9. 开发期 **fail fast**：adapter 识别、解析、归一化、合并与 UI contract 出错时立即让测试/
   debug 运行失败，不加兜底 `try/catch`。功能完成并验证后，只在最外层 Usage feature
   boundary 加一次 release 降级：失败则隐藏 Usage，不影响聊天主流程。
-10. **本功能暂不实现 Gemini-specific provider 支持**。Google 已发布新的 agent tool
-  Antigravity，产品方向是未来逐步从 Gemini 迁移到 Antigravity；因此不为 Gemini 新增私有
-  usage adapter、provider API、专属 fixture/E2E 或兼容承诺。Antigravity 的协议、reporter
-  identity 与 usage contract 需另行调查后再纳入。
+10. 首版继续支持Gemini CLI。0.51.0使用官方`gemini --acp`，并通过严格白名单的
+  `PromptResponse._meta.quota.token_count`补充input/output；它不报告context或cost，WTA不做
+  本地价格估算。Antigravity仍需独立调查，不能自动继承`gemini` family identity。
+
+> **2026-07-28 Stage 3 superseding decision**：本文较早段落中“Gemini out of scope”、
+> “不启用end-turn Usage”和“Bottom Bar最多两个item”的描述是历史设计，已被本节、当前事实表
+> 与§9.12取代。完整Gemini证据见[investigate-gemini.md](investigate-gemini.md)。
 
 > 本文中的“报告值”表示数值和单位来自 ACP agent、provider 扩展或 provider API，而不是
 > WTA 根据 token、模型价格或倍率计算。WTA 可以做数字分组、小数位和单位名称等显示格式化，
@@ -84,18 +89,18 @@ fixture/记录并重新跑 Claude/Codex E2E mock。
 
 | Area | 当前仓库事实 | 本文目标 |
 |---|---|---|
-| ACP dependency | [tools/wta/Cargo.toml](../../tools/wta/Cargo.toml) 声明 `agent-client-protocol = "1.0"`；lock 为 protocol 1.0.0 / schema 1.1.0，未启用 `unstable_end_turn_token_usage` | 首版只消费 stable v1 `SessionUpdate::UsageUpdate` |
+| ACP dependency | [tools/wta/Cargo.toml](../../tools/wta/Cargo.toml) 声明 `agent-client-protocol = "1.2.0"`并启用`unstable_end_turn_token_usage` | 同时消费stable session Usage和可选standard end-turn token breakdown |
 | Built-in family ID | [src/cascadia/inc/AgentRegistry.h](../../src/cascadia/inc/AgentRegistry.h)定义五个C++ ID（含OpenCode）；Rust端已集中为`agent_registry`常量并由profile/provider共用，但仍手工镜像C++ | `build.rs`从C++ registry生成Rust constants，并做drift check |
 | Claude launch | C++ 与 Rust 都固定为 `npx -y @agentclientprotocol/claude-agent-acp@0.59.0` | 消除 launch metadata 重复 |
 | Codex launch | C++ 与 Rust 都固定为官方 `npx -y @agentclientprotocol/codex-acp@1.1.2` | 消除 launch metadata 重复并保留历史识别 alias |
 | Command ownership | C++ `_BuildAgentCommandLine()` 构造 host/default command；Rust `AgentProfile` 为 per-tab built-in selection 重建 command，因此目前确有两份映射 | 建立可生成/共享的 launch metadata；完成前用测试强制两处完全一致 |
 | Custom selection | Settings 将 `npx ...` 保存为 `custom:npx`；master 对未知 helper ID 回退到 host 已信任的 default command，从不执行 pipe 上传来的 command | 分离 instance/family/reporter；custom 可识别 compatible family，但首版不能启用私有 usage extension |
 | Usage receive | master已可靠coalesce/定向latest value；helper内层normalizer保持fail-fast；production notification入口用单一outer boundary隔离malformed Usage并发出owner-session clear | 保持provider-neutral；按实际agent版本继续维护structured Usage兼容矩阵 |
-| Provider usage layer | `tools/wta/src/usage/providers/`为Copilot、Claude、Codex、Gemini、OpenCode提供独立模块和统一typed adapter registry；所有private extractor当前为no-op，trusted reporter allowlist为空 | 验证真实schema后只修改对应模块；完成effective family/reporter握手前不接入runtime |
-| Usage state/UI | Rust `TabSession`保存、重置并立即投影latest snapshot；C++原子校验并缓存到owner tab的`AgentPaneContent`；Bottom Bar Column 2的`UsageGroup`最多渲染两个normalized items，无值时隐藏 | 首版已完成；不增加平行UI/state route |
+| Provider usage layer | `tools/wta/src/usage/providers/`为五个family提供统一typed registry；Gemini只接受host family=`gemini`、initialize reporter=`gemini-cli`、source=`PromptResponse._meta`的已验证quota schema | 其他private extractor保持no-op；unknown/custom fail-closed |
+| Usage state/UI | Rust按session合并独立context/input/output/cost并立即投影；C++原子缓存；有breakdown时Bottom Bar最多显示input/output/cost三项，否则保留context/cost | 首版已完成；不增加平行UI/state route |
 | C++ event route | 现有`agent_state_changed`按`tab_id`路由并消费可选`usage`/null；missing保持、null清除、malformed fail-fast；Rust clear沿同一projection发送null；`_UpdateBottomBarState`从active tab cache渲染 | 不新增COM/IDL route或第二个业务异常层 |
 | Rust codegen | [tools/wta/build.rs](../../tools/wta/build.rs) 当前只生成 ETW telemetry metadata | 增加 Agent registry codegen，但保留现有 ETW 生成 |
-| Gemini / Antigravity | Gemini 仍是当前仓库的内置 ACP agent；Antigravity 尚无 registry/profile/usage 集成 | Usage feature 不做 Gemini-specific provider；迁移到 Antigravity 前另行调查协议与 identity，不预先复用 `gemini` family ID |
+| Gemini / Antigravity | Gemini CLI 0.51.0通过官方`--acp`和verified private quota adapter集成；Antigravity尚无registry/profile/usage集成 | 升级Gemini时重验wire；Antigravity另行调查且不预先复用`gemini` family ID |
 
 这张表是本次 repo audit 的基线。若实现期间代码先于文档变化，应同步更新“当前仓库事实”，
 不能只修改目标章节。
@@ -196,7 +201,7 @@ GitHub issue 声称实现支持，就直接在产品中标记为准确费用。
 | `copilot` | 原生 `copilot --acp --stdio` | 当前本机 `/usage` 称为 AI Units，同时显示 token breakdown | **本项目已验证 CLI 1.0.71**：只发现模型静态 `_meta.copilotUsage` 倍率和 `/usage` 人类可读文本；未发送标准 `UsageUpdate`、结构化实际 AI Units、cost 或 token usage | 当前不显示动态 usage；不解析 `/usage` 文本，不用倍率推算 |
 | `claude` | `@agentclientprotocol/claude-agent-acp@0.59.0` adapter | API 用户可看到 token 与估算 USD；订阅用户主要看到 plan usage | 第三方 issue 声称会发送标准 usage/cost；WTA 尚未独立验证 | 必须抓包；按实际收到的标准或白名单扩展处理 |
 | `codex` | `@agentclientprotocol/codex-acp@1.1.2` adapter | API 通常按 token/货币；ChatGPT 订阅走计划限制 | 官方 adapter 声明支持 token usage events；WTA 尚未独立验证 | 必须抓包；注意报告者是 adapter，不一定是 OpenAI 账单 API |
-| `gemini` | 原生 `gemini --experimental-acp` | `/stats` 可显示 token；API 计费与账户 quota 分开 | [Gemini issue #24280](https://github.com/google-gemini/gemini-cli/issues/24280) 曾记录 token 在 `_meta.quota.token_count`、没有 cost；后续版本可能变化 | **Out of scope**：不新增 Gemini-specific usage adapter/API/fixture/E2E；仅保留 provider-neutral 标准 ACP 行为，不作兼容承诺 |
+| `gemini` | 原生 `gemini --acp` | API计费与账户quota分开 | **本项目已验证CLI 0.51.0**：`PromptResponse._meta.quota.token_count`提供input/output，不发送标准UsageUpdate或cost | exact family+reporter+source校验后显示in/out；不显示或估算cost |
 
 ### 2.1 GitHub Copilot AI Units / AI Credits
 
@@ -443,9 +448,9 @@ compatible family；如果 handshake 未返回该 ID，保持 Generic/unknown。
 首版产品方案仍不把 Agent Maestro 作为正式 provider dependency；它仅作为本地实验桥和
 fixture 产生工具。
 
-### 2.5 Gemini 暂停，后续迁移到 Antigravity
+### 2.5 历史决策：Gemini暂停（已被2026-07-28 Stage 3取代）
 
-这是产品范围决策，不是对 Gemini 当前 ACP 能力的技术否定：Google 已发布新的 agent tool
+以下内容保留为决策历史，不再描述当前实现。Google 已发布新的 agent tool
 Antigravity，而 Intelligent Terminal 计划未来逐步迁移到它。为避免在即将退出的 provider
 路径上增加一次性代码，本 Usage feature：
 
@@ -718,16 +723,16 @@ trait ProviderUsageAdapter: Sync {
 }
 ```
 
-`ProviderUsageContribution`的context、cost和custom metrics相互独立，因此未来可信extension可
-只报告费用。当前每个模块均返回empty contribution；已识别schema后若字段缺失、类型错误或
-数值非法必须返回`Err`，不能静默降级为no usage。
+`ProviderUsageContribution`的context、input、output、cost和custom metrics相互独立，因此
+可信extension可以只报告其中一部分。未验证adapter仍返回empty contribution；已启用schema
+若字段缺失、类型错误或数值非法必须返回`Err`，不能静默降级为no usage。
 
 | Family module | 当前private policy | 当前行为 |
 |---|---|---|
 | `copilot` | `Reserved` | 为未来结构化AI Units接口保留；不解析`/usage`文本或倍率 |
 | `claude` | `StandardAcpOnly` | 仅消费adapter发送的标准`UsageUpdate` |
 | `codex` | `StandardAcpOnly` | 仅消费adapter发送的标准`UsageUpdate` |
-| `gemini` | `OutOfScope` | 模块存在以保持registry完整，但不解析Gemini私有quota |
+| `gemini` | `VerifiedPrivate` | 只解析exact `gemini-cli` reporter的PromptResponse quota token_count |
 | `opencode` | `StandardAcpOnly` | 无已验证private schema |
 
 Provider API variant只接收由未来独立auth/network组件已经获取的response；adapter自身不得读取
@@ -784,8 +789,8 @@ C++ UI 已支持但 WTA 后端静默落到 `unknown`。
 1. **Identity resolver**：复用 `AgentProfile`、生成的 family constants 和 ACP initialize
   handshake，只负责 `instance + reporter -> effective family`；
 2. **Standard normalizer**：唯一一处解析 typed ACP `UsageUpdate`，不按 provider 复制；
-3. **Extension registry**：typed registry和per-family模块已建立；runtime lookup等待可信
-  effective family/reporter握手；
+3. **Extension registry**：typed registry和per-family模块已建立；runtime使用host-selected
+  family与真实initialize reporter双重校验；
 4. **Usage store/merger**：复用 `TabSession` / App state，按 metric scope 与 aggregation 合并；
 5. **Rust projection**：复用 `project_tab_state()` 和现有 `agent_state_changed`，不新建第二条
   COM/IDL/event transport；
@@ -811,8 +816,8 @@ C++ UI 已支持但 WTA 后端静默落到 `unknown`。
 当前 master 的 agent-side `on_receive_notification` 只转发 `SessionNotification`，会忽略 agent
 发来的 `ExtNotification`；helper 目前收到的 ext channel 主要是 master 自己的
 `intellterm.wta/*` 通知。推荐首版只实现 typed `SessionUpdate::UsageUpdate`。虽然
-`PromptResponse._meta` 在现有 prompt response 路径可达，但它属于尚未验证的 provider
-extension 输入，与 `ExtNotification` 一样只预留接口，不纳入 §9.12 首版范围。如果后续实测
+`PromptResponse._meta` 在现有prompt response路径可达；首版只为已验证Gemini quota启用。
+`ExtNotification`仍只预留接口，不纳入§9.12首版范围。如果后续实测
 确认 provider 只通过 extension notification 报告 usage，必须先在 master 增加**按 session
 定向路由**的 agent extension 转发；不能把带账户/session usage 的通知无条件 fan-out 给所有
 helper。
@@ -836,16 +841,16 @@ Provider 规则：
   推算。
 - **Claude/Codex**：若 adapter 发送标准 `Cost`，不需要专属 usage adapter；source 的
   `reporter_id` 应记录 ACP adapter 名称，避免暗示一定来自 provider billing API。
-- **Gemini**：只有一个`OutOfScope`空adapter模块用于registry完整性；不建立解析规则，仅可能
-  经过provider-neutral标准ACP路径。Antigravity不继承该family，直到单独设计完成。
+- **Gemini**：exact `gemini + gemini-cli + PromptResponseMeta`组合可解析已验证quota；不解析
+  其他source，不产生context/cost。Antigravity不继承该family，直到单独设计完成。
 
 ---
 
 ## 7. UI 规则（位置/ownership/首版展示已决定）
 
-Usage 位于 C++ window-level Bottom Bar 的右侧（session 按钮左边）。首版按Rust标准projection
-顺序渲染最多两个normalized items：context在前，可选cost在后。额外指标不进入主栏，未来若
-扩展metric必须先定义明确的projection优先级。当前实际格式示例：
+Usage 位于 C++ window-level Bottom Bar 的右侧（session按钮左边）。有token breakdown时
+按input、output、reported cost顺序渲染最多三个normalized items；没有breakdown时保留context、
+cost fallback。当前实际格式示例：
 
 ```text
 1024 / 8192 Tokens    0.004 USD
@@ -1324,22 +1329,22 @@ direct Web API。
 - 使用直接构造的 typed ACP values 做确定性 contract test；本地真实 pinned adapter E2E 只做
   compatibility/routing 验证，其 mock harness 不提交；
 - 新 provider 默认只能走标准 ACP，私有 adapter 未经 review 不进入白名单。
-- Gemini 不进入本功能 compatibility matrix；Antigravity 在独立调查并进入 registry 后再决定
-  是否加入，不能把 Gemini 测试结果沿用到 Antigravity。
+- Gemini CLI 0.51.0进入本功能compatibility matrix；Antigravity在独立调查并进入registry后
+  再决定是否加入，不能把Gemini测试结果沿用到Antigravity。
 
 ### 9.12 已实现的首版最小范围
 
 为了避免第一版同时解决账户API、持久化和跨窗口quota，当前首版已实现：
 
-1. 标准 ACP `UsageUpdate` 的 `used / size / cost`；
+1. 标准 ACP `UsageUpdate` 的`used / size / cost`与标准`PromptResponse.usage`的input/output；
 2. 仅 `Session` scope；
 3. cumulative/gauge latest-value 可靠传输；
 4. 内存存储，不跨 App 重启；
-5. C++ Bottom Bar 的右侧 `UsageGroup` 按projection顺序显示最多两个normalized items；
+5. C++ Bottom Bar 的右侧`UsageGroup`有breakdown时显示最多三个items，否则显示context/cost；
 6. 数值不进日志/遥测；
 7. custom agent 标准 ACP 自动支持；
-8. 私有 provider adapter 暂不启用，直到拿到真实结构化 fixture。
-9. 不实现或验证 Gemini-specific provider；Antigravity 留待后续独立设计。
+8. 私有provider仅启用已验证Gemini prompt quota；其他provider保持no-op。
+9. Gemini CLI 0.51.0已完成真实ACP和desktop E2E；Antigravity留待后续独立设计。
 
 Copilot 1.0.71 因没有结构化动态 usage，首版仍隐藏其 usage。这样可以先验证通用 contract，
 而不为了某一家 provider 引入不稳定文本解析或直接 billing API。

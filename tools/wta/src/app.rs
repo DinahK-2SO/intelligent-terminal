@@ -5056,7 +5056,13 @@ impl App {
                 snapshot,
             } => {
                 let target_tab = self.tab_for_session(&session_id);
-                self.tab_mut(&target_tab).usage = Some(snapshot);
+                if let Some(current) = self.tab_mut(&target_tab).usage.as_mut() {
+                    current.merge(snapshot);
+                }
+                else
+                {
+                    self.tab_mut(&target_tab).usage = Some(snapshot);
+                }
                 self.project_tab_state(&target_tab);
             }
             AppEvent::UsageCleared { session_id } => {
@@ -11840,8 +11846,9 @@ mod tests {
         app.session_to_tab
             .insert("usage-session".to_string(), "OWNER-TAB".to_string());
         let snapshot = crate::usage::UsageSnapshot {
-            used: 20,
-            size: 100,
+            context: Some(crate::usage::UsageContext { used: 20, size: 100 }),
+            input_tokens: None,
+            output_tokens: None,
             cost: None,
         };
 
@@ -11852,6 +11859,37 @@ mod tests {
 
         assert_eq!(app.tab_sessions["OWNER-TAB"].usage, Some(snapshot));
         assert!(app.tab_sessions["ACTIVE-TAB"].usage.is_none());
+    }
+
+    #[test]
+    fn usage_reported_merges_independent_metrics_for_the_same_session() {
+        let mut app = test_app();
+        app.tab_sessions
+            .insert("OWNER-TAB".to_string(), TabSession::default());
+        app.session_to_tab
+            .insert("usage-session".to_string(), "OWNER-TAB".to_string());
+
+        app.handle_event(AppEvent::UsageReported {
+            session_id: "usage-session".to_string(),
+            snapshot: lifecycle_usage_snapshot(),
+        });
+        app.handle_event(AppEvent::UsageReported {
+            session_id: "usage-session".to_string(),
+            snapshot: crate::usage::UsageSnapshot {
+                context: None,
+                input_tokens: Some(12_341),
+                output_tokens: Some(23),
+                cost: None,
+            },
+        });
+
+        let snapshot = app.tab_sessions["OWNER-TAB"]
+            .usage
+            .as_ref()
+            .expect("merged usage");
+        assert_eq!(snapshot.context, Some(crate::usage::UsageContext { used: 20, size: 100 }));
+        assert_eq!(snapshot.input_tokens, Some(12_341));
+        assert_eq!(snapshot.output_tokens, Some(23));
     }
 
     #[test]
@@ -11922,8 +11960,9 @@ mod tests {
 
     fn lifecycle_usage_snapshot() -> crate::usage::UsageSnapshot {
         crate::usage::UsageSnapshot {
-            used: 20,
-            size: 100,
+            context: Some(crate::usage::UsageContext { used: 20, size: 100 }),
+            input_tokens: None,
+            output_tokens: None,
             cost: None,
         }
     }
@@ -12011,8 +12050,12 @@ mod tests {
     fn usage_projection_adds_context_and_cost_to_agent_state_snapshot() {
         let tab = TabSession {
             usage: Some(crate::usage::UsageSnapshot {
-                used: 1_024,
-                size: 8_192,
+                context: Some(crate::usage::UsageContext {
+                    used: 1_024,
+                    size: 8_192,
+                }),
+                input_tokens: None,
+                output_tokens: None,
                 cost: Some(crate::usage::UsageCost {
                     amount_decimal_text: "0.004".to_string(),
                     currency: "USD".to_string(),

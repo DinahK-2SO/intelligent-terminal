@@ -154,7 +154,7 @@ pub const KNOWN_AGENTS: &[AgentProfile] = &[
         id: GEMINI_AGENT_ID,
         display_name: "Gemini",
         exe_search_order: &[".exe", ".cmd"],
-        acp_flags: &["--experimental-acp"],
+        acp_flags: &["--acp"],
         acp_launch_command: "",
         acp_model_flags: &["--model", "-m"],
         acp_auth_flow: AcpAuthFlow::InProtocol,
@@ -522,7 +522,7 @@ mod tests {
     #[test]
     fn resolve_agent_id_from_cmd_recognises_bare_names_with_flags() {
         assert_eq!(resolve_agent_id_from_cmd("copilot --acp --stdio"), "copilot");
-        assert_eq!(resolve_agent_id_from_cmd("gemini --experimental-acp"), "gemini");
+        assert_eq!(resolve_agent_id_from_cmd("gemini --acp"), "gemini");
         assert_eq!(resolve_agent_id_from_cmd("opencode acp"), "opencode");
         assert_eq!(resolve_agent_id_from_cmd("claude --resume foo"), "claude");
     }
@@ -593,6 +593,11 @@ mod tests {
     }
 
     #[test]
+    fn gemini_uses_official_acp_flag() {
+        assert_eq!(build_acp_command("gemini", None), "gemini --acp");
+    }
+
+    #[test]
     fn opencode_builds_native_acp_and_delegate_commands() {
         assert_eq!(build_acp_command("opencode", None), "opencode acp");
         assert_eq!(
@@ -617,7 +622,7 @@ mod tests {
             "copilot",
         );
         assert_eq!(
-            resolve_agent_id_from_cmd("/usr/local/bin/gemini --experimental-acp"),
+            resolve_agent_id_from_cmd("/usr/local/bin/gemini --acp"),
             "gemini",
         );
         assert_eq!(resolve_agent_id_from_cmd("copilot.cmd"), "copilot");

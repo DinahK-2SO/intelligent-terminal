@@ -1086,7 +1086,7 @@ namespace winrt::TerminalApp::implementation
         }
         else if (lower == "gemini")
         {
-            cmd += L" --experimental-acp";
+            cmd += L" --acp";
         }
 
         if (lower == "copilot" || lower == "gemini")
