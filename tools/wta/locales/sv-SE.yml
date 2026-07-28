@@ -140,8 +140,6 @@ system.cannot_resume_phantom_via_flag: "Det går inte att återuppta %{agent}-se
 system.cannot_resume_phantom_via_load: "Det går inte att återuppta %{agent}-sessionen %{session_id}: den startades men samlade aldrig någon konversation, så %{agent} skulle avvisa inläsningen. Tar bort raden."
 system.fallback.this_agent: "den här agenten"
 system.fallback.connected_agent: "den anslutna agenten"
-system.yolo_auto_approved: "Godkänt automatiskt (yolo-läge): %{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "Yolo-läget är aktiverat för den här sessionen — verktygsanrop godkänns automatiskt utan fråga tills du kör /new. Använd med försiktighet."  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "Yolo-läget är inaktiverat av organisationens policy."  # {Locked="/yolo"}
 
 

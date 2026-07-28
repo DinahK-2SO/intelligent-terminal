@@ -153,8 +153,6 @@ system.cannot_resume_phantom_via_flag: "%{agent} ಸೆಷನ್ %{session_id} �
 system.cannot_resume_phantom_via_load: "%{agent} ಸೆಷನ್ %{session_id} ಪುನರಾರಂಭಿಸಲಾಗುವುದಿಲ್ಲ: ಅದು ಪ್ರಾರಂಭವಾಗಿತ್ತು ಆದರೆ ಯಾವುದೇ ಸಂಭಾಷಣೆ ಸಂಗ್ರಹವಾಗಿಲ್ಲ, ಆದ್ದರಿಂದ %{agent} load ಅನ್ನು ತಿರಸ್ಕರಿಸುತ್ತದೆ. ಸಾಲನ್ನು ತೆಗೆದುಹಾಕಲಾಗುತ್ತಿದೆ."
 system.fallback.this_agent: "ಈ agent"
 system.fallback.connected_agent: "ಸಂಪರ್ಕಿತ agent"
-system.yolo_auto_approved: "ಸ್ವಯಂ ಅನುಮೋದಿಸಲಾಗಿದೆ (yolo mode): %{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "ಈ session‌ಗಾಗಿ yolo mode ಸಕ್ರಿಯಗೊಂಡಿದೆ — ನೀವು /new ಅನ್ನು ಚಲಾಯಿಸುವವರೆಗೆ tool call‌ಗಳು prompt ಇಲ್ಲದೆ ಸ್ವಯಂ ಅನುಮೋದನೆಗೊಳ್ಳುತ್ತವೆ. ಎಚ್ಚರಿಕೆಯಿಂದ ಬಳಸಿ."  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "ನಿಮ್ಮ ಸಂಸ್ಥೆಯ ನೀತಿಯಿಂದ yolo mode ನಿಷ್ಕ್ರಿಯಗೊಂಡಿದೆ."  # {Locked="/yolo"}
 
 

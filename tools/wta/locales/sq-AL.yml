@@ -140,8 +140,6 @@ system.cannot_resume_phantom_via_flag: "Nuk mund të rifillohet sesioni %{agent}
 system.cannot_resume_phantom_via_load: "Nuk mund të rifillohet sesioni %{agent} %{session_id}: ai u nis, por nuk grumbulloi kurrë asnjë bisedë, prandaj %{agent} do ta refuzonte ngarkimin. Po hiqet rreshti."
 system.fallback.this_agent: "ky agjent"
 system.fallback.connected_agent: "agjenti i lidhur"
-system.yolo_auto_approved: "Miratuar automatikisht (modaliteti yolo): %{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "Modaliteti yolo është aktivizuar për këtë sesion — thirrjet e veglave do të miratohen automatikisht pa kërkuar konfirmim derisa të ekzekutoni /new. Përdoreni me kujdes."  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "Modaliteti yolo është çaktivizuar nga politika e organizatës suaj."  # {Locked="/yolo"}
 
 

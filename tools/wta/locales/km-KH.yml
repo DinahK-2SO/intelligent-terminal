@@ -154,8 +154,6 @@ system.cannot_resume_phantom_via_flag: "មិនអាចបន្តវគ្�
 system.cannot_resume_phantom_via_load: "មិនអាចបន្តវគ្គ %{agent} %{session_id} បានទេ: វាត្រូវបានចាប់ផ្តើម ប៉ុន្តែមិនដែលមានការសន្ទនាណាមួយទេ ដូច្នេះ %{agent} នឹងបដិសេធការផ្ទុក។ កំពុងលុបជួរដេក។"
 system.fallback.this_agent: "អេជេន្ត់នេះ"
 system.fallback.connected_agent: "អេជេន្ត់ដែលបានភ្ជាប់"
-system.yolo_auto_approved: "បានអនុម័តដោយស្វ័យប្រវត្តិ (របៀប yolo): %{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "បានបើក yolo mode សម្រាប់ session នេះ — tool call នឹងត្រូវបានអនុម័តដោយស្វ័យប្រវត្តិដោយមិនសួរ រហូតដល់អ្នករត់ /new។ សូមប្រើដោយប្រុងប្រយ័ត្ន។"  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "Yolo mode ត្រូវបានបិទដោយគោលនយោបាយរបស់ស្ថាប័នអ្នក។"  # {Locked="/yolo"}
 
 

@@ -153,8 +153,6 @@ system.cannot_resume_phantom_via_flag: "%{agent} سیشن %{session_id} دوبا
 system.cannot_resume_phantom_via_load: "%{agent} سیشن %{session_id} دوبارہ شروع نہیں کیا جا سکتا: یہ شروع ہوا تھا مگر اس میں کوئی گفتگو جمع نہیں ہوئی، اس لیے %{agent} load کو مسترد کر دے گا۔ قطار ہٹائی جا رہی ہے۔"
 system.fallback.this_agent: "یہ agent"
 system.fallback.connected_agent: "منسلک agent"
-system.yolo_auto_approved: "خودکار طور پر منظور شدہ (yolo mode): %{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "اس session کے لیے yolo mode فعال ہے — جب تک آپ /new نہیں چلاتے، tool call بغیر prompt کے خودکار طور پر منظور ہوتے رہیں گے۔ احتیاط سے استعمال کریں۔"  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "آپ کی تنظیم کی پالیسی کے باعث yolo mode غیر فعال ہے۔"  # {Locked="/yolo"}
 
 

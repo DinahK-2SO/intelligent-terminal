@@ -142,8 +142,6 @@ system.cannot_resume_phantom_via_flag: "No es pot reprendre la sessió de %{agen
 system.cannot_resume_phantom_via_load: "No es pot reprendre la sessió de %{agent} %{session_id}: es va iniciar però no va acumular cap conversa, de manera que %{agent} rebutjaria la càrrega. S’elimina la fila."
 system.fallback.this_agent: "este agent"
 system.fallback.connected_agent: "l’agent connectat"
-system.yolo_auto_approved: "Aprovat automàticament (mode yolo): %{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "El mode yolo s’ha habilitat per a aquesta sessió — les crides d’eines s’aprovaran automàticament sense demanar confirmació fins que executeu /new. Feu-lo servir amb precaució."  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "El mode yolo està deshabilitat per la política de la vostra organització."  # {Locked="/yolo"}
 
 

@@ -155,8 +155,6 @@ system.cannot_resume_phantom_via_flag: "يتعذر استئناف جلسة %{age
 system.cannot_resume_phantom_via_load: "يتعذر استئناف جلسة %{agent} %{session_id}: بدأت لكنها لم تجمع أي محادثة، لذلك سيرفض %{agent} التحميل. تتم إزالة الصف."
 system.fallback.this_agent: "هذا العامل"
 system.fallback.connected_agent: "العامل المتصل"
-system.yolo_auto_approved: "تمت الموافقة تلقائيًا (وضع yolo): %{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "تم تمكين وضع yolo لهذه الجلسة — ستتم الموافقة على استدعاءات الأدوات تلقائيًا من دون مطالبة حتى تشغّل /new. استخدمه بحذر."  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "تم تعطيل وضع yolo بواسطة نهج مؤسستك."  # {Locked="/yolo"}
 
 

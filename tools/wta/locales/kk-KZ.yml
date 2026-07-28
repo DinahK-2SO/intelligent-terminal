@@ -153,8 +153,6 @@ system.cannot_resume_phantom_via_flag: "%{agent} %{session_id} сеансын ж
 system.cannot_resume_phantom_via_load: "%{agent} %{session_id} сеансын жалғастыру мүмкін емес: ол басталған, бірақ ешқандай әңгіме жиналмаған, сондықтан %{agent} жүктеуді қабылдамайды. Жол жойылуда."
 system.fallback.this_agent: "осы агент"
 system.fallback.connected_agent: "қосылған агент"
-system.yolo_auto_approved: "Автоматты түрде мақұлданды (yolo mode): %{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "Осы session үшін yolo mode қосылды — /new іске қосылғанға дейін tool call шақырулары сұраусыз автоматты түрде мақұлданады. Абайлап қолданыңыз."  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "Yolo mode ұйымыңыздың саясаты арқылы өшірілген."  # {Locked="/yolo"}
 
 

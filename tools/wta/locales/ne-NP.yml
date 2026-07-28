@@ -153,8 +153,6 @@ system.cannot_resume_phantom_via_flag: "%{agent} सत्र %{session_id} प�
 system.cannot_resume_phantom_via_load: "%{agent} सत्र %{session_id} पुनः सुरु गर्न सकिँदैन: यो सुरु भएको थियो तर कुनै कुराकानी संकलन भएको थिएन, त्यसैले %{agent} ले load अस्वीकार गर्नेछ। पङ्क्ति हटाइँदैछ।"
 system.fallback.this_agent: "यो agent"
 system.fallback.connected_agent: "जोडिएको agent"
-system.yolo_auto_approved: "स्वचालित रूपमा स्वीकृत (yolo mode): %{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "यो session का लागि yolo mode सक्षम गरिएको छ — तपाईंले /new चलाउँदासम्म tool call हरू prompt बिना स्वचालित रूपमा स्वीकृत हुनेछन्। सावधानीपूर्वक प्रयोग गर्नुहोस्।"  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "तपाईंको संस्थाको नीतिका कारण yolo mode निष्क्रिय गरिएको छ।"  # {Locked="/yolo"}
 
 

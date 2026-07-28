@@ -140,8 +140,6 @@ system.cannot_resume_phantom_via_flag: "[!! Can_not resume %{agent} session %{se
 system.cannot_resume_phantom_via_load: "[!! Can_not resume %{agent} session %{session_id}: it was started but never accumulated any conversation, so %{agent} would reject the load. Removing the row. !!]"
 system.fallback.this_agent: "[!! thi_s agent !!]"
 system.fallback.connected_agent: "[!! the_ connected agent !!]"
-system.yolo_auto_approved: "[!! Aut_o-approved (yolo mode): %{description} !!]"  # {Locked="/yolo"}
-system.yolo_enabled: "[!! Yol_o mode enabled for this ses_sion — tool calls will be aut_o-approved without prompting until you run /new. Use with caution. !!]"  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "[!! Yol_o mode is dis_abled by your org_anization's policy. !!]"  # {Locked="/yolo"}
 
 

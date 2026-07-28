@@ -140,8 +140,6 @@ system.cannot_resume_phantom_via_flag: "Cha ghabh seisean %{agent} %{session_id}
 system.cannot_resume_phantom_via_load: "Cha ghabh seisean %{agent} %{session_id} ath-thòiseachadh: chaidh a thòiseachadh ach cha do chruinnich e còmhradh sam bith, mar sin dhiùltadh %{agent} an luchdadh. A’ toirt air falbh an ràigh."
 system.fallback.this_agent: "an t-àidseant seo"
 system.fallback.connected_agent: "an t-àidseant ceangailte"
-system.yolo_auto_approved: "Air aontachadh gu fèin-obrachail (modh yolo): %{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "Tha modh yolo an comas airson an t-seisein seo — thèid gairmean inneil aontachadh gu fèin-obrachail gun bhrosnachadh gus an ruith thu /new. Cleachd le cùram."  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "Tha modh yolo à comas le poileasaidh na buidhne agad."  # {Locked="/yolo"}
 
 

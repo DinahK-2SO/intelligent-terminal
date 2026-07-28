@@ -153,8 +153,6 @@ system.cannot_resume_phantom_via_flag: "%{agent} సెషన్ %{session_id} �
 system.cannot_resume_phantom_via_load: "%{agent} సెషన్ %{session_id} మళ్లీ ప్రారంభించలేరు: అది ప్రారంభమైంది కానీ ఏ సంభాషణను కూడగట్టలేదు, కాబట్టి %{agent} load ను తిరస్కరిస్తుంది. వరుసను తీసివేస్తోంది."
 system.fallback.this_agent: "ఈ agent"
 system.fallback.connected_agent: "కనెక్ట్ అయిన agent"
-system.yolo_auto_approved: "స్వయంచాలకంగా ఆమోదించబడింది (yolo mode): %{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "ఈ session కోసం yolo mode ప్రారంభించబడింది — మీరు /new నడిపే వరకు tool call‌లు prompt లేకుండానే స్వయంచాలకంగా ఆమోదించబడతాయి. జాగ్రత్తగా ఉపయోగించండి."  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "మీ సంస్థ విధానం వల్ల yolo mode నిలిపివేయబడింది."  # {Locked="/yolo"}
 
 

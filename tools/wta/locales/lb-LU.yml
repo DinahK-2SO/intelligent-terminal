@@ -140,8 +140,6 @@ system.cannot_resume_phantom_via_flag: "Kann %{agent}-Sessioun %{session_id} net
 system.cannot_resume_phantom_via_load: "Kann %{agent}-Sessioun %{session_id} net weiderfueren: si gouf gestart, mee et ass ni e Gespréich entstanen, dofir géif %{agent} d’Luede refuséieren. Rei gëtt ewechgeholl."
 system.fallback.this_agent: "dësen Agent"
 system.fallback.connected_agent: "den ugeschlossenen Agent"
-system.yolo_auto_approved: "Automatesch genehmegt (Yolo-Modus): %{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "De Yolo-Modus ass fir dës Sessioun aktivéiert — Tool-Opriffer ginn automatesch ouni Nofro genehmegt, bis Dir /new ausféiert. Virsiichteg benotzen."  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "De Yolo-Modus ass duerch d'Politik vun Ärer Organisatioun deaktivéiert."  # {Locked="/yolo"}
 
 

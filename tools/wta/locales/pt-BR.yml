@@ -140,8 +140,6 @@ system.cannot_resume_phantom_via_flag: "Não é possível retomar a sessão de %
 system.cannot_resume_phantom_via_load: "Não é possível retomar a sessão de %{agent} %{session_id}: ela foi iniciada, mas nunca acumulou conversa, então %{agent} rejeitaria o carregamento. Removendo a linha."
 system.fallback.this_agent: "este agente"
 system.fallback.connected_agent: "o agente conectado"
-system.yolo_auto_approved: "Aprovado automaticamente (modo yolo): %{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "O modo yolo está ativado para esta sessão — as chamadas de ferramenta serão aprovadas automaticamente sem solicitar confirmação até você executar /new. Use com cuidado."  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "O modo yolo está desativado pela política da sua organização."  # {Locked="/yolo"}
 
 

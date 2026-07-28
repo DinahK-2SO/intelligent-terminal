@@ -140,8 +140,6 @@ system.cannot_resume_phantom_via_flag: "%{agent} sesión %{session_id} mana kuti
 system.cannot_resume_phantom_via_load: "%{agent} sesión %{session_id} mana kutichiyta atikunchu: qallarirqan, ichaqa mana ima rimaytapas huñurqanchu; chayrayku %{agent} load nisqata mana chaskinqachu. Filata hurquchkan."
 system.fallback.this_agent: "kay agent"
 system.fallback.connected_agent: "tinkisqa agent"
-system.yolo_auto_approved: "Kikinmanta aprobasqa (yolo mode): %{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "Kay sesiónpaq yolo mode nisqa habilitasqan kachkan — /new ejecutanaykikama tool call-kuna mana tapuspa kikinmanta aprobasqa kanqa. Allinta yuyaykuspa llamk'achiy."  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "Yolo mode nisqaqa organizaciónniykip política rurasqanrayku deshabilitasqa kachkan."  # {Locked="/yolo"}
 
 

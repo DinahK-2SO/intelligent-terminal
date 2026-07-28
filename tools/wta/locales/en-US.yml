@@ -220,8 +220,6 @@ system.fallback.this_agent: "this agent"  # Fallback noun used inside the cannot
 system.fallback.connected_agent: "the connected agent"  # Fallback noun used inside cannot_resume_no_load_session when the connected agent display name is empty.
 
 # ── Yolo mode (auto-approve tool calls) ─────────────────────────────────────
-system.yolo_auto_approved: "Auto-approved (yolo mode): %{description}"  # Posted to the tab's chat in place of the normal permission prompt when a tool-call permission request is auto-approved, either via the global "Auto-approve tool calls" setting or the /yolo command for this session. %{description} is the agent-provided tool-call title (e.g. "Run `npm install`"). {Locked="/yolo"} — slash-command name.
-system.yolo_enabled: "Yolo mode enabled for this session — tool calls will be auto-approved without prompting until you run /new. Use with caution."  # Confirmation shown after the user runs /yolo. {Locked="/yolo","/new"} — slash-command names.
 system.yolo_blocked_by_policy: "Yolo mode is disabled by your organization's policy."  # Shown when /yolo is run but auto-approve is blocked by the AllowYoloMode admin policy. {Locked="/yolo"} — slash-command name.
 
 # ── Recommendation execution (src/coordinator.rs) ───────────────────────────

@@ -142,8 +142,6 @@ system.cannot_resume_phantom_via_flag: "የ%{agent} ክፍለ ጊዜ %{session_i
 system.cannot_resume_phantom_via_load: "የ%{agent} ክፍለ ጊዜ %{session_id} መቀጠል አይቻልም፦ ተጀምሯል ግን ምንም ውይይት አልተከማቸበትም፣ ስለዚህ %{agent} መጫኑን ይከለክላል። ረድፉን በማስወገድ ላይ።"
 system.fallback.this_agent: "ይህ agent"
 system.fallback.connected_agent: "የተገናኘው agent"
-system.yolo_auto_approved: "በራስ-ሰር ተፈቅዷል (yolo mode): %{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "ለዚህ ክፍለ-ጊዜ yolo mode ነቅቷል — /new እስክትሄዱ ድረስ tool call-ዎች ሳይጠይቁ በራስ-ሰር ይፈቀዳሉ። በጥንቃቄ ይጠቀሙ።"  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "Yolo mode በድርጅትዎ ፖሊሲ ተሰናክሏል።"  # {Locked="/yolo"}
 
 

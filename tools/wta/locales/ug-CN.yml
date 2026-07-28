@@ -162,8 +162,6 @@ system.cannot_resume_phantom_via_flag: "%{agent} سۆزلىشىشى %{session_id
 system.cannot_resume_phantom_via_load: "%{agent} سۆزلىشىشى %{session_id} نى داۋاملاشتۇرغىلى بولمايدۇ: ئۇ باشلانغان، ئەمما ھېچقانداق سۆھبەت توپلانمىغان، شۇڭا %{agent} load نى رەت قىلىدۇ. قۇر ئۆچۈرۈلۈۋاتىدۇ."
 system.fallback.this_agent: "بۇ agent"
 system.fallback.connected_agent: "ئۇلانغان agent"
-system.yolo_auto_approved: "ئاپتوماتىك تەستىقلاندى (yolo mode): %{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "بۇ session ئۈچۈن yolo mode قوزغىتىلدى — سىز /new نى ئىجرا قىلغۇچە tool call لار سورالمايلا ئاپتوماتىك تەستىقلىنىدۇ. ئېھتىيات بىلەن ئىشلىتىڭ."  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "Yolo mode تەشكىلاتىڭىزنىڭ سىياسىتى بىلەن چەكلەنگەن."  # {Locked="/yolo"}
 
 

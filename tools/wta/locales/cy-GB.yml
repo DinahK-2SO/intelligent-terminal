@@ -142,8 +142,6 @@ system.cannot_resume_phantom_via_flag: "Methu ailddechrau sesiwn %{agent} %{sess
 system.cannot_resume_phantom_via_load: "Methu ailddechrau sesiwn %{agent} %{session_id}: cafodd ei dechrau ond ni chasglodd unrhyw sgwrs erioed, felly byddai %{agent} yn gwrthod y llwytho. Yn tynnu’r rhes."
 system.fallback.this_agent: "yr asiant hwn"
 system.fallback.connected_agent: "yr asiant cysylltiedig"
-system.yolo_auto_approved: "Cymeradwywyd yn awtomatig (modd yolo): %{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "Mae modd yolo wedi’i alluogi ar gyfer y sesiwn hon — bydd galwadau offer yn cael eu cymeradwyo’n awtomatig heb ofyn nes i chi redeg /new. Defnyddiwch ef yn ofalus."  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "Mae modd yolo wedi’i analluogi gan bolisi eich sefydliad."  # {Locked="/yolo"}
 
 

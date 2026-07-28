@@ -136,8 +136,6 @@ system.cannot_resume_phantom_via_flag: "无法恢复 %{agent} 会话 %{session_i
 system.cannot_resume_phantom_via_load: "无法恢复 %{agent} 会话 %{session_id}：它已启动但从未积累任何对话，因此 %{agent} 会拒绝加载。正在移除此行。"
 system.fallback.this_agent: "此智能体"
 system.fallback.connected_agent: "已连接的智能体"
-system.yolo_auto_approved: "已自动批准（yolo 模式）：%{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "已为此会话启用 yolo 模式 — 在您运行 /new 之前，工具调用将无需提示而自动获批。请谨慎使用。"  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "yolo 模式已被你所在组织的策略禁用。"  # {Locked="/yolo"}
 
 

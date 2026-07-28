@@ -153,8 +153,6 @@ system.cannot_resume_phantom_via_flag: "לא ניתן לחדש את ההפעלה
 system.cannot_resume_phantom_via_load: "לא ניתן לחדש את ההפעלה %{agent} %{session_id}: היא הופעלה אך מעולם לא צברה שיחה כלשהי, ולכן %{agent} ידחה את הטעינה. מסיר את השורה."
 system.fallback.this_agent: "סוכן זה"
 system.fallback.connected_agent: "הסוכן המחובר"
-system.yolo_auto_approved: "אושר אוטומטית (מצב yolo): %{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "מצב yolo הופעל עבור הפעלה זו — קריאות לכלים יאושרו אוטומטית ללא בקשה לאישור עד שתפעיל /new. השתמש בזהירות."  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "מצב yolo מושבת על-ידי מדיניות הארגון שלך."  # {Locked="/yolo"}
 
 

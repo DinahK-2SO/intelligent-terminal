@@ -140,8 +140,6 @@ system.cannot_resume_phantom_via_flag: "Không thể tiếp tục phiên %{agent
 system.cannot_resume_phantom_via_load: "Không thể tiếp tục phiên %{agent} %{session_id}: phiên đã được khởi tạo nhưng chưa từng tích lũy cuộc trò chuyện nào, nên %{agent} sẽ từ chối tải. Đang xóa hàng."
 system.fallback.this_agent: "tác nhân này"
 system.fallback.connected_agent: "tác nhân đã kết nối"
-system.yolo_auto_approved: "Đã tự động phê duyệt (chế độ yolo): %{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "Chế độ yolo đã được bật cho phiên này — các lệnh gọi công cụ sẽ được tự động phê duyệt mà không cần nhắc cho đến khi bạn chạy /new. Hãy dùng cẩn thận."  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "Chế độ yolo bị vô hiệu hóa bởi chính sách của tổ chức của bạn."  # {Locked="/yolo"}
 
 

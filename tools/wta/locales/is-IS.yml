@@ -140,8 +140,6 @@ system.cannot_resume_phantom_via_flag: "Ekki er hægt að halda áfram með %{ag
 system.cannot_resume_phantom_via_load: "Ekki er hægt að halda áfram með %{agent}-setu %{session_id}: hún var ræst en safnaði aldrei neinu samtali, þannig að %{agent} myndi hafna hleðslunni. Fjarlægi röðina."
 system.fallback.this_agent: "þessi agent"
 system.fallback.connected_agent: "tengdi agentinn"
-system.yolo_auto_approved: "Sjálfvirkt samþykkt (yolo-hamur): %{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "Yolo-hamur er virkjaður fyrir þessa lotu — verkfæraköll verða sjálfkrafa samþykkt án staðfestingar þar til þú keyrir /new. Notaðu með varúð."  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "Yolo-hamur er óvirkur samkvæmt stefnu fyrirtækis þíns."  # {Locked="/yolo"}
 
 

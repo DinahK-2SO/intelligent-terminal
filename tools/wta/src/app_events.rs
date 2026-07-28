@@ -229,11 +229,6 @@ impl App {
                 tab.messages.push(ChatMessage::System(message));
                 tab.scroll_to_bottom();
             }
-            AppEvent::SessionSystemMessage { session_id, message } => {
-                let tab = self.session_tab_mut(&session_id);
-                tab.messages.push(ChatMessage::System(message));
-                tab.scroll_to_bottom();
-            }
             AppEvent::PromptTemplateLoaded { name } => {
                 self.prompt_name = Some(name);
             }

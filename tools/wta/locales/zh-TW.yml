@@ -136,8 +136,6 @@ system.cannot_resume_phantom_via_flag: "無法恢復 %{agent} 工作階段 %{ses
 system.cannot_resume_phantom_via_load: "無法恢復 %{agent} 工作階段 %{session_id}：它已啟動但從未累積任何對話，因此 %{agent} 會拒絕載入。正在移除此列。"
 system.fallback.this_agent: "此智能體"
 system.fallback.connected_agent: "已連線的智能體"
-system.yolo_auto_approved: "已自動核准（yolo 模式）：%{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "此工作階段已啟用 yolo 模式 — 在您執行 /new 之前，工具呼叫將不經提示自動核准。請謹慎使用。"  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "yolo 模式已被您組織的原則停用。"  # {Locked="/yolo"}
 
 

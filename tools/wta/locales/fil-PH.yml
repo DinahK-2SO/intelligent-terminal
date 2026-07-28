@@ -140,8 +140,6 @@ system.cannot_resume_phantom_via_flag: "Hindi maipagpatuloy ang %{agent} session
 system.cannot_resume_phantom_via_load: "Hindi maipagpatuloy ang %{agent} session %{session_id}: nagsimula ito pero hindi kailanman nakaipon ng anumang pag-uusap, kaya tatanggihan ng %{agent} ang load. Inaalis ang row."
 system.fallback.this_agent: "ang agent na ito"
 system.fallback.connected_agent: "ang nakakonektang agent"
-system.yolo_auto_approved: "Awtomatikong inaprubahan (yolo mode): %{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "Na-enable ang yolo mode para sa sesyong ito — ang mga tawag sa tool ay awtomatikong aaprubahan nang walang prompt hanggang patakbuhin mo ang /new. Gamitin nang may pag-iingat."  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "Na-disable ang yolo mode ng patakaran ng iyong organisasyon."  # {Locked="/yolo"}
 
 

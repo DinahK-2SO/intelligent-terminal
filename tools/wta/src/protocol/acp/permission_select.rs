@@ -44,14 +44,19 @@ static ALLOW_ALL_CONFIG_ID: RwLock<Option<String>> = RwLock::new(None);
 /// options, matching on category `permissions` OR id `allow_all` (mirrors
 /// `model_select::model_option_from_config`'s dual match, since some agents
 /// may omit the category and only set the id, or vice versa).
+///
+/// Like `model_option_from_config`, requires the matched entry to also be a
+/// `Select` (the only kind `session/set_config_option` can flip to "on"/
+/// "off" here) — a plain match on category/id alone would stop at the first
+/// same-named non-Select entry, hiding a valid Select later in the list.
 fn allow_all_option_id(opts: &[acp::schema::v1::SessionConfigOption]) -> Option<String> {
     opts.iter()
         .find(|o| {
             let is_permissions = matches!(
                 &o.category,
                 Some(acp::schema::v1::SessionConfigOptionCategory::Other(cat)) if cat == "permissions"
-            );
-            is_permissions || o.id.0.as_ref() == "allow_all"
+            ) || o.id.0.as_ref() == "allow_all";
+            is_permissions && matches!(o.kind, acp::schema::v1::SessionConfigKind::Select(_))
         })
         .map(|o| o.id.0.to_string())
 }
@@ -210,6 +215,29 @@ mod tests {
 
         init_yolo_state(true, sessions.clone());
         assert!(is_yolo_session("s-b"), "global toggle must cover every session");
+    }
+
+    #[test]
+    fn skips_non_select_entry_and_finds_later_valid_select() {
+        let _guard = ALLOW_ALL_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        // A non-Select entry that happens to match id/category ("allow_all"
+        // as a plain boolean toggle, no `options`/`type: select`) must not
+        // shadow a later, genuinely-Select entry with the same id — mirrors
+        // `model_select::model_option_from_config`'s guard against the same
+        // pitfall.
+        let resp: acp::schema::v1::NewSessionResponse = serde_json::from_str(
+            r#"{
+                "sessionId": "s-4",
+                "configOptions": [
+                    {"id": "allow_all", "name": "Allow All (legacy boolean)", "category": "permissions", "type": "boolean", "currentValue": false},
+                    {"id": "allow_all", "name": "Allow All", "category": "permissions", "type": "select", "currentValue": "off",
+                     "options": [{"value": "on", "name": "On"}, {"value": "off", "name": "Off"}]}
+                ]
+            }"#,
+        )
+        .expect("valid new_session");
+        record_from_new_session(&resp);
+        assert_eq!(native_allow_all_config_id().as_deref(), Some("allow_all"));
     }
 
     #[test]

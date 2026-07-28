@@ -153,8 +153,6 @@ system.cannot_resume_phantom_via_flag: "%{agent} அமர்வு %{session_id
 system.cannot_resume_phantom_via_load: "%{agent} அமர்வு %{session_id} மீண்டும் தொடங்க முடியவில்லை: அது தொடங்கப்பட்டது, ஆனால் எந்த உரையாடலும் சேர்க்கப்படவில்லை; எனவே %{agent} load-ஐ நிராகரிக்கும். வரிசை அகற்றப்படுகிறது."
 system.fallback.this_agent: "இந்த agent"
 system.fallback.connected_agent: "இணைக்கப்பட்ட agent"
-system.yolo_auto_approved: "தானாக ஒப்புதல் அளிக்கப்பட்டது (yolo mode): %{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "இந்த sessionக்கு yolo mode இயக்கப்பட்டுள்ளது — நீங்கள் /new ஐ இயக்கும் வரை tool call-கள் prompt இன்றி தானாக ஒப்புதல் பெறும். கவனமாக பயன்படுத்தவும்."  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "உங்கள் நிறுவனத்தின் கொள்கையால் yolo mode முடக்கப்பட்டுள்ளது."  # {Locked="/yolo"}
 
 

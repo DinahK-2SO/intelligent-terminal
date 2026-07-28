@@ -140,8 +140,6 @@ system.cannot_resume_phantom_via_flag: "ไม่สามารถดำเน�
 system.cannot_resume_phantom_via_load: "ไม่สามารถดำเนินเซสชัน %{agent} %{session_id} ต่อ: เซสชันนี้เริ่มแล้วแต่ไม่เคยมีการสนทนาสะสม ดังนั้น %{agent} จะปฏิเสธการโหลด กำลังลบแถว"
 system.fallback.this_agent: "เอเจนต์นี้"
 system.fallback.connected_agent: "เอเจนต์ที่เชื่อมต่ออยู่"
-system.yolo_auto_approved: "อนุมัติอัตโนมัติแล้ว (โหมด yolo): %{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "เปิดใช้โหมด yolo สำหรับเซสชันนี้แล้ว — การเรียกใช้เครื่องมือจะได้รับการอนุมัติอัตโนมัติโดยไม่ต้องถามจนกว่าคุณจะรัน /new โปรดใช้อย่างระมัดระวัง"  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "โหมด yolo ถูกปิดใช้งานโดยนโยบายขององค์กรคุณ"  # {Locked="/yolo"}
 
 

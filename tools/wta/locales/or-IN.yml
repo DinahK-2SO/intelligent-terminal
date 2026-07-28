@@ -153,8 +153,6 @@ system.cannot_resume_phantom_via_flag: "%{agent} ସେସନ୍ %{session_id} �
 system.cannot_resume_phantom_via_load: "%{agent} ସେସନ୍ %{session_id} ପୁନଃ ଆରମ୍ଭ କରିପାରିବେ ନାହିଁ: ଏହା ଆରମ୍ଭ ହୋଇଥିଲା କିନ୍ତୁ କୌଣସି କଥୋପକଥନ ସଂଗ୍ରହ କରିନଥିଲା, ସେହିପାଇଁ %{agent} load କୁ ଅସ୍ୱୀକାର କରିବ। ପଙ୍କ୍ତି ହଟାଯାଉଛି।"
 system.fallback.this_agent: "ଏହି agent"
 system.fallback.connected_agent: "ସଂଯୁକ୍ତ agent"
-system.yolo_auto_approved: "ସ୍ୱୟଂଚାଳିତ ଭାବେ ଅନୁମୋଦିତ (yolo mode): %{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "ଏହି session ପାଇଁ yolo mode ସକ୍ରିୟ ହୋଇଛି — ଆପଣ /new ଚଲାଇବା ପର୍ଯ୍ୟନ୍ତ tool call ଗୁଡ଼ିକ prompt ବିନା ସ୍ୱୟଂଚାଳିତ ଭାବେ ଅନୁମୋଦିତ ହେବ। ସାବଧାନତାର ସହ ବ୍ୟବହାର କରନ୍ତୁ।"  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "ଆପଣଙ୍କ ସଂଗଠନର ନୀତି ଦ୍ୱାରା yolo mode ନିଷ୍କ୍ରିୟ କରାଯାଇଛି।"  # {Locked="/yolo"}
 
 

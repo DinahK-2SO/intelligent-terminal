@@ -1137,15 +1137,6 @@ pub enum AppEvent {
         tab_id: String,
         message: String,
     },
-    /// Informational system message scoped by ACP `session_id` rather than
-    /// `tab_id`. Used by the ACP client task (which only has `session_id`
-    /// in scope, e.g. inside `request_permission`) — resolved to the owning
-    /// tab via `App::session_tab_mut`. Currently emitted for yolo-mode
-    /// auto-approved permission requests.
-    SessionSystemMessage {
-        session_id: String,
-        message: String,
-    },
     AgentPasteTextReady {
         tab_id: String,
         generation: u64,
@@ -4812,7 +4803,6 @@ impl App {
             AppEvent::SessionAttached { .. } => "session_attached",
             AppEvent::TabError { .. } => "tab_error",
             AppEvent::TabSystemMessage { .. } => "tab_system_message",
-            AppEvent::SessionSystemMessage { .. } => "session_system_message",
             AppEvent::AgentPasteTextReady { .. } => "agent_paste_text_ready",
             AppEvent::AgentPasteTextFailed { .. } => "agent_paste_text_failed",
             AppEvent::PromptTemplateLoaded { .. } => "prompt_template_loaded",
@@ -5911,9 +5901,15 @@ impl App {
                 },
             );
         }
-        // No session yet (pane still connecting) — /yolo still just records
-        // into `yolo_sessions` above once a session_id exists; nothing else
-        // to do here. Deliberately silent: no chat message is posted so
+        // If there's no session yet (pane still connecting), `/yolo` is a
+        // no-op beyond nothing above running: this tab's session_id isn't
+        // known yet, so there's nothing to insert into `yolo_sessions` and
+        // no session to retroactively apply the native allow-all config to.
+        // The global `--auto-approve-tools` flag (set at helper spawn) is
+        // the only channel that covers a session created after this point;
+        // there is currently no queued/pending state that makes a `/yolo`
+        // typed before the session exists retroactively apply once it does.
+        // Deliberately silent either way: no chat message is posted so
         // auto-approved tool calls don't clutter the conversation.
     }
 

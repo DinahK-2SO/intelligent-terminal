@@ -151,8 +151,6 @@ system.cannot_resume_phantom_via_flag: "Nelze obnovit relaci %{agent} %{session_
 system.cannot_resume_phantom_via_load: "Nelze obnovit relaci %{agent} %{session_id}: byla spuštěna, ale nikdy neshromáždila žádnou konverzaci, takže %{agent} by načtení odmítl. Řádek se odebírá."
 system.fallback.this_agent: "tento agent"
 system.fallback.connected_agent: "připojený agent"
-system.yolo_auto_approved: "Automaticky schváleno (režim yolo): %{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "Režim yolo je pro tuto relaci zapnutý — volání nástrojů se budou automaticky schvalovat bez výzvy, dokud nespustíte /new. Používejte opatrně."  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "Režim yolo je zakázán zásadami vaší organizace."  # {Locked="/yolo"}
 
 

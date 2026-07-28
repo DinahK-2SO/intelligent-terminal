@@ -140,8 +140,6 @@ system.cannot_resume_phantom_via_flag: "%{agent} seanssi %{session_id} ei saa j�
 system.cannot_resume_phantom_via_load: "%{agent} seanssi %{session_id} ei saa jätkata: see käivitati, kuid vestlust ei kogunenud, seega lükkaks %{agent} laadimise tagasi. Rida eemaldatakse."
 system.fallback.this_agent: "see agent"
 system.fallback.connected_agent: "ühendatud agent"
-system.yolo_auto_approved: "Automaatselt heaks kiidetud (yolo-režiim): %{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "Yolo-režiim on selle seansi jaoks lubatud — tööriistakutsed kiidetakse automaatselt heaks ilma küsimata, kuni käivitate /new. Kasutage ettevaatusega."  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "Yolo-režiim on teie asutuse poliitikaga keelatud."  # {Locked="/yolo"}
 
 

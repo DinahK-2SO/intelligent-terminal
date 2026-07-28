@@ -142,8 +142,6 @@ system.cannot_resume_phantom_via_flag: "Kan ikke genoptage %{agent}-session %{se
 system.cannot_resume_phantom_via_load: "Kan ikke genoptage %{agent}-session %{session_id}: den blev startet, men der blev aldrig opbygget nogen samtale, så %{agent} ville afvise indlæsningen. Fjerner rækken."
 system.fallback.this_agent: "denne agent"
 system.fallback.connected_agent: "den tilsluttede agent"
-system.yolo_auto_approved: "Godkendt automatisk (yolo-tilstand): %{description}"  # {Locked="/yolo"}
-system.yolo_enabled: "Yolo-tilstand er aktiveret for denne session — værktøjskald bliver automatisk godkendt uden prompt, indtil du kører /new. Brug den med omtanke."  # {Locked="/yolo","/new"}
 system.yolo_blocked_by_policy: "Yolo-tilstand er deaktiveret af din organisations politik."  # {Locked="/yolo"}
 
 
