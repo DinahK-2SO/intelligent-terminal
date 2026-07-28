@@ -13,7 +13,7 @@
 namespace TerminalApp::AgentUsage
 {
     inline constexpr size_t MaxItems = 8;
-    inline constexpr size_t MaxPrimaryItems = 2;
+    inline constexpr size_t MaxPrimaryItems = 3;
 
     struct Item
     {

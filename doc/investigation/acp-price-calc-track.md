@@ -36,8 +36,37 @@ code it describes.
 | 10. Partial/error UI states | Cost-only, tokens-only, malformed, and absent reports never crash UI | Add one tested primary-display state and deterministic local mocks | Complete |
 | 11. Provider extension boundary | Every known family has a module; unverified private payloads yield no data | Add a typed provider registry with empty trust allowlists | Complete |
 | 12. PowerShell 7 E2E host | E2E rejects the wrong host and children use the canonical executable | Pin `C:\Program Files\PowerShell\7\pwsh.exe` in the existing harness | Complete |
+| 13. Token breakdown Bottom Bar | Input/output metrics render as `(in)`/`(out)` with reported cost in a bounded third slot | Extend only the pure C++ display policy | Complete |
+| 14. Standard turn Usage and Gemini runtime | Independent metrics merge; standard end-turn Usage wins; exact Gemini private identity is the only fallback | Extend the Rust domain, wire prompt responses, and use the official Gemini ACP launch | Pending |
 
 ## Completed Steps
+
+### Step 13 - Token Breakdown Bottom Bar
+
+**RED**
+
+- Added `BuildPrimaryDisplayTextsFormatsInputOutputAndCost` before the display policy supported
+  token direction labels or a third primary item. The test requires `12341 (in)`, `23 (out)`, and
+  reported cost in that order.
+
+**GREEN**
+
+- Added explicit `(in)` and `(out)` formatting for normalized token metrics.
+- Increased the bounded primary display from two to three items and prioritized input, output,
+  and reported cost when a breakdown exists.
+- Preserved the existing context/cost fallback when no token breakdown is present. No provider,
+  ACP, or credential logic was added to C++.
+
+**Validation**
+
+- `AgentUsageTests`: 14 passed, 0 failed, 0 skipped.
+- Existing context/cost fallback and empty/clear behavior remain covered by the same C++ suite.
+
+**Committed files**
+
+- `src/cascadia/TerminalApp/AgentUsage.h/.cpp`
+- `src/cascadia/ut_app/AgentUsageTests.cpp`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 0 - Provider and Build Baseline
 

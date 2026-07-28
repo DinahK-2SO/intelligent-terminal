@@ -42,6 +42,7 @@ namespace TerminalAppUnitTests
         TEST_METHOD(UpdateCacheReplacesAndClears);
         TEST_METHOD(UpdateCachePreservesPreviousOnMalformedInput);
         TEST_METHOD(BuildPrimaryDisplayTextsFormatsContextAndCost);
+        TEST_METHOD(BuildPrimaryDisplayTextsFormatsInputOutputAndCost);
         TEST_METHOD(BuildPrimaryDisplayTextsCapsMainBarItems);
         TEST_METHOD(BuildPrimaryDisplayShowsCostWithoutTokens);
         TEST_METHOD(BuildPrimaryDisplayShowsTokensWithoutCost);
@@ -169,6 +170,25 @@ namespace TerminalAppUnitTests
         VERIFY_ARE_EQUAL(static_cast<size_t>(2), texts.size());
         VERIFY_ARE_EQUAL(std::wstring{ L"1024 / 8192 Tokens" }, texts[0]);
         VERIFY_ARE_EQUAL(std::wstring{ L"0.004 USD" }, texts[1]);
+    }
+
+    void AgentUsageTests::BuildPrimaryDisplayTextsFormatsInputOutputAndCost()
+    {
+        Json::Value usage{ Json::objectValue };
+        usage["items"] = Json::Value{ Json::arrayValue };
+        usage["items"].append(makeUsageItem("acp.tokens.input", "12341", "token"));
+        usage["items"].append(makeUsageItem("acp.tokens.output", "23", "token"));
+        usage["items"].append(makeUsageItem("acp.context.window", "1024", "token", "8192"));
+        usage["items"].append(makeUsageItem("acp.billing.cost", "0.004", "USD"));
+
+        const auto texts = TerminalApp::AgentUsage::BuildPrimaryDisplayTexts(
+            TerminalApp::AgentUsage::Parse(usage),
+            L"Tokens");
+
+        VERIFY_ARE_EQUAL(static_cast<size_t>(3), texts.size());
+        VERIFY_ARE_EQUAL(std::wstring{ L"12341 (in)" }, texts[0]);
+        VERIFY_ARE_EQUAL(std::wstring{ L"23 (out)" }, texts[1]);
+        VERIFY_ARE_EQUAL(std::wstring{ L"0.004 USD" }, texts[2]);
     }
 
     void AgentUsageTests::BuildPrimaryDisplayTextsCapsMainBarItems()

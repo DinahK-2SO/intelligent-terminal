@@ -137,15 +137,22 @@ namespace TerminalApp::AgentUsage
     {
         std::vector<std::wstring> texts;
         texts.reserve(std::min(items.size(), MaxPrimaryItems));
-        for (const auto& item : items)
-        {
+        const auto append = [&](const Item& item) {
             if (texts.size() == MaxPrimaryItems)
             {
-                break;
+                return;
             }
 
             auto text = til::u8u16(item.valueDecimalText);
-            if (item.metricId == "acp.context.window" && item.limitDecimalText)
+            if (item.metricId == "acp.tokens.input")
+            {
+                text += L" (in)";
+            }
+            else if (item.metricId == "acp.tokens.output")
+            {
+                text += L" (out)";
+            }
+            else if (item.metricId == "acp.context.window" && item.limitDecimalText)
             {
                 text += L" / ";
                 text += til::u8u16(*item.limitDecimalText);
@@ -158,6 +165,25 @@ namespace TerminalApp::AgentUsage
                 text += til::u8u16(item.unitId);
             }
             texts.emplace_back(std::move(text));
+        };
+
+        const auto hasTokenBreakdown = std::ranges::any_of(items, [](const auto& item) {
+            return item.metricId == "acp.tokens.input" || item.metricId == "acp.tokens.output";
+        });
+        if (hasTokenBreakdown)
+        {
+            for (const auto metricId : { "acp.tokens.input", "acp.tokens.output", "acp.billing.cost" })
+            {
+                const auto item = std::ranges::find(items, metricId, &Item::metricId);
+                if (item != items.end())
+                {
+                    append(*item);
+                }
+            }
+        }
+        else
+        {
+            std::ranges::for_each(items, append);
         }
         return texts;
     }
