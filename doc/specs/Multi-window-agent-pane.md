@@ -942,11 +942,27 @@ happens to be — this lets `/yolo` itself refuse with a clear
 `tools/wta/src/app.rs`) even when the global setting is off.
 
 When either path is active for a given request, `request_permission`
-skips the blocking `PermissionRequest` UI event entirely, picks the best
-"allow" option (`allow_always` preferred over `allow_once` — see
-`pick_allow_option`), responds immediately, and posts a passive
-`AppEvent::SessionSystemMessage` to that session's tab chat so the user
-still sees what was approved.
+skips the blocking `PermissionRequest` UI event entirely and picks the
+best "allow" option (`allow_always` preferred over `allow_once` — see
+`pick_allow_option`), responding immediately with no user-visible
+notification: auto-approval is deliberately silent so tool calls don't
+clutter the conversation with a message per approval.
+
+**Agent-native allow-all (preferred over client-side interception, when
+available).** Some agents' ACP servers advertise a per-session
+`config_options` entry (category `permissions`, id `allow_all`) in their
+`session/new` response — confirmed for Copilot CLI's ACP server.
+`permission_select.rs` detects this and, whenever a session is (or
+becomes) in yolo mode, calls `session/set_config_option(allow_all, "on")`
+for that `session_id` so the agent itself stops sending
+`session/request_permission` entirely, rather than WTA intercepting and
+auto-answering each request. This is applied at every session-creation
+call site in `client.rs`, plus retroactively via
+`MasterExtRequest::SetSessionAllowAll` when `/yolo` is typed on an
+already-live session. Agents without this option (Claude/Gemini/Codex
+adapters, as far as tested) are unaffected — the client-side
+`request_permission` interception above remains the unconditional
+fallback for every agent.
 
 ## What this does NOT solve (out of scope)
 

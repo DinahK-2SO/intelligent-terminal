@@ -153,7 +153,7 @@ system.cannot_resume_phantom_via_flag: "%{agent} სესიის %{session_id
 system.cannot_resume_phantom_via_load: "%{agent} სესიის %{session_id} გაგრძელება შეუძლებელია: ის დაიწყო, მაგრამ არცერთი საუბარი არ დაუგროვებია, ამიტომ %{agent} უარყოფს ჩატვირთვას. მწკრივის წაშლა."
 system.fallback.this_agent: "ეს agent"
 system.fallback.connected_agent: "დაკავშირებული agent"
-system.yolo_blocked_by_policy: "Yolo რეჟიმი თქვენი ორგანიზაციის პოლიტიკით გამორთულია."  # {Locked="/yolo"}
+system.yolo_blocked_by_policy: "Yolo რეჟიმი თქვენი ორგანიზაციის პოლიტიკით გამორთულია."
 
 
 # ── CLI გამოსავალი რანტაიმში (src/main.rs) ────────────────────────────────────
