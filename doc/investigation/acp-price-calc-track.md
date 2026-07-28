@@ -39,8 +39,41 @@ code it describes.
 | 12. PowerShell 7 E2E host | E2E rejects the wrong host and children use the canonical executable | Pin `C:\Program Files\PowerShell\7\pwsh.exe` in the existing harness | Complete |
 | 13. Token breakdown Bottom Bar | Input/output metrics render as `(in)`/`(out)` with reported cost in a bounded third slot | Extend only the pure C++ display policy | Complete |
 | 14. Standard turn Usage and Gemini runtime | Independent metrics merge; standard end-turn Usage wins; exact Gemini private identity is the only fallback | Extend the Rust domain, wire prompt responses, and use the official Gemini ACP launch | Complete |
+| 15. Self-contained provider capture harness | Missing script and command/question/output drift fail the local contract | One PowerShell 7 JSON-RPC client with the five exact prototype commands | Complete |
+| 16. Real provider comparison results | Missing, malformed, mismatched-question, or credential-bearing results fail validation | Run all five local ACP agents and save one sanitized JSON result each | Pending |
 
 ## Completed Steps
+
+### Step 15 - Self-Contained Provider Capture Harness
+
+**RED**
+
+- Added a local contract test before the capture script existed. It failed with
+  `Missing capture script: ...\Invoke-Providers.ps1`.
+- The contract fixes the exact shared question, five result names, and the same launch commands
+  currently used by the Intelligent Terminal prototype.
+
+**GREEN**
+
+- Added one PowerShell 7 script with no repository-module imports or generated dependencies.
+- The script drives newline-delimited ACP JSON-RPC over stdio through `initialize`, `session/new`,
+  and `session/prompt`, collects all session updates and final response, and writes one structured
+  JSON document per provider.
+- `-PlanOnly` makes command/question/output drift testable without launching providers;
+  `-Provider` permits a failed provider to be rerun independently.
+- The writer rejects credential-like fields before creating a result file and never persists
+  stderr or environment values.
+
+**Validation**
+
+- RED contract: failed because `Invoke-Providers.ps1` did not exist.
+- GREEN contract: `Per-provider ACP capture contract: PASS` under the required PowerShell 7 host.
+
+**Committed files**
+
+- `doc/investigation/per-provider-investigation/Invoke-Providers.ps1`
+- `doc/investigation/per-provider-investigation/Test-Invoke-Providers.ps1`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 13 - Token Breakdown Bottom Bar
 
