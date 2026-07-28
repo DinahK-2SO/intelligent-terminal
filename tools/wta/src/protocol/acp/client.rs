@@ -202,6 +202,18 @@ pub enum MasterExtRequest {
         session_id: Option<acp::schema::v1::SessionId>,
         model: String,
     },
+    /// Retroactively apply the agent-native allow-all permission config
+    /// (see `permission_select`) to an *already-connected* session, for the
+    /// `/yolo` slash command: `App::cmd_yolo` has already inserted the
+    /// session into `yolo_sessions` (so the client-side `request_permission`
+    /// fallback works immediately), but if the current agent advertises the
+    /// native channel, this makes the agent stop asking altogether rather
+    /// than relying on WTA intercepting and auto-answering each request.
+    /// A no-op (logged, not fatal) when the current agent doesn't advertise
+    /// the native config — the client-side fallback still covers it.
+    SetSessionAllowAll {
+        session_id: acp::schema::v1::SessionId,
+    },
 }
 
 /// User-initiated request to resume a historical agent session by calling
@@ -2047,6 +2059,45 @@ fn log_acp_new_session_result(
     );
 }
 
+/// After a `new_session` response, records whether this agent advertises a
+/// native allow-all permission config (`permission_select`), and — if this
+/// brand-new session is already in yolo mode (global toggle, or a `/yolo`
+/// that raced ahead of session creation) — proactively applies it so the
+/// agent never sends `session/request_permission` for this session at all.
+/// Best-effort: on failure (agent doesn't actually support the call despite
+/// advertising it, transient error, etc.) this just logs a warning — the
+/// existing client-side `request_permission` auto-approve in `client.rs`
+/// still catches everything as a fallback.
+async fn maybe_apply_native_allow_all(
+    conn: &conn::ClientLink,
+    resp: &acp::schema::v1::NewSessionResponse,
+    session_id: &acp::schema::v1::SessionId,
+) {
+    crate::protocol::acp::permission_select::record_from_new_session(resp);
+    if crate::protocol::acp::permission_select::is_yolo_session(&session_id.to_string()) {
+        match crate::protocol::acp::permission_select::apply_native_allow_all(
+            conn,
+            session_id.clone(),
+        )
+        .await
+        {
+            Ok(true) => tracing::info!(
+                target: "acp",
+                session_id = %session_id,
+                "native allow-all applied to new yolo session"
+            ),
+            Ok(false) => {} // agent has no native channel; request_permission fallback covers it
+            Err(e) => tracing::warn!(
+                target: "acp",
+                session_id = %session_id,
+                error = ?e,
+                "native allow-all apply failed for new yolo session; \
+                 falling back to request_permission interception"
+            ),
+        }
+    }
+}
+
 /// Handle a `session/load` failure (Err or timeout) in the
 /// `load_session_rx` arm of `run_acp_client_over_pipe`.
 ///
@@ -2118,6 +2169,7 @@ async fn handle_load_failure(
             crate::agent_pane_origin::append_default(new_sid.0.as_ref(), pane_for_index);
             let (available_models, current_model_id) =
                 crate::protocol::acp::model_select::models_from_new_session(&resp);
+            maybe_apply_native_allow_all(&conn, &resp, &new_sid).await;
             let _ = event_tx.send(AppEvent::SessionAttached {
                 tab_id,
                 session_id: new_sid.to_string(),
@@ -2272,6 +2324,14 @@ pub async fn run_acp_client_over_pipe(
         global_auto_approve_tools,
         yolo_sessions: yolo_sessions.clone(),
     });
+    // Mirror the same two values so `dispatch_new_session`/`dispatch_prompt_body`/
+    // `handle_load_failure` (which don't otherwise carry them) can decide
+    // whether a brand-new session should get the agent-native allow-all
+    // config applied right away — see `permission_select` module docs.
+    crate::protocol::acp::permission_select::init_yolo_state(
+        global_auto_approve_tools,
+        yolo_sessions.clone(),
+    );
 
     let client = WtaClient {
         state: state.clone(),
@@ -2669,6 +2729,7 @@ pub async fn run_acp_client_over_pipe(
 
             let (available_models, current_model_id) =
                 crate::protocol::acp::model_select::models_from_new_session(&session);
+            maybe_apply_native_allow_all(&conn, &session, &session_id).await;
             (session_id, available_models, current_model_id, true)
         };
 
@@ -3082,6 +3143,33 @@ fn dispatch_master_ext_request(
                     }
                 }
             }
+            MasterExtRequest::SetSessionAllowAll { session_id } => {
+                match crate::protocol::acp::permission_select::apply_native_allow_all(
+                    &conn,
+                    session_id.clone(),
+                )
+                .await
+                {
+                    Ok(true) => tracing::info!(
+                        target: "acp",
+                        session_id = %session_id.0,
+                        "native allow-all hot-applied to live /yolo session"
+                    ),
+                    Ok(false) => tracing::debug!(
+                        target: "acp",
+                        session_id = %session_id.0,
+                        "agent has no native allow-all channel; \
+                         request_permission interception covers this /yolo session"
+                    ),
+                    Err(err) => tracing::warn!(
+                        target: "acp",
+                        session_id = %session_id.0,
+                        error = ?err,
+                        "native allow-all hot-apply failed; \
+                         request_permission interception still covers this session"
+                    ),
+                }
+            }
         }
     });
 }
@@ -3386,6 +3474,7 @@ fn dispatch_new_session(
         }
         let (per_tab_models, per_tab_current) =
             crate::protocol::acp::model_select::models_from_new_session(&new_session);
+        maybe_apply_native_allow_all(&conn, &new_session, &new_sid).await;
 
         {
             let mut g = tab_to_session.lock().await;
@@ -3653,6 +3742,7 @@ async fn dispatch_prompt_body(
             }
             let (per_tab_models, per_tab_current) =
                 crate::protocol::acp::model_select::models_from_new_session(&new_session);
+            maybe_apply_native_allow_all(&conn_task, &new_session, &new_sid).await;
             let _ = event_tx_task.send(AppEvent::SessionAttached {
                 tab_id: tab_key_task.clone(),
                 session_id: new_sid.to_string(),

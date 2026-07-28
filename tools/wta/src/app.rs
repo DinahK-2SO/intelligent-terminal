@@ -5895,7 +5895,21 @@ impl App {
         }
         let session_id = self.current_tab().session_id.clone();
         if let Some(sid) = session_id {
-            self.yolo_sessions.lock().unwrap().insert(sid);
+            self.yolo_sessions.lock().unwrap().insert(sid.clone());
+            // Best-effort: if the connected agent advertises a native
+            // per-session allow-all permission config (currently confirmed
+            // for Copilot CLI's ACP server — see `permission_select` module
+            // docs), apply it immediately so the agent itself stops
+            // sending `session/request_permission` for this session,
+            // rather than relying solely on WTA intercepting and
+            // auto-answering each one. A no-op on agents without the
+            // native channel; the client-side interception above already
+            // covers those unconditionally.
+            let _ = self.master_request_tx.send(
+                crate::protocol::acp::client::MasterExtRequest::SetSessionAllowAll {
+                    session_id: agent_client_protocol::schema::v1::SessionId::new(sid),
+                },
+            );
         }
         // No session yet (pane still connecting) — /yolo still just records
         // into `yolo_sessions` above once a session_id exists; nothing else
