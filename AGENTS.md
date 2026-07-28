@@ -27,7 +27,19 @@ try to reuse existing tests code, but note that the existing test framework 可�
 
 ========================
 
-Stage 3
+每完成一个 RED -> GREEN 步骤并通过 focused validation 后，必须立即：
+
+1. 更新 doc/investigation/acp-price-calc-track.md；
+2. commit 该步骤的产品代码、现有框架测试和tracking note；
+3. push 到 user/DinahK-2SO/acp-price-calc；
+4. push成功后才能开始下一步骤。
+
+本地新E2E框架、脚本、wire和截图全部保留但不commit。
+需要提交的截图必须复制到一个非ignored的指定目录；否则截图仅记录路径和验证结果到tracking note。
+
+若分支分叉、push失败或存在无法安全同步的远端提交，必须停止开始下一步骤，先报告并解决同步问题。
+
+========================
 
 Some Updates on the feature requests:
 
