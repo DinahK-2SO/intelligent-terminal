@@ -45,13 +45,18 @@ foreach ($provider in $expected.Keys) {
     }
 }
 
-$resultDirectory = Join-Path $PSScriptRoot 'result'
-New-Item -ItemType Directory -Path $resultDirectory -Force | Out-Null
-'stale' | Set-Content -LiteralPath (Join-Path $resultDirectory 'summary.md')
-'stale' | Set-Content -LiteralPath (Join-Path $resultDirectory 'old.json')
-& $scriptPath -CleanOnly
-if (@(Get-ChildItem -LiteralPath $resultDirectory -Force).Count -ne 0) {
-    throw 'CleanOnly did not empty the result directory.'
+$cleanupDirectory = Join-Path $env:TEMP "provider-investigation-clean-$([guid]::NewGuid().ToString('N'))"
+try {
+    New-Item -ItemType Directory -Path $cleanupDirectory -Force | Out-Null
+    'stale' | Set-Content -LiteralPath (Join-Path $cleanupDirectory 'summary.md')
+    'stale' | Set-Content -LiteralPath (Join-Path $cleanupDirectory 'old.json')
+    & $scriptPath -ResultDirectory $cleanupDirectory -CleanOnly
+    if (@(Get-ChildItem -LiteralPath $cleanupDirectory -Force).Count -ne 0) {
+        throw 'CleanOnly did not empty the result directory.'
+    }
+}
+finally {
+    Remove-Item -LiteralPath $cleanupDirectory -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 'Per-provider ACP capture contract: PASS'

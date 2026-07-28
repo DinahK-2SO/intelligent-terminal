@@ -22,6 +22,7 @@ foreach ($entry in $plan) {
     }
     $result = $raw | ConvertFrom-Json -Depth 100
     if ($result.provider -ne $entry.provider) { throw "Provider mismatch in $($entry.output)." }
+    if ($result.turn -ne $entry.turn) { throw "Turn mismatch in $($entry.output)." }
     if ($result.command -ne $entry.command) { throw "Command mismatch in $($entry.output)." }
     if (-not $result.PSObject.Properties['model'] -or $result.model -ne $entry.model) {
         throw "Model mismatch in $($entry.output)."
@@ -32,11 +33,24 @@ foreach ($entry in $plan) {
             throw "Missing $field in $($entry.output)."
         }
     }
-    if ([string]$result.answer -notmatch '(?<!\d)42(?!\d)') {
-        throw "$($entry.provider) answer does not contain 42: $($result.answer)"
+    if ([string]::IsNullOrWhiteSpace([string]$result.answer)) {
+        throw "$($entry.provider) turn $($entry.turn) has an empty answer."
+    }
+    if ($result.turn -eq 1 -and [string]$result.answer -notmatch '(?<!\d)42(?!\d)') {
+        throw "$($entry.provider) first answer does not contain 42: $($result.answer)"
     }
     if (-not $result.promptResponse.PSObject.Properties['stopReason']) {
         throw "Missing prompt stopReason in $($entry.output)."
+    }
+}
+
+foreach ($provider in @($plan.provider | Sort-Object -Unique)) {
+    $providerResults = @($plan | Where-Object provider -eq $provider | Sort-Object turn |
+            ForEach-Object { Get-Content -LiteralPath $_.output -Raw | ConvertFrom-Json -Depth 100 })
+    $sessionIds = @($providerResults | ForEach-Object { [string]$_.newSession.sessionId } |
+            Sort-Object -Unique)
+    if ($sessionIds.Count -ne 1) {
+        throw "$provider turns did not share one ACP session."
     }
 }
 

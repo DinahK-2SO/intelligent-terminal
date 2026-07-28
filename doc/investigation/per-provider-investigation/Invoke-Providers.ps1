@@ -3,6 +3,7 @@ param(
     [ValidateSet('claude', 'codex', 'copilot', 'gemini', 'opencode')]
     [string[]]$Provider = @('claude', 'codex', 'copilot', 'gemini', 'opencode'),
     [string]$Cwd = (Get-Location).Path,
+    [string]$ResultDirectory = (Join-Path $PSScriptRoot 'result'),
     [int]$TimeoutSeconds = 300,
     [switch]$PlanOnly,
     [switch]$CleanOnly
@@ -23,7 +24,6 @@ $commands = [ordered]@{
     opencode = 'opencode acp'
 }
 $models = @{ opencode = 'opencode/deepseek-v4-flash-free' }
-$resultDirectory = Join-Path $PSScriptRoot 'result'
 $plan = @($Provider | ForEach-Object {
         $providerName = $_
         for ($index = 0; $index -lt $questions.Count; $index++) {
@@ -39,8 +39,8 @@ $plan = @($Provider | ForEach-Object {
     })
 
 function Reset-ResultDirectory {
-    Remove-Item -LiteralPath $resultDirectory -Recurse -Force -ErrorAction SilentlyContinue
-    New-Item -ItemType Directory -Path $resultDirectory -Force | Out-Null
+    Remove-Item -LiteralPath $ResultDirectory -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Path $ResultDirectory -Force | Out-Null
 }
 
 if ($PlanOnly) { return $plan }

@@ -42,7 +42,7 @@ code it describes.
 | 15. Self-contained provider capture harness | Missing script and command/question/output drift fail the local contract | One PowerShell 7 JSON-RPC client with the five exact prototype commands | Complete |
 | 16. Real provider comparison results | Missing, malformed, mismatched-question, or credential-bearing results fail validation | Run all five local ACP agents and save one sanitized JSON result each | Complete |
 | 17. Dynamic same-session provider turns | Fixed one-question plans and stale result files fail the harness contract | Drive an indexed question array in one session per provider and clean result before capture | Complete |
-| 18. Two-turn provider comparison results | Missing rounds or different session IDs fail result validation | Regenerate ten real ACP JSON files and compare first/second-turn Usage | Pending |
+| 18. Two-turn provider comparison results | Missing rounds or different session IDs fail result validation | Regenerate ten real ACP JSON files and compare first/second-turn Usage | Complete |
 
 ## Completed Steps
 
@@ -157,6 +157,48 @@ code it describes.
 - `doc/investigation/per-provider-investigation/Test-Invoke-Providers.ps1`
 - `doc/investigation/per-provider-investigation/README.md`
 - Previous `doc/investigation/per-provider-investigation/result/*` files (deleted)
+- `doc/investigation/acp-price-calc-track.md`
+
+### Step 18 - Two-Turn Provider Comparison Results
+
+**RED**
+
+- Ran the multi-turn result validator after Step 17 intentionally removed all prior outputs. It
+  failed with `Expected 10 JSON results, got 0`.
+- The validator requires every provider's two files to share exactly one `newSession.sessionId`,
+  match the indexed question plan, contain a non-empty answer, and retain `42` for turn 1.
+
+**GREEN**
+
+- Captured both ordered questions in one live ACP session for each of Claude, Codex, Copilot,
+  Gemini, and OpenCode, producing ten automatically numbered JSON files.
+- Found and fixed a harness-test isolation defect before final validation: cleanup testing now uses
+  a unique temporary `-ResultDirectory`, so running the plan contract after capture preserves the
+  real results. Default real captures still clear the official result directory first.
+- Recorded turn-scoped updates separately while repeating the shared initialize/new-session/model
+  evidence in both files for direct inspection.
+
+**Validation**
+
+- PowerShell plan/numbering/model/isolated-cleanup contract: PASS; real result count remained 10.
+- Ten-result question/turn/schema/non-empty-answer/same-session/credential guard: PASS.
+- Exactly ten JSON files exist: `claude-1/2`, `codex-1/2`, `copilot-1/2`, `gemini-1/2`, and
+  `opencode-1/2`.
+- Exact configured Gemini key and common Google/OpenAI/GitHub/JWT credential shapes are absent.
+- Claude prompt Usage is per-call including cache; its standard cost increased cumulatively from
+  0.17178825 to 0.1898541 USD. Codex and OpenCode prompt Usage are per-call including cache;
+  `usage_update.used` behaves as a latest context gauge. Gemini private input reflects each call's
+  prompt/context including history and output is turn-specific. Copilot reports no structured
+  Usage in either turn.
+
+**Committed files**
+
+- `doc/investigation/per-provider-investigation/Invoke-Providers.ps1`
+- `doc/investigation/per-provider-investigation/Test-Invoke-Providers.ps1`
+- `doc/investigation/per-provider-investigation/Test-Results.ps1`
+- `doc/investigation/per-provider-investigation/README.md`
+- `doc/investigation/per-provider-investigation/result/*-1.json`
+- `doc/investigation/per-provider-investigation/result/*-2.json`
 - `doc/investigation/acp-price-calc-track.md`
 
 ### Step 13 - Token Breakdown Bottom Bar
