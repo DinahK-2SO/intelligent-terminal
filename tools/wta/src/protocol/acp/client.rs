@@ -1538,14 +1538,14 @@ struct WtaClient {
 }
 
 /// Pick the best "allow" option for yolo-mode auto-approval. Prefers an
-/// `allow_always` kind (fewer future prompts for this session) over a
-/// one-shot `allow_once`, falling back to the first `is_allow()` option in
+/// `AllowAlways` kind (fewer future prompts for this session) over a
+/// one-shot `AllowOnce`, falling back to the first `is_allow()` option in
 /// whatever order the agent sent them. Returns `None` if the agent offered
 /// no allow-shaped option at all (shouldn't normally happen).
 fn pick_allow_option(options: &[PermOption]) -> Option<&PermOption> {
     options
         .iter()
-        .find(|o| o.kind.eq_ignore_ascii_case("allow_always") || o.kind.eq_ignore_ascii_case("AllowAlways"))
+        .find(|o| o.kind.eq_ignore_ascii_case("AllowAlways"))
         .or_else(|| options.iter().find(|o| o.is_allow()))
 }
 
