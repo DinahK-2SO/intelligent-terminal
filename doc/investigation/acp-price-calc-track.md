@@ -52,6 +52,7 @@ code it describes.
 | 25. Metric-aware master coalescing | New pending context must not erase an undelivered optional cost | Merge pending context/cost semantics before latest-value replacement | Complete |
 | 26. Per-metric stale state | Transport loss must not present retained Usage as current | Track context/cost freshness independently and hide stale primary metrics | Complete |
 | 27. Provider-reported currency | Non-uppercase or non-three-character currency must pass through unchanged | Remove application-level currency shape policy | Complete |
+| 28. Main integration | Main's WTA module extraction must retain every Usage contract and pass full desktop/provider validation | Merge main, migrate code/tests to new owners, repair stale launch assertions | Complete |
 
 ## Completed Steps
 
@@ -59,6 +60,62 @@ code it describes.
 > Gemini private quota. Step 19-20 supersede that product behavior after the five-provider,
 > two-turn investigation and team review. Step 27 supersedes Step 23's currency-shape filtering;
 > amount validity and metric isolation remain unchanged.
+
+### Step 28 - Main Integration
+
+**Merge and conflicts**
+
+- Merged `main` at `84c4d7da5` into `user/DinahK-2SO/acp-price-calc`.
+- Resolved three content conflicts: `test/e2e/README.md`, `tools/wta/src/app.rs`, and
+  `tools/wta/src/master/mod.rs`.
+- Main had extracted the large App and Master files. Adopted that structure and migrated Usage
+  contracts/events to `app_contracts/event.rs`, handling to `app_events.rs`, projection to
+  `app_status_projection.rs`, App tests to `app_tests.rs`, and Master tests to `master/tests.rs`.
+- Preserved main's PowerShell/UI documentation while retaining the repository-required absolute
+  PowerShell 7 path.
+
+**Integration RED and GREEN**
+
+- The first full merged Rust run failed 5 tests because main's newly extracted Master tests still
+  expected deprecated `gemini --experimental-acp`; production and the existing registry correctly
+  returned the previously verified official `gemini --acp`. Updated only the stale assertions.
+- The next Master run failed 1 test because the extracted assertion omitted the branch's pinned
+  Claude adapter version. Updated it to `@agentclientprotocol/claude-agent-acp@0.59.0`.
+- Migrated the complete provider-owned Usage test surface into main's new test owners, including
+  owner-tab routing, independent metric merge, lifecycle boundaries, protocol-error recovery,
+  per-metric stale state, reliable coalescing, and route-rebind cleanup.
+- Updated ignored local desktop fixtures to the final contract: over-capacity context is displayed,
+  prior cost is retained, and normalized cost-only injection uses canonical `acp.billing.cost`.
+  These local scripts/screenshots remain uncommitted as required.
+
+**Validation**
+
+- Merged WTA test target compiled successfully with `cargo test --no-run`.
+- Focused Usage/provider, helper dispatch, App lifecycle/recovery/stale, and Master coalescing/rebind
+  tests all passed and were discovered by the merged test binary.
+- Master module: 64 passed, 0 failed.
+- Full WTA Rust suite: 1226 passed, 0 failed.
+- `AgentUsageTests`: 16 passed, 0 failed, 0 skipped.
+- x64 Debug WTA and CascadiaPackage build/deploy/launch succeeded from merged source. Deployed
+  package: `IntelligentTerminal_0.8.0.2_x64__rd9vj3e6a2mbr`; WTA SHA256:
+  `06B7E64C6993651496F3094355FC5EBCAC60A4CC47F9B36110F5DAE36F256456`.
+- Synthetic full pipeline passed: over-capacity `987654321 / 123456789 Tokens` displayed while
+  `0.004 USD` remained visible and both chat turns survived.
+- Synthetic edge cases passed: cost-only, context-only, over-capacity, and no-Usage; every process
+  stayed alive and each scenario produced a screenshot.
+- Real Gemini `gemini-3.1-flash-lite`: prompt completed and private quota remained hidden.
+- Real OpenCode 1.18.3 `opencode/deepseek-v4-flash-free`: displayed
+  `11925 / 200000 Tokens` and reported `0 USD`; input/output breakdown remained hidden.
+- Visual inspection confirmed the Bottom Bar contents above and found no overlap.
+
+**Committed files**
+
+- Merge from `main` plus conflict resolutions.
+- `tools/wta/src/{app,app_events,app_status_projection,app_tests}.rs`
+- `tools/wta/src/app_contracts/event.rs`
+- `tools/wta/src/master/{mod,tests}.rs`
+- `test/e2e/README.md`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 27 - Provider-Reported Currency
 
