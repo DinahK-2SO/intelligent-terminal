@@ -6,7 +6,6 @@ use super::{
 pub(super) struct GeminiUsageAdapter;
 
 pub(super) static ADAPTER: GeminiUsageAdapter = GeminiUsageAdapter;
-const SCHEMA_ID: &str = "gemini-cli.acp.prompt-response-meta.quota.v1";
 
 impl ProviderUsageAdapter for GeminiUsageAdapter {
     fn family_id(&self) -> &'static str {
@@ -14,52 +13,18 @@ impl ProviderUsageAdapter for GeminiUsageAdapter {
     }
 
     fn private_usage_policy(&self) -> PrivateUsagePolicy {
-        PrivateUsagePolicy::VerifiedPrivate
+        PrivateUsagePolicy::StandardAcpOnly
     }
 
     fn trusted_reporter_ids(&self) -> &'static [&'static str] {
-        &["gemini-cli"]
+        &[]
     }
 
     fn extract_private_usage(
         &self,
         request: ProviderUsageRequest<'_>,
     ) -> Result<ProviderUsageContribution, ProviderUsageError> {
-        if !request
-            .reporter_id
-            .is_some_and(|reporter| self.trusted_reporter_ids().contains(&reporter))
-        {
-            return Ok(ProviderUsageContribution::default());
-        }
-        let super::ProviderUsageInput::PromptResponseMeta(meta) = request.input else {
-            return Ok(ProviderUsageContribution::default());
-        };
-        let token_count = meta
-            .get("quota")
-            .and_then(|quota| quota.get("token_count"))
-            .ok_or_else(invalid_quota)?;
-        let input_tokens = token_count
-            .get("input_tokens")
-            .and_then(serde_json::Value::as_u64)
-            .ok_or_else(invalid_quota)?;
-        let output_tokens = token_count
-            .get("output_tokens")
-            .and_then(serde_json::Value::as_u64)
-            .ok_or_else(invalid_quota)?;
-
-        Ok(ProviderUsageContribution {
-            input_tokens: Some(input_tokens),
-            output_tokens: Some(output_tokens),
-            ..Default::default()
-        })
-    }
-}
-
-fn invalid_quota() -> ProviderUsageError {
-    ProviderUsageError {
-        family_id: crate::agent_registry::GEMINI_AGENT_ID,
-        schema_id: SCHEMA_ID,
-        class: "invalid_token_count",
+        super::no_verified_private_usage(request)
     }
 }
 
@@ -87,20 +52,21 @@ mod tests {
     }
 
     #[test]
-    fn extracts_verified_gemini_prompt_response_tokens() {
+    fn ignores_gemini_private_prompt_response_tokens() {
         let meta = verified_meta();
         let contribution = ADAPTER
             .extract_private_usage(ProviderUsageRequest {
                 reporter_id: Some("gemini-cli"),
                 input: ProviderUsageInput::PromptResponseMeta(&meta),
             })
-            .expect("verified Gemini quota");
+            .expect("Gemini private quota is ignored");
 
-        assert_eq!(contribution.input_tokens, Some(10_270));
-        assert_eq!(contribution.output_tokens, Some(9));
-        assert!(contribution.context.is_none());
-        assert!(contribution.cost.is_none());
-        assert!(contribution.metrics.is_empty());
+        assert_eq!(contribution, ProviderUsageContribution::default());
+        assert_eq!(
+            ADAPTER.private_usage_policy(),
+            PrivateUsagePolicy::StandardAcpOnly
+        );
+        assert!(ADAPTER.trusted_reporter_ids().is_empty());
     }
 
     #[test]
@@ -129,19 +95,20 @@ mod tests {
     }
 
     #[test]
-    fn rejects_malformed_verified_quota() {
+    fn malformed_gemini_private_quota_is_ignored() {
         for meta in [
             serde_json::json!({}),
             serde_json::json!({ "quota": { "token_count": { "input_tokens": -1, "output_tokens": 9 } } }),
             serde_json::json!({ "quota": { "token_count": { "input_tokens": 10, "output_tokens": "9" } } }),
         ] {
-            assert!(
+            assert_eq!(
                 ADAPTER
                     .extract_private_usage(ProviderUsageRequest {
                         reporter_id: Some("gemini-cli"),
                         input: ProviderUsageInput::PromptResponseMeta(&meta),
                     })
-                    .is_err()
+                    .expect("Gemini private quota is ignored"),
+                ProviderUsageContribution::default()
             );
         }
     }

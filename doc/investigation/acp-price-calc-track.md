@@ -6,10 +6,10 @@ code it describes.
 
 ## Scope Guardrails
 
-- First release consumes stable ACP v1 `SessionUpdate::UsageUpdate`, optional standard
-  `PromptResponse.usage`, and one verified Gemini private prompt-response schema.
-- No local price conversion, credential access, billing API calls, or unverified private payload
-  parsing.
+- First release displays only standard ACP v1 `SessionUpdate::UsageUpdate` context-window data and
+  optional monetary cost.
+- No end-turn input/output display, private Gemini quota parsing, local price conversion,
+  credential access, billing API calls, or currency correction.
 - Rust owns validation, normalization, state, coalescing, and projection. C++/XAML only cache and
   render normalized data.
 - Development paths fail fast. One outer Usage containment boundary is added only after the inner
@@ -44,9 +44,68 @@ code it describes.
 | 17. Dynamic same-session provider turns | Fixed one-question plans and stale result files fail the harness contract | Drive an indexed question array in one session per provider and clean result before capture | Complete |
 | 18. Two-turn provider comparison results | Missing rounds or different session IDs fail result validation | Regenerate ten real ACP JSON files and compare first/second-turn Usage | Complete |
 | 19. Context/cost-only Bottom Bar | Input/output metrics must not render or keep Usage visible | Select only context-window and monetary-cost metrics in the pure C++ display policy | Complete |
-| 20. ACP-only runtime policy | Standard context/cost continues; turn-token and Gemini-private paths produce no Usage | Remove token runtime ingestion and private Gemini behavior while retaining provider interfaces | Pending |
+| 20. ACP-only runtime policy | Standard context/cost continues; turn-token and Gemini-private paths produce no Usage | Remove token runtime ingestion and private Gemini behavior while retaining provider interfaces | Complete |
 
 ## Completed Steps
+
+> Steps 13-14 record an earlier prototype decision to display turn token breakdown and parse
+> Gemini private quota. Step 19-20 supersede that product behavior after the five-provider,
+> two-turn investigation and team review.
+
+### Step 20 - ACP-Only Context/Cost Runtime Policy
+
+**RED**
+
+- Changed the typed snapshot/projection contracts to context and cost only. The focused build
+  failed because production still required `input_tokens` and `output_tokens` fields.
+- Changed Gemini's provider contract to `StandardAcpOnly`, an empty trusted-reporter list, and
+  no-op private quota extraction.
+- Kept the real OpenCode 1.18.3 standard `UsageUpdate` fixture as a required context/cost GREEN
+  path; its reported currency is consumed unchanged.
+
+**GREEN**
+
+- Removed optional input/output fields and projection metrics from the Rust Usage domain; merge
+  still preserves independent optional context and monetary cost for future reviewed extensions.
+- Disabled the ACP SDK end-turn token Usage feature and removed all PromptResponse token ingestion.
+- Removed Gemini private quota runtime dispatch and changed its adapter to the same standard-only,
+  no-op behavior as other providers without verified private context/cost schemas.
+- Retained the provider registry, `ProviderUsageInput` variants (including PromptResponseMeta and
+  already-fetched ProviderApiResponse), context/cost/custom metric contribution types, and Copilot
+  `Reserved` policy for future standard or separately reviewed support.
+- Kept Gemini's official `--acp` launch and non-Usage startup model compatibility; only its private
+  Usage handling was removed.
+
+**Validation**
+
+- RED focused build: two missing-field errors for `input_tokens` / `output_tokens`.
+- Usage/provider tests: 15 passed, 0 failed, including Gemini private payload no-op and real
+  OpenCode standard context/cost normalization.
+- Prompt dispatcher Gemini-private no-op integration: 1 passed, 0 failed.
+- Full WTA Rust suite: 1153 passed, 0 failed.
+- Provider extension interface grep confirms PromptResponseMeta, ProviderApiResponse, typed
+  adapter registry, and Copilot Reserved policy remain.
+- x64 Debug WTA + CascadiaPackage build/deploy succeeded; deployed WTA SHA256 matched the Cargo
+  artifact (`C00BB1513...F1842B`).
+- Local standard pipeline E2E passed: context `1024 / 8192 Tokens` and cost `0.004 USD` rendered,
+  null cleared Usage, and malformed Usage remained contained.
+- Real Gemini CLI E2E completed its prompt with Usage hidden; local screenshot:
+  `test/e2e/artifacts/real-gemini-acp/gemini-private-usage-hidden.png`.
+- Real OpenCode 1.18.3 E2E displayed only `11926 / 200000 Tokens` and its reported `0 USD`, with
+  token breakdown hidden. The currency was consumed unchanged; local screenshot:
+  `test/e2e/artifacts/opencode-acp/opencode-context-cost.png`.
+
+**Committed files**
+
+- `tools/wta/Cargo.toml`
+- `tools/wta/src/usage.rs`
+- `tools/wta/src/usage/providers/{mod,gemini,opencode}.rs`
+- `tools/wta/src/protocol/acp/client.rs`
+- `tools/wta/src/protocol/acp/mock_agent_tests.rs`
+- `tools/wta/src/app.rs`
+- `doc/investigation/acp-price-calc.md`
+- `doc/investigation/investigate-gemini.md`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 19 - Context/Cost-Only Bottom Bar
 

@@ -120,11 +120,11 @@ Full local evidence is kept under the ignored directory:
 test/e2e/artifacts/real-gemini-acp/
 ```
 
-The deployed desktop path was also verified end to end with Gemini CLI 0.51.0 and
-`gemini-3.1-flash-lite`. The prompt completed, the Bottom Bar displayed separate input and output
-token counts, and no currency was displayed. The verifier captured the final UI and confirmed that
-temporary Gemini settings, synthetic workspace files, Terminal settings backups, and Dev package
-processes were all removed or restored after the run.
+The historical prototype displayed the private input/output counts. After the final team decision,
+the deployed desktop path was reverified with Gemini CLI 0.51.0 and `gemini-3.1-flash-lite`: the
+prompt completed and Usage stayed hidden because Gemini did not emit standard context/cost. The
+verifier also confirmed that temporary settings, workspaces, backups, and Dev processes were
+removed or restored.
 
 ## Direct API Usage result
 
@@ -149,68 +149,42 @@ and output token counts; thought and total token counts are lost at the CLI ACP 
 The direct API result is stored separately as `gemini-flash-latest-api.sanitized.json` and is not
 used as an ACP fixture.
 
-## Cost conclusion
+## Final product decision
 
 Gemini CLI ACP did not report cost amount or currency. The Gemini API free tier reports token usage
 but no billed cost in the model response. Official pricing pages distinguish free and paid tiers,
 but Intelligent Terminal does not combine token counts with a public price table or estimate USD.
 
-For the tested free-tier request:
-
-- display input and output tokens reported by ACP;
-- do not display cost;
-- do not display zero cost merely because the request used free quota;
-- do not infer context-window occupancy or size;
-- do not fetch dashboards or billing APIs from the Usage parser.
+The private quota evidence remains useful for investigation, but it is not ACP-compliant data for
+the two selected product metrics. Intelligent Terminal therefore does not parse or display it.
+Gemini shows Usage only if a future CLI emits standard ACP context-window data and/or monetary cost.
 
 ## Provider token matrix
 
-| Provider | Input/output source | Context source | Cost source | First-version behavior |
+| Provider | Context source | Cost source | First-version behavior |
 |---|---|---|---|---|
-| Claude ACP 0.59.0 | Standard `PromptResponse.usage` | Standard `usage_update` | Standard `usage_update.cost` | Show in, out, and reported cost |
-| Codex ACP 1.1.2 | Standard `PromptResponse.usage` | Standard `usage_update` | Not reported | Show in and out; no cost |
-| OpenCode 1.18.3 | Standard `PromptResponse.usage` | Standard `usage_update` | Standard `usage_update.cost` | Show in, out, and reported cost |
-| Gemini CLI 0.51.0 | Private `_meta.quota.token_count` | Not reported | Not reported | Show in and out only |
-| Copilot CLI 1.0.73 | Not structurally reported | Not reported | Not reported | Hide dynamic Usage |
+| Claude ACP 0.59.0 | Standard `usage_update` | Standard `usage_update.cost` | Show context and reported cost |
+| Codex ACP 1.1.2 | Standard `usage_update` | Not reported | Show context only |
+| OpenCode 1.18.3 | Standard `usage_update` | Standard `usage_update.cost` | Show context and reported cost; trust reported currency |
+| Gemini CLI 0.51.0 | Not reported | Not reported | Hide Usage |
+| Copilot CLI | Not reported | Not reported | Hide Usage; future standard ACP works automatically |
 
-Standard ACP turn Usage is behind the Rust SDK's `unstable_end_turn_token_usage` feature. WTA enables
-that narrowly so any agent reporting the standard shape benefits without a provider-specific
-parser. Gemini uses a private adapter only because its current CLI does not emit that standard
-field.
+Standard ACP turn token Usage is not enabled because the product does not display input/output.
 
-## Gemini private adapter contract
+## Gemini private adapter status
 
-The private adapter is fail-closed:
-
-1. Host-selected family must be exactly `gemini`.
-2. The real ACP initialize reporter must be exactly `gemini-cli`.
-3. Input source must be `PromptResponse._meta`, not session-update metadata or an arbitrary
-	 extension notification.
-4. `quota.token_count.input_tokens` and `output_tokens` must both be non-negative integers.
-5. Malformed payloads produce no data and never fall back to shape matching.
-6. The adapter does not emit context or cost.
-
-The master replays the agent CLI's original initialize response to the helper, so reporter identity
-comes from the real Gemini CLI handshake. The family comes independently from the trusted
-host-selected built-in agent ID.
+The Gemini module remains in the provider registry, but its private extractor is a no-op and trusts
+no reporter IDs. The generic provider interface remains available for a future reviewed extension.
 
 ## UI decision
 
-Token breakdown metrics are independent of context-window Usage:
-
-```text
-12341 (in)    23 (out)    0.004 USD
-```
-
-When input/output breakdown is available, the Bottom Bar prioritizes input, output, and cost. When
-it is absent, existing context/cost display remains unchanged:
+The Bottom Bar displays only context-window data and monetary cost:
 
 ```text
 1024 / 8192 Tokens    0.004 USD
 ```
 
-No provider is forced to invent an output count. Agents that report only standard context Usage
-continue to show context only.
+Agents that report neither standard metric keep Usage hidden.
 
 ## Security and data handling
 

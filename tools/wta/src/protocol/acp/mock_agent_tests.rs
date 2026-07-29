@@ -46,8 +46,8 @@ enum MockBehavior {
     /// Stream the reply in two `AgentMessageChunk`s (`MOCK_` + `OK`), then end
     /// the turn — exercises streaming coalescing.
     StreamTwoChunks,
-    /// Return the verified Gemini CLI PromptResponse `_meta.quota` shape.
-    GeminiQuota,
+    /// Return Gemini's private quota metadata, which product policy ignores.
+    GeminiPrivateQuota,
 }
 
 /// Deterministic ACP agent. Implements only what the scenarios need; the rest
@@ -258,7 +258,7 @@ impl MockAgent {
                         }
                     });
                 }
-                MockBehavior::GeminiQuota => {
+                MockBehavior::GeminiPrivateQuota => {
                     return Ok(serde_json::from_value(serde_json::json!({
                         "stopReason": "end_turn",
                         "_meta": {
@@ -266,14 +266,7 @@ impl MockAgent {
                                 "token_count": {
                                     "input_tokens": 10_270,
                                     "output_tokens": 9
-                                },
-                                "model_usage": [{
-                                    "model": "gemini-3.5-flash",
-                                    "token_count": {
-                                        "input_tokens": 10_270,
-                                        "output_tokens": 9
-                                    }
-                                }]
+                                }
                             }
                         }
                     }))
@@ -666,7 +659,6 @@ async fn dispatch_prompt_busy_tab_emits_agent_busy_and_drops() {
                 &h.event_tx,
                 &h.shell_mgr,
                 &h.prompt_timing,
-                &Default::default(),
                 false, // wt_connected
                 false, // is_agent_pane
             );
@@ -716,7 +708,6 @@ async fn dispatch_prompt_round_trips_through_agent() {
                 &h.event_tx,
                 &h.shell_mgr,
                 &h.prompt_timing,
-                &Default::default(),
                 false,
                 false,
             );
@@ -775,11 +766,11 @@ async fn dispatch_prompt_round_trips_through_agent() {
 }
 
 #[tokio::test]
-async fn dispatch_prompt_projects_verified_gemini_quota() {
+async fn dispatch_prompt_ignores_gemini_private_quota() {
     let local = tokio::task::LocalSet::new();
     local
         .run_until(async {
-            let h = connect_for_dispatch(MockBehavior::GeminiQuota);
+            let h = connect_for_dispatch(MockBehavior::GeminiPrivateQuota);
             h.conn
                 .initialize(acp::schema::v1::InitializeRequest::new(
                     acp::schema::ProtocolVersion::LATEST,
@@ -799,10 +790,6 @@ async fn dispatch_prompt_projects_verified_gemini_quota() {
                 &h.event_tx,
                 &h.shell_mgr,
                 &h.prompt_timing,
-                &super::PromptUsageIdentity {
-                    family_id: Some("gemini".to_string()),
-                    reporter_id: Some("gemini-cli".to_string()),
-                },
                 false,
                 false,
             );
@@ -810,16 +797,13 @@ async fn dispatch_prompt_projects_verified_gemini_quota() {
             loop {
                 match tokio::time::timeout(std::time::Duration::from_secs(5), event_rx.recv()).await
                 {
-                    Ok(Some(AppEvent::UsageReported { snapshot, .. })) => {
-                        assert_eq!(snapshot.input_tokens, Some(10_270));
-                        assert_eq!(snapshot.output_tokens, Some(9));
-                        assert!(snapshot.context.is_none());
-                        assert!(snapshot.cost.is_none());
-                        break;
+                    Ok(Some(AppEvent::UsageReported { .. })) => {
+                        panic!("Gemini private quota must not produce Usage")
                     }
+                    Ok(Some(AppEvent::AgentMessageEnd { .. })) => break,
                     Ok(Some(_)) => continue,
-                    Ok(None) => panic!("event channel closed before Gemini usage"),
-                    Err(_) => panic!("timed out waiting for Gemini usage"),
+                    Ok(None) => panic!("event channel closed before turn end"),
+                    Err(_) => panic!("timed out waiting for turn end"),
                 }
             }
         })
@@ -880,7 +864,6 @@ async fn dispatch_prompt_sends_clipboard_image_to_agent() {
                 &h.event_tx,
                 &h.shell_mgr,
                 &h.prompt_timing,
-                &Default::default(),
                 false, // wt_connected
                 true,  // is_agent_pane
             );
@@ -943,7 +926,6 @@ async fn dispatch_prompt_new_session_failure_emits_error_and_releases_slot() {
                 &h.event_tx,
                 &h.shell_mgr,
                 &h.prompt_timing,
-                &Default::default(),
                 false,
                 false,
             );
@@ -997,7 +979,6 @@ async fn dispatch_prompt_autofix_uses_autofix_template() {
                 &h.event_tx,
                 &h.shell_mgr,
                 &h.prompt_timing,
-                &Default::default(),
                 false,
                 false,
             );

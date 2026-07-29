@@ -48,8 +48,6 @@ mod tests {
                     used: 6092,
                     size: 271790,
                 }),
-                input_tokens: None,
-                output_tokens: None,
                 cost: Some(UsageCost {
                     amount_decimal_text: "0".to_string(),
                     currency: "USD".to_string(),

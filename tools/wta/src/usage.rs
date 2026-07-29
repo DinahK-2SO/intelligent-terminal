@@ -5,8 +5,6 @@ pub mod providers;
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct UsageSnapshot {
     pub context: Option<UsageContext>,
-    pub input_tokens: Option<u64>,
-    pub output_tokens: Option<u64>,
     pub cost: Option<UsageCost>,
 }
 
@@ -20,12 +18,6 @@ impl UsageSnapshot {
     pub fn merge(&mut self, incoming: Self) {
         if incoming.context.is_some() {
             self.context = incoming.context;
-        }
-        if incoming.input_tokens.is_some() {
-            self.input_tokens = incoming.input_tokens;
-        }
-        if incoming.output_tokens.is_some() {
-            self.output_tokens = incoming.output_tokens;
         }
         if incoming.cost.is_some() {
             self.cost = incoming.cost;
@@ -58,29 +50,7 @@ pub struct UsageProjectionItem {
 
 impl From<&UsageSnapshot> for UsageProjection {
     fn from(snapshot: &UsageSnapshot) -> Self {
-        let mut items = Vec::with_capacity(4);
-        if let Some(input_tokens) = snapshot.input_tokens {
-            items.push(UsageProjectionItem {
-                metric_id: "acp.tokens.input",
-                value_decimal_text: input_tokens.to_string(),
-                limit_decimal_text: None,
-                unit_id: "token".to_string(),
-                scope: "session",
-                source: "provider_reported",
-                stale: false,
-            });
-        }
-        if let Some(output_tokens) = snapshot.output_tokens {
-            items.push(UsageProjectionItem {
-                metric_id: "acp.tokens.output",
-                value_decimal_text: output_tokens.to_string(),
-                limit_decimal_text: None,
-                unit_id: "token".to_string(),
-                scope: "session",
-                source: "provider_reported",
-                stale: false,
-            });
-        }
+        let mut items = Vec::with_capacity(2);
         if let Some(context) = &snapshot.context {
             items.push(UsageProjectionItem {
                 metric_id: "acp.context.window",
@@ -185,8 +155,6 @@ pub fn normalize_standard_usage(
             used: update.used,
             size: update.size,
         }),
-        input_tokens: None,
-        output_tokens: None,
         cost,
     })
 }
@@ -203,7 +171,13 @@ mod tests {
 
         let snapshot = normalize_standard_usage(&update).expect("valid standard usage");
 
-        assert_eq!(snapshot.context, Some(UsageContext { used: 1_024, size: 8_192 }));
+        assert_eq!(
+            snapshot.context,
+            Some(UsageContext {
+                used: 1_024,
+                size: 8_192
+            })
+        );
         assert_eq!(
             snapshot.cost,
             Some(UsageCost {
@@ -218,19 +192,23 @@ mod tests {
         let snapshot = normalize_standard_usage(&acp::schema::v1::UsageUpdate::new(20, 100))
             .expect("cost is optional");
 
-        assert_eq!(snapshot.context, Some(UsageContext { used: 20, size: 100 }));
+        assert_eq!(
+            snapshot.context,
+            Some(UsageContext {
+                used: 20,
+                size: 100
+            })
+        );
         assert!(snapshot.cost.is_none());
     }
 
     #[test]
-    fn projects_input_output_and_cost_as_distinct_metrics() {
+    fn projects_only_context_and_cost_metrics() {
         let snapshot = UsageSnapshot {
             context: Some(UsageContext {
                 used: 1_024,
                 size: 8_192,
             }),
-            input_tokens: Some(12_341),
-            output_tokens: Some(23),
             cost: Some(UsageCost {
                 amount_decimal_text: "0.004".to_string(),
                 currency: "USD".to_string(),
@@ -239,33 +217,32 @@ mod tests {
 
         let projection = UsageProjection::from(&snapshot);
 
-        assert_eq!(projection.items.len(), 4);
-        assert_eq!(projection.items[0].metric_id, "acp.tokens.input");
-        assert_eq!(projection.items[0].value_decimal_text, "12341");
-        assert_eq!(projection.items[1].metric_id, "acp.tokens.output");
-        assert_eq!(projection.items[1].value_decimal_text, "23");
-        assert_eq!(projection.items[2].metric_id, "acp.context.window");
-        assert_eq!(projection.items[3].metric_id, "acp.billing.cost");
+        assert_eq!(projection.items.len(), 2);
+        assert_eq!(projection.items[0].metric_id, "acp.context.window");
+        assert_eq!(projection.items[1].metric_id, "acp.billing.cost");
     }
 
     #[test]
-    fn merges_provider_breakdown_without_losing_standard_context_or_cost() {
-        let mut snapshot = normalize_standard_usage(
-            &acp::schema::v1::UsageUpdate::new(1_024, 8_192)
-                .cost(acp::schema::v1::Cost::new(0.004, "USD")),
-        )
-        .expect("standard usage");
+    fn merges_independent_context_and_cost_snapshots() {
+        let mut snapshot =
+            normalize_standard_usage(&acp::schema::v1::UsageUpdate::new(1_024, 8_192))
+                .expect("standard usage");
 
         snapshot.merge(UsageSnapshot {
             context: None,
-            input_tokens: Some(12_341),
-            output_tokens: Some(23),
-            cost: None,
+            cost: Some(UsageCost {
+                amount_decimal_text: "0.004".to_string(),
+                currency: "USD".to_string(),
+            }),
         });
 
-        assert_eq!(snapshot.context, Some(UsageContext { used: 1_024, size: 8_192 }));
-        assert_eq!(snapshot.input_tokens, Some(12_341));
-        assert_eq!(snapshot.output_tokens, Some(23));
+        assert_eq!(
+            snapshot.context,
+            Some(UsageContext {
+                used: 1_024,
+                size: 8_192
+            })
+        );
         assert_eq!(snapshot.cost.expect("cost").currency, "USD");
     }
 
@@ -343,7 +320,7 @@ mod tests {
         );
         assert_eq!(
             providers::lookup("gemini").unwrap().private_usage_policy(),
-            PrivateUsagePolicy::VerifiedPrivate
+            PrivateUsagePolicy::StandardAcpOnly
         );
         assert_eq!(
             providers::lookup("opencode")
@@ -370,9 +347,7 @@ mod tests {
             },
         ];
 
-        for provider in providers::all().iter().copied().filter(|provider| {
-            provider.private_usage_policy() != providers::PrivateUsagePolicy::VerifiedPrivate
-        }) {
+        for provider in providers::all().iter().copied() {
             assert!(
                 provider.trusted_reporter_ids().is_empty(),
                 "{} must not trust a private reporter before wire verification",

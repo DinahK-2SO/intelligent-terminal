@@ -11847,8 +11847,6 @@ mod tests {
             .insert("usage-session".to_string(), "OWNER-TAB".to_string());
         let snapshot = crate::usage::UsageSnapshot {
             context: Some(crate::usage::UsageContext { used: 20, size: 100 }),
-            input_tokens: None,
-            output_tokens: None,
             cost: None,
         };
 
@@ -11877,9 +11875,10 @@ mod tests {
             session_id: "usage-session".to_string(),
             snapshot: crate::usage::UsageSnapshot {
                 context: None,
-                input_tokens: Some(12_341),
-                output_tokens: Some(23),
-                cost: None,
+                cost: Some(crate::usage::UsageCost {
+                    amount_decimal_text: "0.004".to_string(),
+                    currency: "USD".to_string(),
+                }),
             },
         });
 
@@ -11888,8 +11887,7 @@ mod tests {
             .as_ref()
             .expect("merged usage");
         assert_eq!(snapshot.context, Some(crate::usage::UsageContext { used: 20, size: 100 }));
-        assert_eq!(snapshot.input_tokens, Some(12_341));
-        assert_eq!(snapshot.output_tokens, Some(23));
+        assert_eq!(snapshot.cost.as_ref().expect("merged cost").currency, "USD");
     }
 
     #[test]
@@ -11961,8 +11959,6 @@ mod tests {
     fn lifecycle_usage_snapshot() -> crate::usage::UsageSnapshot {
         crate::usage::UsageSnapshot {
             context: Some(crate::usage::UsageContext { used: 20, size: 100 }),
-            input_tokens: None,
-            output_tokens: None,
             cost: None,
         }
     }
@@ -12054,8 +12050,6 @@ mod tests {
                     used: 1_024,
                     size: 8_192,
                 }),
-                input_tokens: None,
-                output_tokens: None,
                 cost: Some(crate::usage::UsageCost {
                     amount_decimal_text: "0.004".to_string(),
                     currency: "USD".to_string(),

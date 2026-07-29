@@ -863,54 +863,6 @@ async fn complete_prompt_request<T>(
     }
 }
 
-fn normalize_prompt_response_usage(
-    family_id: Option<&str>,
-    reporter_id: Option<&str>,
-    response: &acp::schema::v1::PromptResponse,
-) -> std::result::Result<Option<crate::usage::UsageSnapshot>, crate::usage::providers::ProviderUsageError> {
-    if let Some(usage) = &response.usage {
-        return Ok(Some(crate::usage::UsageSnapshot {
-            context: None,
-            input_tokens: Some(usage.input_tokens),
-            output_tokens: Some(usage.output_tokens),
-            cost: None,
-        }));
-    }
-    let Some(family_id) = family_id else {
-        return Ok(None);
-    };
-    let Some(adapter) = crate::usage::providers::lookup(family_id) else {
-        return Ok(None);
-    };
-    let Some(meta) = response.meta.as_ref() else {
-        return Ok(None);
-    };
-    let meta = serde_json::to_value(meta).map_err(|_| crate::usage::providers::ProviderUsageError {
-        family_id: adapter.family_id(),
-        schema_id: "acp.v1.prompt-response-meta",
-        class: "serialization_failed",
-    })?;
-    let contribution = adapter.extract_private_usage(
-        crate::usage::providers::ProviderUsageRequest {
-            reporter_id,
-            input: crate::usage::providers::ProviderUsageInput::PromptResponseMeta(&meta),
-        },
-    )?;
-    if contribution == crate::usage::providers::ProviderUsageContribution::default() {
-        return Ok(None);
-    }
-
-    Ok(Some(crate::usage::UsageSnapshot {
-        context: contribution.context.map(|context| crate::usage::UsageContext {
-            used: context.used,
-            size: context.size,
-        }),
-        input_tokens: contribution.input_tokens,
-        output_tokens: contribution.output_tokens,
-        cost: contribution.cost,
-    }))
-}
-
 fn truncate_for_prompt(text: &str, max_chars: usize) -> String {
     if text.chars().count() <= max_chars {
         text.to_string()
@@ -2930,7 +2882,6 @@ pub async fn run_acp_client_over_pipe(
                     &event_tx,
                     &shell_mgr,
                     &prompt_timing,
-                    &prompt_usage_identity,
                     wt_connected,
                     is_agent_pane,
                 );
@@ -3594,7 +3545,6 @@ fn dispatch_prompt(
     event_tx: &mpsc::UnboundedSender<AppEvent>,
     shell_mgr: &Arc<ShellManager>,
     prompt_timing: &Arc<PromptTimingState>,
-    usage_identity: &PromptUsageIdentity,
     wt_connected: bool,
     is_agent_pane: bool,
 ) {
@@ -3622,7 +3572,6 @@ fn dispatch_prompt(
     let event_tx_task = event_tx.clone();
     let shell_mgr_task = Arc::clone(shell_mgr);
     let prompt_timing_task = Arc::clone(prompt_timing);
-    let usage_identity_task = usage_identity.clone();
     let tab_key_task = tab_key.clone();
 
     tokio::task::spawn_local(dispatch_prompt_body(
@@ -3635,7 +3584,6 @@ fn dispatch_prompt(
         event_tx_task,
         shell_mgr_task,
         prompt_timing_task,
-        usage_identity_task,
         tab_key_task,
         wt_connected,
         is_agent_pane,
@@ -3656,7 +3604,6 @@ async fn dispatch_prompt_body(
     event_tx_task: mpsc::UnboundedSender<AppEvent>,
     shell_mgr_task: Arc<ShellManager>,
     prompt_timing_task: Arc<PromptTimingState>,
-    usage_identity: PromptUsageIdentity,
     tab_key_task: String,
     wt_connected: bool,
     is_agent_pane: bool,
@@ -3822,30 +3769,6 @@ async fn dispatch_prompt_body(
                 .as_ref()
                 .ok()
                 .and_then(|resp| SoftStopReason::from_stop_reason(resp.stop_reason));
-            if let Ok(response) = &result {
-                match normalize_prompt_response_usage(
-                    usage_identity.family_id.as_deref(),
-                    usage_identity.reporter_id.as_deref(),
-                    response,
-                ) {
-                    Ok(Some(snapshot)) => {
-                        let _ = event_tx_task.send(AppEvent::UsageReported {
-                            session_id: prompt_session_id_str.clone(),
-                            snapshot,
-                        });
-                    }
-                    Ok(None) => {}
-                    Err(error) => {
-                        tracing::warn!(
-                            target: "usage",
-                            family = error.family_id,
-                            schema = error.schema_id,
-                            error_class = error.class,
-                            "provider prompt usage rejected"
-                        );
-                    }
-                }
-            }
             complete_prompt_request(
                 result,
                 soft_stop,
@@ -3888,8 +3811,7 @@ async fn dispatch_prompt_body(
 mod tests {
     use super::{
         acp_result_failure_fields, complete_prompt_request, inject_wta_pane_meta,
-        is_redundant_startup_model_error, normalize_prompt_response_usage,
-        post_login_authenticate_error, shell_from_active, timeout_result_failure_fields,
+        is_redundant_startup_model_error, post_login_authenticate_error, shell_from_active, timeout_result_failure_fields,
         user_locale_tag, PromptTimingState, PromptUsageIdentity, SoftStopReason,
     };
     use super::acp;
@@ -4116,103 +4038,6 @@ mod tests {
             &identity,
             &acp::Error::internal_error(),
         ));
-    }
-
-    #[test]
-    fn verified_gemini_prompt_response_projects_input_and_output_tokens() {
-        let response: acp::schema::v1::PromptResponse = serde_json::from_value(serde_json::json!({
-            "stopReason": "end_turn",
-            "_meta": {
-                "quota": {
-                    "token_count": {
-                        "input_tokens": 10_270,
-                        "output_tokens": 9
-                    },
-                    "model_usage": [{
-                        "model": "gemini-3.5-flash",
-                        "token_count": {
-                            "input_tokens": 10_270,
-                            "output_tokens": 9
-                        }
-                    }]
-                }
-            }
-        }))
-        .expect("verified Gemini prompt response");
-
-        let snapshot = normalize_prompt_response_usage(
-            Some("gemini"),
-            Some("gemini-cli"),
-            &response,
-        )
-        .expect("valid private usage")
-        .expect("Gemini usage snapshot");
-
-        assert_eq!(snapshot.input_tokens, Some(10_270));
-        assert_eq!(snapshot.output_tokens, Some(9));
-        assert!(snapshot.context.is_none());
-        assert!(snapshot.cost.is_none());
-    }
-
-    #[test]
-    fn standard_prompt_response_usage_projects_input_and_output_tokens() {
-        let response: acp::schema::v1::PromptResponse = serde_json::from_value(serde_json::json!({
-            "stopReason": "end_turn",
-            "usage": {
-                "inputTokens": 460,
-                "outputTokens": 11,
-                "totalTokens": 6_118,
-                "thoughtTokens": 15,
-                "cachedReadTokens": 5_632
-            },
-            "_meta": {}
-        }))
-        .expect("verified OpenCode prompt response");
-
-        let snapshot = normalize_prompt_response_usage(
-            Some("opencode"),
-            Some("OpenCode"),
-            &response,
-        )
-        .expect("valid standard turn usage")
-        .expect("standard turn usage snapshot");
-
-        assert_eq!(snapshot.input_tokens, Some(460));
-        assert_eq!(snapshot.output_tokens, Some(11));
-        assert!(snapshot.context.is_none());
-        assert!(snapshot.cost.is_none());
-    }
-
-    #[test]
-    fn standard_prompt_usage_wins_over_private_metadata() {
-        let response: acp::schema::v1::PromptResponse = serde_json::from_value(serde_json::json!({
-            "stopReason": "end_turn",
-            "usage": {
-                "inputTokens": 100,
-                "outputTokens": 20,
-                "totalTokens": 120
-            },
-            "_meta": {
-                "quota": {
-                    "token_count": {
-                        "input_tokens": 999,
-                        "output_tokens": 888
-                    }
-                }
-            }
-        }))
-        .expect("standard and private Usage response");
-
-        let snapshot = normalize_prompt_response_usage(
-            Some("gemini"),
-            Some("gemini-cli"),
-            &response,
-        )
-        .expect("valid standard usage")
-        .expect("standard usage snapshot");
-
-        assert_eq!(snapshot.input_tokens, Some(100));
-        assert_eq!(snapshot.output_tokens, Some(20));
     }
 
     #[tokio::test]
