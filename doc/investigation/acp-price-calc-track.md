@@ -51,12 +51,44 @@ code it describes.
 | 24. Local clear preserves Usage | `/clear` must not hide the unchanged provider session's context/cost | Move Usage resets from chat clearing to explicit ACP session boundaries | Complete |
 | 25. Metric-aware master coalescing | New pending context must not erase an undelivered optional cost | Merge pending context/cost semantics before latest-value replacement | Complete |
 | 26. Per-metric stale state | Transport loss must not present retained Usage as current | Track context/cost freshness independently and hide stale primary metrics | Complete |
+| 27. Provider-reported currency | Non-uppercase or non-three-character currency must pass through unchanged | Remove application-level currency shape policy | Complete |
 
 ## Completed Steps
 
 > Steps 13-14 record an earlier prototype decision to display turn token breakdown and parse
 > Gemini private quota. Step 19-20 supersede that product behavior after the five-provider,
-> two-turn investigation and team review.
+> two-turn investigation and team review. Step 27 supersedes Step 23's currency-shape filtering;
+> amount validity and metric isolation remain unchanged.
+
+### Step 27 - Provider-Reported Currency
+
+**RED**
+
+- Replaced the currency-omission test with a pass-through contract covering `US`, `USDD`, `usd`,
+  `US1`, and `U$D`.
+- The focused test failed on the first value because the normalizer omitted its cost solely for
+  not matching the application's three-uppercase-ASCII-letter policy.
+
+**GREEN**
+
+- Removed currency length and uppercase checks from standard ACP Usage normalization.
+- WTA now preserves the provider-reported currency string unchanged and performs no correction,
+  conversion, or semantic inference. This matches the existing OpenCode product decision.
+- Cost amount must still be finite and non-negative before it can be displayed; invalid amount
+  remains isolated from valid context.
+- C++'s generic normalized-item length and non-empty checks remain cross-process UI safety bounds,
+  not currency-format policy.
+
+**Validation**
+
+- RED currency pass-through test: 1 failed, 0 passed (`None` versus reported `US`).
+- GREEN currency pass-through test: 1 passed, 0 failed.
+
+**Committed files**
+
+- `tools/wta/src/usage.rs`
+- `doc/investigation/acp-price-calc.md`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 26 - Per-Metric Stale State
 

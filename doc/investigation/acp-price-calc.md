@@ -874,8 +874,8 @@ Usage 位于 C++ window-level Bottom Bar 的右侧（session按钮左边）。�
 
 格式化规则：
 
-- ISO 4217 currency 保留 agent 报告的货币码，显示为 `<数值> <currency>`，例如
-  `0.55 USD`；不在 WTA 中转换成其他货币；
+- currency保留agent/provider报告的原字符串，显示为`<数值> <currency>`，例如
+  `0.55 USD`；WTA不验证长度/大小写，不纠正OpenCode已知上游bug，也不转换货币；
 - provider credit 使用稳定 `unit_id`，`display_name` 只是已知单位的本地化/fallback label；
 - unknown/custom label 视为 agent 提供的显示文本，必须限制长度并清理控制字符；
 - tooltip 显示 scope、aggregation、更新时间和 reporter/source；
@@ -1237,8 +1237,8 @@ connectivity/负向信任实验，不是正式产品配置或 provider-specific 
   launch、精确 `agent_family_id + reporter/schema/version` 全部匹配；
 - custom agent 首版只能走标准 ACP；不解析 custom `_meta`/extension usage；
 - 标准ACP的typed `used`/`size`是provider-owned非负计数，不增加ratio或容量上限约束；
-- optional cost只有在amount finite、非负且currency为3字符大写ASCII形态时显示；无效cost只
-  省略该optional metric，不能丢弃同一条消息中的有效context；
+- optional cost只有在amount finite且非负时显示；currency原样保留，不实施长度、大小写或
+  ISO形态策略。无效amount只省略该optional metric，不能丢弃同一条消息中的有效context；
 - provider unit label 必须限制长度、移除控制字符和换行；
 - 私有schema识别成功但数据非法时返回parse error，不能显示伪造的`0`；标准ACP optional
   cost遵循上面的metric隔离规则；

@@ -113,12 +113,7 @@ pub fn normalize_standard_usage(update: &acp::schema::v1::UsageUpdate) -> UsageS
     let cost = update
         .cost
         .as_ref()
-        .filter(|cost| {
-            cost.amount.is_finite()
-                && !cost.amount.is_sign_negative()
-                && cost.currency.len() == 3
-                && cost.currency.bytes().all(|byte| byte.is_ascii_uppercase())
-        })
+        .filter(|cost| cost.amount.is_finite() && !cost.amount.is_sign_negative())
         .map(|cost| UsageCost {
             amount_decimal_text: cost.amount.to_string(),
             currency: cost.currency.clone(),
@@ -240,14 +235,20 @@ mod tests {
     }
 
     #[test]
-    fn omits_non_canonical_currency_without_discarding_context() {
+    fn preserves_provider_reported_currency_without_shape_policy() {
         for currency in ["US", "USDD", "usd", "US1", "U$D"] {
             let update = acp::schema::v1::UsageUpdate::new(1, 100)
                 .cost(acp::schema::v1::Cost::new(1.0, currency));
             let snapshot = normalize_standard_usage(&update);
 
             assert_eq!(snapshot.context, Some(UsageContext { used: 1, size: 100 }));
-            assert!(snapshot.cost.is_none());
+            assert_eq!(
+                snapshot.cost,
+                Some(UsageCost {
+                    amount_decimal_text: "1".to_string(),
+                    currency: currency.to_string(),
+                })
+            );
         }
     }
 
