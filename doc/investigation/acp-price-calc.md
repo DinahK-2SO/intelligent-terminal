@@ -869,6 +869,7 @@ Usage 位于 C++ window-level Bottom Bar 的右侧（session按钮左边）。�
 | normalized cost-only item | 只显示 `<amount> <currency>` |
 | 标准ACP tokens-only | 只显示 `<used> / <size> Tokens` |
 | context有效但optional cost无效 | 保留并显示context，只省略cost；chat保持可用 |
+| transport断连后的旧metric | 保留在tab state并投影`stale=true`；Bottom Bar隐藏，直到provider重新报告该metric |
 | agent没有发送Usage | Usage保持隐藏，不显示`0`、`N/A`或占位符 |
 
 格式化规则：
@@ -1292,9 +1293,12 @@ helper对非Usage update保留既有trace content；Usage update在trace级别�
 ACP 没有“重新查询当前 session usage”的标准 request。Master/agent 重启后，agent 不一定
 重发旧累计值。因此：
 
-- 每个 metric 保存 `observed_at`、`connection_generation` 和可选 provider timestamp；
-- 同一 App 运行中的临时断连保留最后值，但 UI 标记 stale（例如 tooltip 显示“上次更新”）；
-- 新 generation 第一次报告前不能把旧值称为 current；
+- 当前实现按metric保存fresh/stale状态；`observed_at`、`connection_generation`和可选provider
+  timestamp仍是未来详情面扩展；
+- 同一App运行中的transport断连保留最后值并投影`stale=true`；主Bottom Bar不显示stale metric，
+  避免把旧值称为current；
+- 同session恢复后，每个metric只有在provider重新报告时才恢复fresh；context重报不会顺带把
+  未重报的旧cost标成fresh；
 - agent/account identity 改变时立即清除旧值；仅 transport 重连才允许保留 stale snapshot；
 - App 重启首版不恢复 usage history，直到 agent 新报告。
 

@@ -46,6 +46,7 @@ namespace TerminalAppUnitTests
         TEST_METHOD(BuildPrimaryDisplayTextsCapsMainBarItems);
         TEST_METHOD(BuildPrimaryDisplayShowsCostWithoutTokens);
         TEST_METHOD(BuildPrimaryDisplayShowsTokensWithoutCost);
+        TEST_METHOD(BuildPrimaryDisplayHidesStaleMetrics);
         TEST_METHOD(BuildPrimaryDisplayHidesInputOutputOnly);
         TEST_METHOD(BuildPrimaryDisplayHidesAfterContainedError);
         TEST_METHOD(BuildPrimaryDisplayHidesWhenNothingReported);
@@ -262,6 +263,24 @@ namespace TerminalAppUnitTests
         VERIFY_IS_TRUE(display.visible);
         VERIFY_ARE_EQUAL(static_cast<size_t>(1), display.texts.size());
         VERIFY_ARE_EQUAL(std::wstring{ L"1024 / 8192 Tokens" }, display.texts[0]);
+    }
+
+    void AgentUsageTests::BuildPrimaryDisplayHidesStaleMetrics()
+    {
+        Json::Value usage{ Json::objectValue };
+        usage["items"] = Json::Value{ Json::arrayValue };
+        auto staleContext = makeUsageItem("acp.context.window", "1024", "token", "8192");
+        staleContext["stale"] = true;
+        usage["items"].append(std::move(staleContext));
+        usage["items"].append(makeUsageItem("acp.billing.cost", "0.004", "USD"));
+
+        const auto display = TerminalApp::AgentUsage::BuildPrimaryDisplay(
+            TerminalApp::AgentUsage::Parse(usage),
+            L"Tokens");
+
+        VERIFY_IS_TRUE(display.visible);
+        VERIFY_ARE_EQUAL(static_cast<size_t>(1), display.texts.size());
+        VERIFY_ARE_EQUAL(std::wstring{ L"0.004 USD" }, display.texts[0]);
     }
 
     void AgentUsageTests::BuildPrimaryDisplayHidesInputOutputOnly()

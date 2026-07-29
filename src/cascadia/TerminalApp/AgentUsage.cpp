@@ -162,7 +162,7 @@ namespace TerminalApp::AgentUsage
         for (const auto metricId : { "acp.context.window", "acp.billing.cost" })
         {
             const auto item = std::ranges::find(items, metricId, &Item::metricId);
-            if (item != items.end())
+            if (item != items.end() && !item->stale)
             {
                 append(*item);
             }

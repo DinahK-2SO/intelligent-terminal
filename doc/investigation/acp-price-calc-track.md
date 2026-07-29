@@ -50,12 +50,55 @@ code it describes.
 | 23. Optional cost isolation | Invalid optional cost must not discard valid context or log values | Make context normalization infallible and omit only invalid cost | Complete |
 | 24. Local clear preserves Usage | `/clear` must not hide the unchanged provider session's context/cost | Move Usage resets from chat clearing to explicit ACP session boundaries | Complete |
 | 25. Metric-aware master coalescing | New pending context must not erase an undelivered optional cost | Merge pending context/cost semantics before latest-value replacement | Complete |
+| 26. Per-metric stale state | Transport loss must not present retained Usage as current | Track context/cost freshness independently and hide stale primary metrics | Complete |
 
 ## Completed Steps
 
 > Steps 13-14 record an earlier prototype decision to display turn token breakdown and parse
 > Gemini private quota. Step 19-20 supersede that product behavior after the five-provider,
 > two-turn investigation and team review.
+
+### Step 26 - Per-Metric Stale State
+
+**RED**
+
+- Added an App-state test requiring transport loss to immediately project retained context and
+  cost as stale, then requiring a context-only report after same-session reconnect to refresh only
+  context while cost remains stale.
+- The Rust RED failed because transport loss emitted no Usage projection and every projected item
+  was hard-coded fresh.
+- Added a C++ test with stale context plus fresh cost. It failed with two visible primary items
+  instead of only the fresh cost.
+
+**GREEN**
+
+- Added per-tab, per-metric `UsageStaleness` separate from provider values. Transport loss marks
+  only present metrics stale; each subsequent `UsageReported` refreshes only metrics it contains.
+- New/load/restart/reset/session-id boundaries clear both values and freshness state. Local
+  `/clear` preserves both.
+- `agent_state_changed` projects the real context/cost stale flags instead of constant `false`.
+- C++ retains stale items in the tab cache but excludes them from the primary Bottom Bar. A fresh
+  sibling metric remains visible; when all reported metrics are stale the Usage group collapses
+  until the provider reports again.
+
+**Validation**
+
+- RED Rust stale-state test: 1 failed, 0 passed (no stale projection).
+- GREEN Rust stale-state test: 1 passed, 0 failed.
+- RED C++ stale-display test: 1 failed, 0 passed (expected 1 item, received 2).
+- GREEN C++ stale-display test: 1 passed, 0 failed.
+- `AgentUsageTests`: 16 passed, 0 failed, 0 skipped.
+- Rust Usage tests: 11 passed; lifecycle tests: 7 passed; stale-state test: 1 passed.
+- Full WTA Rust suite: 1156 passed, 0 failed.
+
+**Committed files**
+
+- `tools/wta/src/usage.rs`
+- `tools/wta/src/app.rs`
+- `src/cascadia/TerminalApp/AgentUsage.cpp`
+- `src/cascadia/ut_app/AgentUsageTests.cpp`
+- `doc/investigation/acp-price-calc.md`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 25 - Metric-Aware Master Coalescing
 

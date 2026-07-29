@@ -1418,6 +1418,7 @@ pub struct TabSession {
     /// Per-tab autofix state machine (see `TabAutofixState`).
     pub autofix: TabAutofixState,
     pub usage: Option<crate::usage::UsageSnapshot>,
+    pub usage_staleness: crate::usage::UsageStaleness,
 
     // Conversation history
     pub messages: Vec<ChatMessage>,
@@ -4976,6 +4977,7 @@ impl App {
                 let tab = self.tab_mut(&bind_tab);
                 if tab.session_id.as_deref() != Some(session_id.as_str()) {
                     tab.usage = None;
+                    tab.usage_staleness = crate::usage::UsageStaleness::default();
                 }
                 tab.session_id = Some(session_id);
                 let has_real_content = !tab.completed_turns.is_empty()
@@ -5055,18 +5057,22 @@ impl App {
                 snapshot,
             } => {
                 let target_tab = self.tab_for_session(&session_id);
-                if let Some(current) = self.tab_mut(&target_tab).usage.as_mut() {
+                let tab = self.tab_mut(&target_tab);
+                tab.usage_staleness.mark_reported(&snapshot);
+                if let Some(current) = tab.usage.as_mut() {
                     current.merge(snapshot);
                 }
                 else
                 {
-                    self.tab_mut(&target_tab).usage = Some(snapshot);
+                    tab.usage = Some(snapshot);
                 }
                 self.project_tab_state(&target_tab);
             }
             AppEvent::UsageCleared { session_id } => {
                 let target_tab = self.tab_for_session(&session_id);
-                self.tab_mut(&target_tab).usage = None;
+                let tab = self.tab_mut(&target_tab);
+                tab.usage = None;
+                tab.usage_staleness = crate::usage::UsageStaleness::default();
                 self.project_tab_state(&target_tab);
             }
             AppEvent::TabError { tab_id, message } => {
@@ -5146,11 +5152,30 @@ impl App {
                 // so the slash-command popup greys out everything but
                 // /restart (the only command that can recover without the
                 // dead pipe). Cleared on the next Connected.
-                if matches!(
-                    failure,
+                let transport_lost = matches!(
+                    &failure,
                     crate::protocol::acp::failure::AgentFailure::TransportLost
-                ) {
+                );
+                let stale_usage_tab = if transport_lost {
                     self.transport_lost = true;
+                    let target_tab = session_id
+                        .as_deref()
+                        .map(|sid| self.tab_for_session(sid))
+                        .unwrap_or_else(|| self.active_tab_key().to_string());
+                    let tab = self.tab_mut(&target_tab);
+                    if let Some(snapshot) = tab.usage.as_ref() {
+                        tab.usage_staleness.mark_present_stale(snapshot);
+                        Some(target_tab)
+                    }
+                    else
+                    {
+                        None
+                    }
+                } else {
+                    None
+                };
+                if let Some(target_tab) = stale_usage_tab {
+                    self.project_tab_state(&target_tab);
                 }
 
                 let is_auth_error = failure.is_auth();
@@ -6034,6 +6059,7 @@ impl App {
                         tab.current_view = View::Chat;
                         tab.clear_chat_history();
                         tab.usage = None;
+                        tab.usage_staleness = crate::usage::UsageStaleness::default();
                         tab.completed_turns.clear();
                         tab.selected_completed_turn_idx = None;
                         tab.session_id = None;
@@ -8081,6 +8107,7 @@ impl App {
         let tab = self.current_tab_mut();
         tab.clear_chat_history();
         tab.usage = None;
+        tab.usage_staleness = crate::usage::UsageStaleness::default();
         tab.completed_turns.clear();
         tab.selected_completed_turn_idx = None;
         tab.session_id = None;
@@ -8261,6 +8288,7 @@ impl App {
         for (_, tab) in self.tab_sessions.iter_mut() {
             tab.clear_chat_history();
             tab.usage = None;
+            tab.usage_staleness = crate::usage::UsageStaleness::default();
             tab.completed_turns.clear();
             tab.selected_completed_turn_idx = None;
             tab.session_id = None;
@@ -8658,6 +8686,7 @@ impl App {
         if let Some(tab) = self.tab_sessions.get_mut(tab_id) {
             tab.clear_chat_history();
             tab.usage = None;
+            tab.usage_staleness = crate::usage::UsageStaleness::default();
             tab.completed_turns.clear();
             tab.selected_completed_turn_idx = None;
             tab.scroll_to_bottom();
@@ -9950,7 +9979,9 @@ fn build_agent_state_changed_event(target_tab: &str, tab: &TabSession) -> serde_
     let usage = tab
         .usage
         .as_ref()
-        .map(crate::usage::UsageProjection::from);
+        .map(|snapshot| {
+            crate::usage::UsageProjection::with_staleness(snapshot, tab.usage_staleness)
+        });
     serde_json::json!({
         "type": "event",
         "method": "agent_state_changed",
@@ -14279,6 +14310,71 @@ mod tests {
             app.transport_lost,
             "a transport loss must arm the degraded latch"
         );
+    }
+
+    #[test]
+    fn transport_loss_marks_usage_stale_until_each_metric_is_reported_again() {
+        let mut app = test_app();
+        app.state = ConnectionState::Connected;
+        app.current_tab_mut().session_id = Some("usage-session".to_string());
+        app.session_to_tab
+            .insert("usage-session".to_string(), DEFAULT_TAB_ID.to_string());
+        app.current_tab_mut().usage = Some(crate::usage::UsageSnapshot {
+            context: Some(crate::usage::UsageContext { used: 20, size: 100 }),
+            cost: Some(crate::usage::UsageCost {
+                amount_decimal_text: "0.004".to_string(),
+                currency: "USD".to_string(),
+            }),
+        });
+
+        app.handle_event(AppEvent::AgentError {
+            session_id: Some("usage-session".to_string()),
+            failure: crate::protocol::acp::failure::AgentFailure::TransportLost,
+            message: t!("connection.lost").into_owned(),
+        });
+
+        let stale = app.take_projected_test_events();
+        let stale_items = stale
+            .last()
+            .expect("transport loss must project stale usage")["params"]["usage"]["items"]
+            .as_array()
+            .expect("stale usage items");
+        assert!(stale_items.iter().all(|item| item["stale"] == true));
+
+        app.handle_event(AppEvent::AgentConnected {
+            name: "Agent".to_string(),
+            model: None,
+            version: None,
+            session_id: "usage-session".to_string(),
+            available_models: Vec::new(),
+            current_model_id: None,
+            load_session_supported: false,
+            image_supported: false,
+        });
+        app.handle_event(AppEvent::UsageReported {
+            session_id: "usage-session".to_string(),
+            snapshot: crate::usage::UsageSnapshot {
+                context: Some(crate::usage::UsageContext { used: 25, size: 100 }),
+                cost: None,
+            },
+        });
+
+        let refreshed = app.take_projected_test_events();
+        let refreshed_items = refreshed
+            .last()
+            .expect("partial refresh must project usage")["params"]["usage"]["items"]
+            .as_array()
+            .expect("refreshed usage items");
+        let context = refreshed_items
+            .iter()
+            .find(|item| item["metric_id"] == "acp.context.window")
+            .expect("context item");
+        let cost = refreshed_items
+            .iter()
+            .find(|item| item["metric_id"] == "acp.billing.cost")
+            .expect("cost item");
+        assert_eq!(context["stale"], false);
+        assert_eq!(cost["stale"], true);
     }
 
     /// A non-transport failure ends only the rejected turn. The provider

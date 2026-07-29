@@ -14,6 +14,32 @@ pub struct UsageContext {
     pub size: u64,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct UsageStaleness {
+    pub context: bool,
+    pub cost: bool,
+}
+
+impl UsageStaleness {
+    pub fn mark_reported(&mut self, snapshot: &UsageSnapshot) {
+        if snapshot.context.is_some() {
+            self.context = false;
+        }
+        if snapshot.cost.is_some() {
+            self.cost = false;
+        }
+    }
+
+    pub fn mark_present_stale(&mut self, snapshot: &UsageSnapshot) {
+        if snapshot.context.is_some() {
+            self.context = true;
+        }
+        if snapshot.cost.is_some() {
+            self.cost = true;
+        }
+    }
+}
+
 impl UsageSnapshot {
     pub fn merge(&mut self, incoming: Self) {
         if incoming.context.is_some() {
@@ -50,6 +76,12 @@ pub struct UsageProjectionItem {
 
 impl From<&UsageSnapshot> for UsageProjection {
     fn from(snapshot: &UsageSnapshot) -> Self {
+        Self::with_staleness(snapshot, UsageStaleness::default())
+    }
+}
+
+impl UsageProjection {
+    pub fn with_staleness(snapshot: &UsageSnapshot, staleness: UsageStaleness) -> Self {
         let mut items = Vec::with_capacity(2);
         if let Some(context) = &snapshot.context {
             items.push(UsageProjectionItem {
@@ -59,7 +91,7 @@ impl From<&UsageSnapshot> for UsageProjection {
                 unit_id: "token".to_string(),
                 scope: "session",
                 source: "acp_standard",
-                stale: false,
+                stale: staleness.context,
             });
         }
         if let Some(cost) = &snapshot.cost {
@@ -70,7 +102,7 @@ impl From<&UsageSnapshot> for UsageProjection {
                 unit_id: cost.currency.clone(),
                 scope: "session",
                 source: "acp_standard",
-                stale: false,
+                stale: staleness.cost,
             });
         }
         Self { items }
