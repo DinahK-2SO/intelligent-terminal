@@ -45,12 +45,44 @@ code it describes.
 | 18. Two-turn provider comparison results | Missing rounds or different session IDs fail result validation | Regenerate ten real ACP JSON files and compare first/second-turn Usage | Complete |
 | 19. Context/cost-only Bottom Bar | Input/output metrics must not render or keep Usage visible | Select only context-window and monetary-cost metrics in the pure C++ display policy | Complete |
 | 20. ACP-only runtime policy | Standard context/cost continues; turn-token and Gemini-private paths produce no Usage | Remove token runtime ingestion and private Gemini behavior while retaining provider interfaces | Complete |
+| 21. Provider-owned context capacity | Zero-size and over-capacity gauges must route unchanged and keep chat flowing | Remove client-side context ratio rejection while retaining independent cost validation | Complete |
 
 ## Completed Steps
 
 > Steps 13-14 record an earlier prototype decision to display turn token breakdown and parse
 > Gemini private quota. Step 19-20 supersede that product behavior after the five-provider,
 > two-turn investigation and team review.
+
+### Step 21 - Provider-Owned Context Capacity
+
+**RED**
+
+- Replaced the old invalid-ratio test with provider-neutral contracts requiring both
+  `used=1,size=0` and `used=101,size=100` to normalize unchanged.
+- Added helper dispatch coverage requiring zero-size and over-capacity notifications to emit
+  `UsageReported` and leave the following chat notification flowing.
+- All three focused tests failed against the client-owned `size != 0` and `used <= size` checks.
+
+**GREEN**
+
+- Removed `ZeroContextSize` and `ContextUsedExceedsSize` from the Usage error taxonomy and deleted
+  both relational checks from the standard ACP normalizer.
+- Context Usage is now observational only: WTA preserves the provider's two non-negative ACP
+  counters and does not infer rejection, compaction, or capacity policy from their relationship.
+- Optional monetary-cost validation remains unchanged for the next isolated TDD step.
+
+**Validation**
+
+- RED context normalizer: 1 failed, 0 passed.
+- RED helper dispatch tests: 2 failed, 0 passed.
+- GREEN provider-owned context tests: 3 passed, 0 failed.
+
+**Committed files**
+
+- `tools/wta/src/usage.rs`
+- `tools/wta/src/protocol/acp/mock_agent_tests.rs`
+- `doc/investigation/acp-price-calc.md`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 20 - ACP-Only Context/Cost Runtime Policy
 

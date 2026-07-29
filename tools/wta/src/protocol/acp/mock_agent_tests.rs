@@ -1707,34 +1707,41 @@ async fn session_notification_routes_usage_update() {
 }
 
 #[tokio::test]
-async fn session_notification_rejects_malformed_usage_update() {
+async fn session_notification_routes_provider_reported_zero_size() {
     let (client, mut rx) = bare_client();
-    let result = client
+    client
         .session_notification(notif(
             "s1",
             acp::schema::v1::SessionUpdate::UsageUpdate(
                 acp::schema::v1::UsageUpdate::new(1, 0),
             ),
         ))
-        .await;
+        .await
+        .expect("provider-owned capacity must not be rejected by the client");
 
-    assert!(result.is_err(), "recognized malformed usage must fail fast");
-    assert!(rx.try_recv().is_err(), "malformed usage must not reach app state");
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(AppEvent::UsageReported { session_id, snapshot })
+            if session_id == "s1"
+                && snapshot.context == Some(crate::usage::UsageContext { used: 1, size: 0 })
+    ));
 }
 
 #[tokio::test]
-async fn notification_dispatch_contains_malformed_usage_and_keeps_chat_flow() {
+async fn notification_dispatch_routes_over_capacity_usage_and_keeps_chat_flow() {
     let (client, mut rx) = bare_client();
     client
         .dispatch_session_notification(notif(
             "s1",
-            acp::schema::v1::SessionUpdate::UsageUpdate(acp::schema::v1::UsageUpdate::new(1, 0)),
+            acp::schema::v1::SessionUpdate::UsageUpdate(acp::schema::v1::UsageUpdate::new(101, 100)),
         ))
         .await;
 
     assert!(matches!(
         rx.try_recv(),
-        Ok(AppEvent::UsageCleared { session_id }) if session_id == "s1"
+        Ok(AppEvent::UsageReported { session_id, snapshot })
+            if session_id == "s1"
+                && snapshot.context == Some(crate::usage::UsageContext { used: 101, size: 100 })
     ));
 
     client
@@ -1769,10 +1776,10 @@ async fn usage_containment_log_excludes_reported_values() {
     client
         .dispatch_session_notification(notif(
             "s1",
-            acp::schema::v1::SessionUpdate::UsageUpdate(acp::schema::v1::UsageUpdate::new(
-                987_654_321,
-                123_456_789,
-            )),
+            acp::schema::v1::SessionUpdate::UsageUpdate(
+                acp::schema::v1::UsageUpdate::new(123_456_789, 987_654_321)
+                    .cost(acp::schema::v1::Cost::new(-1.0, "USD")),
+            ),
         ))
         .await;
     assert!(matches!(rx.try_recv(), Ok(AppEvent::UsageCleared { .. })));

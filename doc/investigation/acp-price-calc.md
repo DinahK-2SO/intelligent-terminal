@@ -160,6 +160,10 @@ pub struct Cost {
 | `used / size` | 当前会话上下文占用 | gauge，新值替换旧值 |
 | `cost` | 当前会话累计货币费用 | cumulative，新值替换旧值，不能再次累加 |
 
+`used`和`size`是provider报告的两个非负计数；ACP没有声明`used <= size`，客户端也不根据
+两者关系推断容量耗尽、拒绝请求或触发压缩。即使provider报告`size == 0`或`used > size`，
+WTA仍原样保留和展示，后续prompt是否接受及是否压缩完全由provider决定。
+
 `used` 与 `size` 是标准ACP `UsageUpdate`的必填字段，`cost`是可选字段。因此标准wire只支持
 “tokens-only”或“tokens+cost”，不支持“cost-only”。未来若可信provider extension只报告
 费用，它必须先归一化为独立cost item，不能伪造`used=0,size=0`的标准ACP消息。

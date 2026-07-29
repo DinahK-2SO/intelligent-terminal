@@ -79,8 +79,6 @@ impl From<&UsageSnapshot> for UsageProjection {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UsageError {
-    ZeroContextSize,
-    ContextUsedExceedsSize { used: u64, size: u64 },
     InvalidCostAmount,
     InvalidCurrency,
 }
@@ -88,8 +86,6 @@ pub enum UsageError {
 impl UsageError {
     pub const fn class(&self) -> &'static str {
         match self {
-            Self::ZeroContextSize => "zero_context_size",
-            Self::ContextUsedExceedsSize { .. } => "context_used_exceeds_size",
             Self::InvalidCostAmount => "invalid_cost_amount",
             Self::InvalidCurrency => "invalid_currency",
         }
@@ -99,13 +95,6 @@ impl UsageError {
 impl std::fmt::Display for UsageError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::ZeroContextSize => formatter.write_str("usage context size must be non-zero"),
-            Self::ContextUsedExceedsSize { used, size } => {
-                write!(
-                    formatter,
-                    "usage context used ({used}) exceeds size ({size})"
-                )
-            }
             Self::InvalidCostAmount => {
                 formatter.write_str("usage cost amount must be finite and non-negative")
             }
@@ -121,16 +110,6 @@ impl std::error::Error for UsageError {}
 pub fn normalize_standard_usage(
     update: &acp::schema::v1::UsageUpdate,
 ) -> Result<UsageSnapshot, UsageError> {
-    if update.size == 0 {
-        return Err(UsageError::ZeroContextSize);
-    }
-    if update.used > update.size {
-        return Err(UsageError::ContextUsedExceedsSize {
-            used: update.used,
-            size: update.size,
-        });
-    }
-
     let cost = update
         .cost
         .as_ref()
@@ -247,18 +226,13 @@ mod tests {
     }
 
     #[test]
-    fn rejects_invalid_context_ratio() {
-        assert_eq!(
-            normalize_standard_usage(&acp::schema::v1::UsageUpdate::new(1, 0)),
-            Err(UsageError::ZeroContextSize)
-        );
-        assert_eq!(
-            normalize_standard_usage(&acp::schema::v1::UsageUpdate::new(101, 100)),
-            Err(UsageError::ContextUsedExceedsSize {
-                used: 101,
-                size: 100,
-            })
-        );
+    fn preserves_provider_reported_context_gauges() {
+        for (used, size) in [(1, 0), (101, 100)] {
+            let snapshot = normalize_standard_usage(&acp::schema::v1::UsageUpdate::new(used, size))
+                .expect("context capacity is provider-owned");
+
+            assert_eq!(snapshot.context, Some(UsageContext { used, size }));
+        }
     }
 
     #[test]
