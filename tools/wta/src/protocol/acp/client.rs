@@ -1741,13 +1741,7 @@ impl WtaClient {
                 });
             }
             acp::schema::v1::SessionUpdate::UsageUpdate(update) => {
-                let snapshot = crate::usage::normalize_standard_usage(&update).map_err(|error| {
-                    acp::Error::invalid_params()
-                        .data(serde_json::json!({
-                            "schema": ACP_SESSION_USAGE_SCHEMA,
-                            "error_class": error.class(),
-                        }))
-                })?;
+                let snapshot = crate::usage::normalize_standard_usage(&update);
                 let _ = self.state.event_tx.send(AppEvent::UsageReported {
                     session_id: sid,
                     snapshot,

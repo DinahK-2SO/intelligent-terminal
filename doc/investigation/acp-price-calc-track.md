@@ -47,12 +47,48 @@ code it describes.
 | 20. ACP-only runtime policy | Standard context/cost continues; turn-token and Gemini-private paths produce no Usage | Remove token runtime ingestion and private Gemini behavior while retaining provider interfaces | Complete |
 | 21. Provider-owned context capacity | Zero-size and over-capacity gauges must route unchanged and keep chat flowing | Remove client-side context ratio rejection while retaining independent cost validation | Complete |
 | 22. Provider-rejected turn recovery | A prompt protocol error must be visible without failing its healthy session | Keep `Protocol` failures connected while ending only the rejected turn | Complete |
+| 23. Optional cost isolation | Invalid optional cost must not discard valid context or log values | Make context normalization infallible and omit only invalid cost | Complete |
 
 ## Completed Steps
 
 > Steps 13-14 record an earlier prototype decision to display turn token breakdown and parse
 > Gemini private quota. Step 19-20 supersede that product behavior after the five-provider,
 > two-turn investigation and team review.
+
+### Step 23 - Optional Cost Isolation
+
+**RED**
+
+- Replaced amount and currency rejection tests with contracts requiring valid context to survive
+  non-finite, negative, or non-canonical optional cost values.
+- Changed the helper privacy test to require `UsageReported` with context and no cost while still
+  proving the token sentinels never enter logs.
+- All three focused tests failed because cost validation rejected the entire `UsageUpdate`.
+
+**GREEN**
+
+- Made standard context normalization infallible after typed ACP deserialization: every provider
+  `used`/`size` pair becomes the context snapshot without client capacity policy.
+- Optional cost is attached only when its amount is finite and non-negative and its currency has
+  the ACP three-uppercase-ASCII-letter shape; otherwise only that optional metric is omitted.
+- Removed the helper's conversion of cost validation failures into ACP `invalid_params`, so cost
+  cannot clear valid context or interfere with the notification stream.
+- OpenCode's verified standard fixture continues to normalize its reported context and currency
+  unchanged.
+
+**Validation**
+
+- RED optional-cost isolation tests: 3 failed, 0 passed.
+- GREEN optional-cost isolation tests: 3 passed, 0 failed.
+
+**Committed files**
+
+- `tools/wta/src/usage.rs`
+- `tools/wta/src/protocol/acp/client.rs`
+- `tools/wta/src/protocol/acp/mock_agent_tests.rs`
+- `tools/wta/src/usage/providers/opencode.rs`
+- `doc/investigation/acp-price-calc.md`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 22 - Provider-Rejected Turn Recovery
 

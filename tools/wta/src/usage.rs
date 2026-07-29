@@ -77,65 +77,28 @@ impl From<&UsageSnapshot> for UsageProjection {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum UsageError {
-    InvalidCostAmount,
-    InvalidCurrency,
-}
-
-impl UsageError {
-    pub const fn class(&self) -> &'static str {
-        match self {
-            Self::InvalidCostAmount => "invalid_cost_amount",
-            Self::InvalidCurrency => "invalid_currency",
-        }
-    }
-}
-
-impl std::fmt::Display for UsageError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::InvalidCostAmount => {
-                formatter.write_str("usage cost amount must be finite and non-negative")
-            }
-            Self::InvalidCurrency => {
-                formatter.write_str("usage currency must be three uppercase ASCII letters")
-            }
-        }
-    }
-}
-
-impl std::error::Error for UsageError {}
-
-pub fn normalize_standard_usage(
-    update: &acp::schema::v1::UsageUpdate,
-) -> Result<UsageSnapshot, UsageError> {
+pub fn normalize_standard_usage(update: &acp::schema::v1::UsageUpdate) -> UsageSnapshot {
     let cost = update
         .cost
         .as_ref()
-        .map(|cost| {
-            if !cost.amount.is_finite() || cost.amount.is_sign_negative() {
-                return Err(UsageError::InvalidCostAmount);
-            }
-            if cost.currency.len() != 3
-                || !cost.currency.bytes().all(|byte| byte.is_ascii_uppercase())
-            {
-                return Err(UsageError::InvalidCurrency);
-            }
-            Ok(UsageCost {
-                amount_decimal_text: cost.amount.to_string(),
-                currency: cost.currency.clone(),
-            })
+        .filter(|cost| {
+            cost.amount.is_finite()
+                && !cost.amount.is_sign_negative()
+                && cost.currency.len() == 3
+                && cost.currency.bytes().all(|byte| byte.is_ascii_uppercase())
         })
-        .transpose()?;
+        .map(|cost| UsageCost {
+            amount_decimal_text: cost.amount.to_string(),
+            currency: cost.currency.clone(),
+        });
 
-    Ok(UsageSnapshot {
+    UsageSnapshot {
         context: Some(UsageContext {
             used: update.used,
             size: update.size,
         }),
         cost,
-    })
+    }
 }
 
 #[cfg(test)]
@@ -148,7 +111,7 @@ mod tests {
         let update = acp::schema::v1::UsageUpdate::new(1_024, 8_192)
             .cost(acp::schema::v1::Cost::new(0.004, "USD"));
 
-        let snapshot = normalize_standard_usage(&update).expect("valid standard usage");
+        let snapshot = normalize_standard_usage(&update);
 
         assert_eq!(
             snapshot.context,
@@ -168,8 +131,7 @@ mod tests {
 
     #[test]
     fn normalizes_standard_context_without_cost() {
-        let snapshot = normalize_standard_usage(&acp::schema::v1::UsageUpdate::new(20, 100))
-            .expect("cost is optional");
+        let snapshot = normalize_standard_usage(&acp::schema::v1::UsageUpdate::new(20, 100));
 
         assert_eq!(
             snapshot.context,
@@ -204,8 +166,7 @@ mod tests {
     #[test]
     fn merges_independent_context_and_cost_snapshots() {
         let mut snapshot =
-            normalize_standard_usage(&acp::schema::v1::UsageUpdate::new(1_024, 8_192))
-                .expect("standard usage");
+            normalize_standard_usage(&acp::schema::v1::UsageUpdate::new(1_024, 8_192));
 
         snapshot.merge(UsageSnapshot {
             context: None,
@@ -228,34 +189,33 @@ mod tests {
     #[test]
     fn preserves_provider_reported_context_gauges() {
         for (used, size) in [(1, 0), (101, 100)] {
-            let snapshot = normalize_standard_usage(&acp::schema::v1::UsageUpdate::new(used, size))
-                .expect("context capacity is provider-owned");
+            let snapshot = normalize_standard_usage(&acp::schema::v1::UsageUpdate::new(used, size));
 
             assert_eq!(snapshot.context, Some(UsageContext { used, size }));
         }
     }
 
     #[test]
-    fn rejects_non_finite_or_negative_cost() {
+    fn omits_non_finite_or_negative_cost_without_discarding_context() {
         for amount in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -0.01] {
             let update = acp::schema::v1::UsageUpdate::new(1, 100)
                 .cost(acp::schema::v1::Cost::new(amount, "USD"));
-            assert_eq!(
-                normalize_standard_usage(&update),
-                Err(UsageError::InvalidCostAmount)
-            );
+            let snapshot = normalize_standard_usage(&update);
+
+            assert_eq!(snapshot.context, Some(UsageContext { used: 1, size: 100 }));
+            assert!(snapshot.cost.is_none());
         }
     }
 
     #[test]
-    fn rejects_non_canonical_currency_shape() {
+    fn omits_non_canonical_currency_without_discarding_context() {
         for currency in ["US", "USDD", "usd", "US1", "U$D"] {
             let update = acp::schema::v1::UsageUpdate::new(1, 100)
                 .cost(acp::schema::v1::Cost::new(1.0, currency));
-            assert_eq!(
-                normalize_standard_usage(&update),
-                Err(UsageError::InvalidCurrency)
-            );
+            let snapshot = normalize_standard_usage(&update);
+
+            assert_eq!(snapshot.context, Some(UsageContext { used: 1, size: 100 }));
+            assert!(snapshot.cost.is_none());
         }
     }
 

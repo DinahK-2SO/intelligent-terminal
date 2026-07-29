@@ -43,7 +43,7 @@ mod tests {
 
         assert_eq!(
             normalize_standard_usage(&update),
-            Ok(UsageSnapshot {
+            UsageSnapshot {
                 context: Some(crate::usage::UsageContext {
                     used: 6092,
                     size: 271790,
@@ -52,7 +52,7 @@ mod tests {
                     amount_decimal_text: "0".to_string(),
                     currency: "USD".to_string(),
                 }),
-            })
+            }
         );
         assert_eq!(
             ADAPTER.private_usage_policy(),

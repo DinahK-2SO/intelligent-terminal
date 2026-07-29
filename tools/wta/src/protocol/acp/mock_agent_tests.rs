@@ -1761,7 +1761,7 @@ async fn notification_dispatch_routes_over_capacity_usage_and_keeps_chat_flow() 
 }
 
 #[tokio::test]
-async fn usage_containment_log_excludes_reported_values() {
+async fn invalid_optional_cost_preserves_context_without_logging_values() {
     let captured = Arc::new(Mutex::new(Vec::new()));
     let writer = captured.clone();
     let subscriber = tracing_subscriber::fmt()
@@ -1782,10 +1782,16 @@ async fn usage_containment_log_excludes_reported_values() {
             ),
         ))
         .await;
-    assert!(matches!(rx.try_recv(), Ok(AppEvent::UsageCleared { .. })));
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(AppEvent::UsageReported { snapshot, .. })
+            if snapshot.context == Some(crate::usage::UsageContext {
+                used: 123_456_789,
+                size: 987_654_321,
+            }) && snapshot.cost.is_none()
+    ));
 
     let logs = String::from_utf8(captured.lock().unwrap().clone()).unwrap();
-    assert!(logs.contains("acp.v1.session_usage"));
     assert!(!logs.contains("987654321"));
     assert!(!logs.contains("123456789"));
 }

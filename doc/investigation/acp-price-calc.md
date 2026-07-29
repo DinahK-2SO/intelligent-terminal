@@ -92,7 +92,7 @@ fixture/记录并重新跑 Claude/Codex E2E mock。
 | Codex launch | C++ 与 Rust 都固定为官方 `npx -y @agentclientprotocol/codex-acp@1.1.2` | 消除 launch metadata 重复并保留历史识别 alias |
 | Command ownership | C++ `_BuildAgentCommandLine()` 构造 host/default command；Rust `AgentProfile` 为 per-tab built-in selection 重建 command，因此目前确有两份映射 | 建立可生成/共享的 launch metadata；完成前用测试强制两处完全一致 |
 | Custom selection | Settings 将 `npx ...` 保存为 `custom:npx`；master 对未知 helper ID 回退到 host 已信任的 default command，从不执行 pipe 上传来的 command | 分离 instance/family/reporter；custom 可识别 compatible family，但首版不能启用私有 usage extension |
-| Usage receive | master已可靠coalesce/定向latest value；helper内层normalizer保持fail-fast；production notification入口用单一outer boundary隔离malformed Usage并发出owner-session clear | 保持provider-neutral；按实际agent版本继续维护structured Usage兼容矩阵 |
+| Usage receive | master已可靠coalesce/定向latest value；helper原样保留typed context gauge，无效optional cost只省略cost metric | 保持provider-neutral；按实际agent版本继续维护structured Usage兼容矩阵 |
 | Provider usage layer | `tools/wta/src/usage/providers/`为五个family提供统一typed registry；所有private extractor当前no-op，Copilot保留`Reserved`接口 | 未来provider实现标准ACP无需特殊代码；private扩展必须重新review |
 | Usage state/UI | Rust按session保存/合并optional context/cost并立即投影；C++只选择context/cost两项 | 首版已完成；不增加平行UI/state route |
 | C++ event route | 现有`agent_state_changed`按`tab_id`路由并消费可选`usage`/null；missing保持、null清除、malformed fail-fast；Rust clear沿同一projection发送null；`_UpdateBottomBarState`从active tab cache渲染 | 不新增COM/IDL route或第二个业务异常层 |
@@ -868,7 +868,7 @@ Usage 位于 C++ window-level Bottom Bar 的右侧（session按钮左边）。�
 |---|---|
 | normalized cost-only item | 只显示 `<amount> <currency>` |
 | 标准ACP tokens-only | 只显示 `<used> / <size> Tokens` |
-| recognized malformed Usage | outer containment清除旧值并隐藏Usage；chat保持可用 |
+| context有效但optional cost无效 | 保留并显示context，只省略cost；chat保持可用 |
 | agent没有发送Usage | Usage保持隐藏，不显示`0`、`N/A`或占位符 |
 
 格式化规则：
@@ -1234,12 +1234,12 @@ connectivity/负向信任实验，不是正式产品配置或 provider-specific 
 - 私有 adapter：只允许 host policy 允许的内置 `agent_instance_id`、由 master 重建的 trusted
   launch、精确 `agent_family_id + reporter/schema/version` 全部匹配；
 - custom agent 首版只能走标准 ACP；不解析 custom `_meta`/extension usage；
-- 数值必须 finite、非负，并有合理上限；ratio 的 `size` 必须非零；
-- currency 必须是规范化的 3 字符 ISO 4217 code；不合法属于 recognized malformed report；
-  inner normalizer/contract test返回`Err`，production由唯一最外层containment清除本次不可信
-  snapshot并隐藏`UsageGroup`；
+- 标准ACP的typed `used`/`size`是provider-owned非负计数，不增加ratio或容量上限约束；
+- optional cost只有在amount finite、非负且currency为3字符大写ASCII形态时显示；无效cost只
+  省略该optional metric，不能丢弃同一条消息中的有效context；
 - provider unit label 必须限制长度、移除控制字符和换行；
-- schema 识别成功但数据非法时返回 parse error，不能静默丢弃单个字段或显示 `0`；
+- 私有schema识别成功但数据非法时返回parse error，不能显示伪造的`0`；标准ACP optional
+  cost遵循上面的metric隔离规则；
 - source 从标准切到私有或 connection/account generation 改变时，应清除旧冲突值，不能
   把两个来源拼成一个累计值。
 
@@ -1265,8 +1265,8 @@ Usage 是辅助功能，但开发期间不能用“辅助功能应降级”掩�
 6. 单元测试继续直接调用 containment 内部函数，以保证最终加上外层保护后，开发测试仍然
   fail fast；另加一个边界测试证明 Usage failure 只隐藏 UI 而不终止会话。
 
-当前最外层保护使用单一Rust `Result` handling boundary；malformed Usage发出owner-session
-`UsageCleared`，后续chat/tool notification继续处理。C++只接收normalized projection，
+当前standard `UsageUpdate` context normalizer在typed ACP反序列化后不可失败，optional cost
+独立过滤；outer boundary保留给未来可能失败的typed provider extension。C++只接收normalized projection，
 不新增 usage-specific `try/catch`；它沿用 `agent_state_changed` 的 JSON 输入校验，并在 debug/
 contract tests 对 malformed usage sub-object 失败，在 release 拒绝该 sub-object 并隐藏
 `UsageGroup`。这是现有跨进程输入验证，不是第二套业务异常吞错层。上述 fail-fast 约束只适用
