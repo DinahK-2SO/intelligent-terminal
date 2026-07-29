@@ -139,9 +139,11 @@ struct MasterStateInner {
     /// helper sharing this master.
     session_to_helper: Mutex<HashMap<acp::schema::v1::SessionId, HelperRoute>>,
     /// Latest cumulative usage update that could not enter a helper's
-    /// bounded notification queue. Values are replaced by SessionId and
-    /// never logged; a watch generation wakes every helper so the owner can
-    /// drain its pending update without blocking the shared agent I/O loop.
+    /// bounded notification queue. Context is replaced by SessionId while an
+    /// omitted optional cost is retained from an undelivered prior update.
+    /// Values are never logged; a watch generation wakes every helper so the
+    /// owner can drain its pending update without blocking the shared agent
+    /// I/O loop.
     pending_usage: Mutex<
         HashMap<acp::schema::v1::SessionId, (HelperId, acp::schema::v1::SessionNotification)>,
     >,
@@ -560,11 +562,23 @@ impl MasterClient {
             Some((snap_helper_id, tx, drops)) => {
                 use std::sync::atomic::Ordering;
                 if kind == "usage_update" {
-                    self.state
-                        .pending_usage
-                        .lock()
-                        .await
-                        .insert(sid.clone(), (snap_helper_id, args));
+                    let mut args = args;
+                    let mut pending = self.state.pending_usage.lock().await;
+                    if let Some((pending_owner, pending_notification)) = pending.get(&sid) {
+                        if *pending_owner == snap_helper_id {
+                            if let (
+                                acp::schema::v1::SessionUpdate::UsageUpdate(previous),
+                                acp::schema::v1::SessionUpdate::UsageUpdate(incoming),
+                            ) = (&pending_notification.update, &mut args.update)
+                            {
+                                if incoming.cost.is_none() {
+                                    incoming.cost = previous.cost.clone();
+                                }
+                            }
+                        }
+                    }
+                    pending.insert(sid.clone(), (snap_helper_id, args));
+                    drop(pending);
                     self.state
                         .usage_generation
                         .send_modify(|generation| *generation = generation.wrapping_add(1));
@@ -4871,7 +4885,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn session_notification_routes_all_usage_through_latest_value_state() {
+    async fn session_notification_coalesces_context_without_dropping_pending_cost() {
         let state = make_state();
         let (tx, _rx) = mpsc::channel::<SessionNotification>(1);
         let sid = SessionId::new("slow-usage-helper");
@@ -4889,7 +4903,14 @@ mod tests {
         }
         tx.try_send(make_notif(&sid)).unwrap();
 
-        route(&state, make_usage_notif(&sid, 10)).await;
+        let first = SessionNotification::new(
+            sid.clone(),
+            SessionUpdate::UsageUpdate(
+                acp::schema::v1::UsageUpdate::new(10, 100)
+                    .cost(acp::schema::v1::Cost::new(0.004, "USD")),
+            ),
+        );
+        route(&state, first).await;
         route(&state, make_usage_notif(&sid, 25)).await;
 
         assert_eq!(
@@ -4902,7 +4923,13 @@ mod tests {
         let (owner, notification) = pending.get(&sid).expect("latest usage retained");
         assert_eq!(*owner, HelperId(10));
         match &notification.update {
-            SessionUpdate::UsageUpdate(update) => assert_eq!(update.used, 25),
+            SessionUpdate::UsageUpdate(update) => {
+                assert_eq!(update.used, 25);
+                assert_eq!(
+                    update.cost.as_ref(),
+                    Some(&acp::schema::v1::Cost::new(0.004, "USD"))
+                );
+            }
             other => panic!("expected usage update, got {other:?}"),
         }
     }

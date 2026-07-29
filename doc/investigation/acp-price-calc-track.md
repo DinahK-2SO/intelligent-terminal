@@ -49,12 +49,41 @@ code it describes.
 | 22. Provider-rejected turn recovery | A prompt protocol error must be visible without failing its healthy session | Keep `Protocol` failures connected while ending only the rejected turn | Complete |
 | 23. Optional cost isolation | Invalid optional cost must not discard valid context or log values | Make context normalization infallible and omit only invalid cost | Complete |
 | 24. Local clear preserves Usage | `/clear` must not hide the unchanged provider session's context/cost | Move Usage resets from chat clearing to explicit ACP session boundaries | Complete |
+| 25. Metric-aware master coalescing | New pending context must not erase an undelivered optional cost | Merge pending context/cost semantics before latest-value replacement | Complete |
 
 ## Completed Steps
 
 > Steps 13-14 record an earlier prototype decision to display turn token breakdown and parse
 > Gemini private quota. Step 19-20 supersede that product behavior after the five-provider,
 > two-turn investigation and team review.
+
+### Step 25 - Metric-Aware Master Coalescing
+
+**RED**
+
+- Strengthened the existing saturated-helper latest-value test with two same-session updates: the
+  first reports context plus `0.004 USD`, and the newer update reports context only.
+- The focused test failed with `cost: None`, proving whole-notification replacement discarded the
+  undelivered optional metric before the helper's existing per-metric merge could see it.
+
+**GREEN**
+
+- Pending Usage still replaces context with the newest provider gauge for that SessionId.
+- When a newer pending update omits optional cost, master now carries forward the same owner's
+  undelivered cost; an explicitly reported newer cost continues to replace the old one.
+- Session rebind still clears the old owner's pending entry before the new route becomes visible,
+  so no metric crosses helper ownership.
+
+**Validation**
+
+- RED master coalescing test: 1 failed, 0 passed (`None` versus `0.004 USD`).
+- GREEN master coalescing test: 1 passed, 0 failed.
+
+**Committed files**
+
+- `tools/wta/src/master/mod.rs`
+- `doc/investigation/acp-price-calc.md`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 24 - Local Clear Preserves Usage
 
