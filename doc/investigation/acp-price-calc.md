@@ -1,6 +1,6 @@
 # ACP Usage / Cost 调查与统一展示设计
 
-- **状态**：首版实现完成；TDD Step 0-20 与真实provider/本地完整pipeline验证已完成
+- **状态**：首版实现完成；TDD Step 0-29 与真实provider/本地完整pipeline验证已完成
 - **首次调查**：2026-07-17
 - **最后核验**：2026-07-28
 - **协议基线**：ACP protocol version 1

@@ -90,6 +90,17 @@ code it describes.
 - RED focused C++ build failed on missing `PrimaryDisplay::items` / `fullText`.
 - GREEN cost-rounding/full-text test: 1 passed, 0 failed.
 - Full `AgentUsageTests`: 17 passed, 0 failed, 0 skipped.
+- x64 Debug WTA and CascadiaPackage build/deploy/launch succeeded; deployed WTA SHA256:
+  `AF272C68B606EDED5A553A00C2CBC22DC2412D613C6260CD1B3E7C6547C2ACD0`.
+- Synthetic full desktop pipeline displayed `<0.01 USD`, exposed exact UIA HelpText
+  `0.004 USD`, and showed the same full value in the real hover Tooltip. Context-only follow-up
+  retained both the compact display and exact full value. Local ignored screenshot:
+  `test/e2e/artifacts/step9-usage/full-pipeline-cost-tooltip.png`.
+- Synthetic cost-only, context-only, over-capacity, and no-Usage desktop scenarios all passed;
+  chat continued, the process stayed alive, and each produced a local ignored screenshot.
+- Real OpenCode `opencode/deepseek-v4-flash-free` displayed `11923 / 200000 Tokens` and exact-zero
+  `0.00 USD`; input/output token breakdown remained hidden. Local ignored screenshot:
+  `test/e2e/artifacts/opencode-acp/opencode-context-cost.png`.
 
 **Committed files**
 
