@@ -39,11 +39,28 @@ try to reuse existing tests code, but note that the existing test framework 可�
 
 若分支分叉、push失败或存在无法安全同步的远端提交，必须停止开始下一步骤，先报告并解决同步问题。
 
-========================
 
-Some Updates on the feature requests:
+我们分析了所有的5个providers的response。请看summary文档:
+doc\investigation\per-provider-investigation\result\summary-lookinto-the-usage-cost-by-turns.md
 
-1. 用真实的opencode result来开发opencode的部分。
+After talked with the team, 我们决定只显示这两个usage/cost相关的数据（if any one of them are provided）：
+- Context-window data (turn 1 → turn 2)
+- Monetary cost
+
+
+关于GitHub Copilot:
+沃恩联系了GitHubCopilot的开发者，他们同意在未来的版本中加入符合ACP contract的 usage/cost数据。因此我们暂时不做额外处理，以便未来升级到新的Copilot ACP 包时不需要再做额外改动。但是我们能做额外处理的接口应保留。
+
+
+关于Gemini：
+
+我们先不为gemini的特殊处理，因为gemini没有遵守ACP contract
+
+
+
+关于OpenCode：
+
+你可以用真实的opencode result来开发opencode的部分（本地已安装）。
 
 注意：我们之前的调查发现 opencode给的Currency有bug。这个bug已经上报给opencode：
 [ACP usage_update mislabels non-USD costs as USD
@@ -51,11 +68,6 @@ Some Updates on the feature requests:
 
 因此，在开发时，我们假设opencode给的currency符号是正确的，不对这个currency的bug做额外的处理。等未来opencode会在新的安装包里把这个bug修好的时候，我们只需要升级opencode的包，不需要为这个bug增删额外的代码。
 
-
-2. 经过与team 讨论，从gemini彻底迁移到antigravity还需要一些时间。因此我们的第一个版本会包含gemini的部分。请在gemini最新的官方文档里搜索 ACP的相关信息，使用官方ACP完成开发：
-https://ai.google.dev/gemini-api/docs
-
-我们已经申请到Gemini的API key，它有一定的免费额度。请先按照官方文档和内部npx feed能提供的最新版本（通常落后与官方1周左右）准备环境，到了需要配置API Key的环节，请给出配置API key的指南，停下来等team将它配好。
 
 ========================
 
