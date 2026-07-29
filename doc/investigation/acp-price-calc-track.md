@@ -17,8 +17,8 @@ code it describes.
 - Existing unit/integration frameworks are committed. The local desktop E2E orchestration,
   screenshots, provider configs, and wire captures remain under git-ignored
   `test/e2e/artifacts/` or the user profile and are not committed.
-- Every E2E runner and child PowerShell process uses
-  `C:\Program Files\PowerShell\7\pwsh.exe`; module import fails fast under another host.
+- E2E requires PowerShell 7.2+ through the existing portable harness. Commands resolve `pwsh`
+  from PATH; child processes that need the same host reuse the current process executable.
 
 ## TDD Plan
 
@@ -36,7 +36,7 @@ code it describes.
 | 9. Final integration | Rust full suite, x64 Debug build, and local ignored E2E | Verify end-to-end behavior and update design/current-state tables | Complete |
 | 10. Partial/error UI states | Cost-only, tokens-only, malformed, and absent reports never crash UI | Add one tested primary-display state and deterministic local mocks | Complete |
 | 11. Provider extension boundary | Every known family has a module; unverified private payloads yield no data | Add a typed provider registry with empty trust allowlists | Complete |
-| 12. PowerShell 7 E2E host | E2E rejects the wrong host and children use the canonical executable | Pin `C:\Program Files\PowerShell\7\pwsh.exe` in the existing harness | Complete |
+| 12. PowerShell 7 E2E host | Historical fixed-install-path implementation | Superseded by portable Step 30 | Superseded |
 | 13. Token breakdown Bottom Bar | Input/output metrics render as `(in)`/`(out)` with reported cost in a bounded third slot | Extend only the pure C++ display policy | Complete |
 | 14. Standard turn Usage and Gemini runtime | Independent metrics merge; standard end-turn Usage wins; exact Gemini private identity is the only fallback | Extend the Rust domain, wire prompt responses, and use the official Gemini ACP launch | Complete |
 | 15. Self-contained provider capture harness | Missing script and command/question/output drift fail the local contract | One PowerShell 7 JSON-RPC client with the five exact prototype commands | Complete |
@@ -54,13 +54,50 @@ code it describes.
 | 27. Provider-reported currency | Non-uppercase or non-three-character currency must pass through unchanged | Remove application-level currency shape policy | Complete |
 | 28. Main integration | Main's WTA module extraction must retain every Usage contract and pass full desktop/provider validation | Merge main, migrate code/tests to new owners, repair stale launch assertions | Complete |
 | 29. Compact cost display | Main bar must show two-decimal cost without losing reported precision | Add exact decimal rounding plus full-value tooltip/HelpText | Complete |
+| 30. Portable PowerShell host | Tracked files must not contain a machine-specific pwsh installation path | Restore main's PATH/current-host behavior and keep local harnesses ignored | Complete |
 
 ## Completed Steps
 
 > Steps 13-14 record an earlier prototype decision to display turn token breakdown and parse
 > Gemini private quota. Step 19-20 supersede that product behavior after the five-provider,
 > two-turn investigation and team review. Step 27 supersedes Step 23's currency-shape filtering;
-> amount validity and metric isolation remain unchanged.
+> amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
+> PowerShell installation path.
+
+### Step 30 - Portable PowerShell Host
+
+**RED**
+
+- Added a tracked-file portability audit requiring no exact machine-specific PowerShell install
+  path under `test/e2e`, `doc/investigation`, or `AGENTS.md`.
+- RED found 40 tracked occurrences, including shared ItE2E runners, bootstrap, policy tools,
+  self-tests, examples, and feature documentation.
+
+**GREEN**
+
+- Restored 12 shared `test/e2e` framework files to `main` instead of carrying a feature-PR test
+  framework fork. Main resolves `pwsh` from PATH and uses the current process executable when an
+  elevated child must run under the same host.
+- Removed fixed installation paths from task instructions, provider-capture examples, and current
+  design/guardrail text. PowerShell 7.2+ remains required by the existing module manifest.
+- Updated the ignored local build/deploy script to validate `PSEdition=Core` and major version 7+
+  without assuming an installation directory. Local E2E scripts and screenshots remain ignored.
+
+**Validation**
+
+- RED tracked portability audit: 40 hard-coded occurrences.
+- GREEN tracked portability audit: 0 hard-coded occurrences.
+- Shared ItE2E PowerShell files parse successfully.
+- ItE2E unit self-tests and bootstrap `-Check` run under PATH-resolved `pwsh`.
+
+**Committed files**
+
+- Restored shared `test/e2e` files from `main`.
+- `AGENTS.md`
+- `doc/investigation/acp-price-calc.md`
+- `doc/investigation/acp-price-calc-track.md`
+- `doc/investigation/per-provider-investigation/README.md`
+- Local ignored `test/e2e/artifacts/devops/Build-Deploy-Launch-Local.ps1` remains uncommitted.
 
 ### Step 29 - Compact Cost Display
 
@@ -1118,17 +1155,16 @@ code it describes.
 - `doc/investigation/acp-price-calc-track.md`
 - Current-state/interface update in `doc/investigation/acp-price-calc.md`
 
-### Step 12 - Canonical PowerShell 7 E2E Host
+### Step 12 - Fixed PowerShell Install Path (Superseded by Step 30)
 
 **RED**
 
 - Added two existing-framework unit contracts before the host helpers existed. Both failed with
   `CommandNotFoundException` for `Get-ItPowerShell7Path` and `Assert-ItPowerShell7Host`.
 
-**GREEN**
+**Historical GREEN**
 
-- Added one canonical E2E executable path:
-  `C:\Program Files\PowerShell\7\pwsh.exe`.
+- Added one fixed default-install executable path. Step 30 removes this machine-specific policy.
 - Every ItE2E module import validates the current process path, so direct Pester runs and report
   runners fail fast under another PowerShell host. The module manifest still enforces 7.2+.
 - Bootstrap validates the exact host before dependency checks. FRE's pwsh execution-policy probe
@@ -1141,7 +1177,7 @@ code it describes.
 **Validation**
 
 - RED: both host helper tests failed because the functions did not exist.
-- Canonical host resolved to PowerShell 7.6.3 x64 at the required path.
+- The configured host resolved to PowerShell 7.6.3 x64 on the development machine.
 - ItE2E unit self-tests: 13 passed, 0 failed.
 - ItE2E live self-tests: 12 passed, 0 failed in 30.67 seconds; cleanup left no processes.
 - Canonical report runner: 13 passed, 0 failed; HTML/XML/Markdown artifacts generated under the

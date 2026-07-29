@@ -967,7 +967,8 @@ debug log 和为实验修改的 Agent Maestro 代码**一律不提交**。这些
 
 在没有实现 Usage feature 的情况下，已先验证 build/deploy、桌面 UI automation、真实 ACP
 adapter routing和Agent Maestro后端。测试复用现有[test/e2e](../../test/e2e)的ItE2E
-PowerShell module，并固定使用`C:\Program Files\PowerShell\7\pwsh.exe`。新增orchestration
+PowerShell module，并使用PATH解析到的PowerShell 7+ `pwsh`；需要子进程时复用当前host路径，
+不假设具体安装目录。新增orchestration
 scripts、screenshots、result JSON和本机provider配置
 全部位于 git-ignored `test/e2e/artifacts/acp-provider-preflight/` 或 user home，不进入 feature
 commit。该 harness 与 Usage production code 没有依赖，可在未来独立整理成 test PR。

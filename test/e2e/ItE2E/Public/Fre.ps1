@@ -148,10 +148,10 @@ function Test-WtPwshBlocksShellIntegration {
         RemoteSigned WinPS policy under test.
     #>
     [CmdletBinding()] param()
-    try { $pwsh = Get-ItPowerShell7Path }
-    catch { return $false }
+    $pwsh = Get-Command pwsh.exe -ErrorAction SilentlyContinue
+    if (-not $pwsh) { return $false }
     try {
-        $policy = & $pwsh -NoProfile -NonInteractive -Command 'Get-ExecutionPolicy' 2>$null
+        $policy = & $pwsh.Source -NoProfile -NonInteractive -Command 'Get-ExecutionPolicy' 2>$null
         return ([string]$policy -in 'Restricted', 'AllSigned')
     }
     catch { return $false }

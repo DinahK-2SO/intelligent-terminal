@@ -16,8 +16,8 @@ try to reuse existing tests code, but note that the existing test framework 可�
 测试跑通后，请严格按照 the Test Driven Development workflow 来制定计划并逐步完成开发。feature详情请见：
 "./doc/investigation/acp-price-calc.md"
 
-用 pwsh （powershell 7）来做 e2e test. pwsh 更贴近用户体验：
-"C:\Program Files\PowerShell\7\pwsh.exe"
+用 PATH 中解析到的 pwsh（PowerShell 7+）来做 e2e test。需要启动同一 host 的子进程时，
+复用当前 PowerShell 进程路径；不要硬编码本机安装目录。
 
 注意做好 moduralization，and reusing existing code.
 

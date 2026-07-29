@@ -1,17 +1,12 @@
 # Bootstrap.ps1 — install/verify everything the ItE2E framework needs, and import it.
-#   & 'C:\Program Files\PowerShell\7\pwsh.exe' -File test/e2e/bootstrap.ps1
-#   & 'C:\Program Files\PowerShell\7\pwsh.exe' -File test/e2e/bootstrap.ps1 -Check
+#   pwsh -File test/e2e/bootstrap.ps1            # install deps + import
+#   pwsh -File test/e2e/bootstrap.ps1 -Check     # verify only
 
 [CmdletBinding()]
 param([switch]$Check)
 
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
-$requiredPowerShell = 'C:\Program Files\PowerShell\7\pwsh.exe'
-$currentPowerShell = (Get-Process -Id $PID -ErrorAction Stop).Path
-if (-not [string]::Equals($currentPowerShell, $requiredPowerShell, [StringComparison]::OrdinalIgnoreCase)) {
-    throw "ItE2E bootstrap must run under '$requiredPowerShell'; current host is '$currentPowerShell'."
-}
 
 function Test-Tool($name, $cmd) {
     $c = Get-Command $cmd -ErrorAction SilentlyContinue
@@ -21,7 +16,7 @@ function Test-Tool($name, $cmd) {
 
 Write-Host "== ItE2E bootstrap ==" -ForegroundColor Cyan
 $psOk = $PSVersionTable.PSVersion.Major -ge 7
-Write-Host ("[{0}] PowerShell {1} -> {2}" -f ($(if ($psOk) { 'ok' } else { 'miss' }), $PSVersionTable.PSVersion, $currentPowerShell))
+Write-Host ("[{0}] PowerShell {1}" -f ($(if ($psOk) { 'ok' } else { 'miss' }), $PSVersionTable.PSVersion))
 
 $haveWinapp = Test-Tool 'Windows App CLI' 'winapp'
 $pester = Get-Module -ListAvailable Pester | Where-Object Version -ge ([version]'5.0.0') | Select-Object -First 1

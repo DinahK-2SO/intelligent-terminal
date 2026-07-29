@@ -18,7 +18,7 @@
 .PARAMETER WhatIf     Show what would change without writing.
 
 .EXAMPLE
-    & 'C:\Program Files\PowerShell\7\pwsh.exe' -File test/e2e/Set-ChecklistIds.ps1
+    pwsh -File test/e2e/Set-ChecklistIds.ps1
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(

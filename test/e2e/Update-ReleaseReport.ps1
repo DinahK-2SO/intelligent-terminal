@@ -30,9 +30,9 @@
 
 .EXAMPLE
     # 1) run just the delegate suite into its own results file:
-    & 'C:\Program Files\PowerShell\7\pwsh.exe' -File test/e2e/Invoke-ItE2EReport.ps1 -Path test/e2e/tests/Feature.Delegate.Tests.ps1 -SkipReleaseReport
+    pwsh -File test/e2e/Invoke-ItE2EReport.ps1 -Path test/e2e/tests/Feature.Delegate.Tests.ps1 -SkipReleaseReport
     # 2) overlay only those rows onto the existing report:
-    & 'C:\Program Files\PowerShell\7\pwsh.exe' -File test/e2e/Update-ReleaseReport.ps1
+    pwsh -File test/e2e/Update-ReleaseReport.ps1
 #>
 [CmdletBinding()]
 param(

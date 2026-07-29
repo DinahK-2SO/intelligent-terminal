@@ -5,9 +5,9 @@ configured by the Intelligent Terminal prototype, asks every provider the same o
 list in one ACP session, and writes one JSON result per provider turn under `result/`.
 
 ```powershell
-& 'C:\Program Files\PowerShell\7\pwsh.exe' -NoProfile -File .\Test-Invoke-Providers.ps1
-& 'C:\Program Files\PowerShell\7\pwsh.exe' -NoProfile -File .\Invoke-Providers.ps1
-& 'C:\Program Files\PowerShell\7\pwsh.exe' -NoProfile -File .\Test-Results.ps1
+pwsh -NoProfile -File .\Test-Invoke-Providers.ps1
+pwsh -NoProfile -File .\Invoke-Providers.ps1
+pwsh -NoProfile -File .\Test-Results.ps1
 ```
 
 Questions:
