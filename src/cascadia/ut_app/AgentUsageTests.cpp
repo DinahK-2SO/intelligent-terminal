@@ -42,10 +42,11 @@ namespace TerminalAppUnitTests
         TEST_METHOD(UpdateCacheReplacesAndClears);
         TEST_METHOD(UpdateCachePreservesPreviousOnMalformedInput);
         TEST_METHOD(BuildPrimaryDisplayTextsFormatsContextAndCost);
-        TEST_METHOD(BuildPrimaryDisplayTextsFormatsInputOutputAndCost);
+        TEST_METHOD(BuildPrimaryDisplayTextsIgnoresInputOutput);
         TEST_METHOD(BuildPrimaryDisplayTextsCapsMainBarItems);
         TEST_METHOD(BuildPrimaryDisplayShowsCostWithoutTokens);
         TEST_METHOD(BuildPrimaryDisplayShowsTokensWithoutCost);
+        TEST_METHOD(BuildPrimaryDisplayHidesInputOutputOnly);
         TEST_METHOD(BuildPrimaryDisplayHidesAfterContainedError);
         TEST_METHOD(BuildPrimaryDisplayHidesWhenNothingReported);
     };
@@ -172,7 +173,7 @@ namespace TerminalAppUnitTests
         VERIFY_ARE_EQUAL(std::wstring{ L"0.004 USD" }, texts[1]);
     }
 
-    void AgentUsageTests::BuildPrimaryDisplayTextsFormatsInputOutputAndCost()
+    void AgentUsageTests::BuildPrimaryDisplayTextsIgnoresInputOutput()
     {
         Json::Value usage{ Json::objectValue };
         usage["items"] = Json::Value{ Json::arrayValue };
@@ -185,25 +186,39 @@ namespace TerminalAppUnitTests
             TerminalApp::AgentUsage::Parse(usage),
             L"Tokens");
 
-        VERIFY_ARE_EQUAL(static_cast<size_t>(3), texts.size());
-        VERIFY_ARE_EQUAL(std::wstring{ L"12341 (in)" }, texts[0]);
-        VERIFY_ARE_EQUAL(std::wstring{ L"23 (out)" }, texts[1]);
-        VERIFY_ARE_EQUAL(std::wstring{ L"0.004 USD" }, texts[2]);
+        VERIFY_ARE_EQUAL(static_cast<size_t>(2), texts.size());
+        VERIFY_ARE_EQUAL(std::wstring{ L"1024 / 8192 Tokens" }, texts[0]);
+        VERIFY_ARE_EQUAL(std::wstring{ L"0.004 USD" }, texts[1]);
     }
 
     void AgentUsageTests::BuildPrimaryDisplayTextsCapsMainBarItems()
     {
-        std::vector<TerminalApp::AgentUsage::Item> items;
-        for (size_t i = 0; i < 3; ++i)
-        {
-            items.push_back(TerminalApp::AgentUsage::Item{
-                .metricId = "metric." + std::to_string(i),
-                .valueDecimalText = std::to_string(i),
-                .unitId = "unit",
+        VERIFY_ARE_EQUAL(static_cast<size_t>(2), TerminalApp::AgentUsage::MaxPrimaryItems);
+
+        const std::vector<TerminalApp::AgentUsage::Item> items{
+            TerminalApp::AgentUsage::Item{
+                .metricId = "acp.context.window",
+                .valueDecimalText = "20",
+                .limitDecimalText = "100",
+                .unitId = "token",
                 .scope = "session",
                 .source = "acp_standard",
-            });
-        }
+            },
+            TerminalApp::AgentUsage::Item{
+                .metricId = "acp.billing.cost",
+                .valueDecimalText = "0.004",
+                .unitId = "USD",
+                .scope = "session",
+                .source = "acp_standard",
+            },
+            TerminalApp::AgentUsage::Item{
+                .metricId = "provider.other",
+                .valueDecimalText = "7",
+                .unitId = "unit",
+                .scope = "session",
+                .source = "provider_reported",
+            },
+        };
 
         const auto texts = TerminalApp::AgentUsage::BuildPrimaryDisplayTexts(items, L"Tokens");
 
@@ -247,6 +262,31 @@ namespace TerminalAppUnitTests
         VERIFY_IS_TRUE(display.visible);
         VERIFY_ARE_EQUAL(static_cast<size_t>(1), display.texts.size());
         VERIFY_ARE_EQUAL(std::wstring{ L"1024 / 8192 Tokens" }, display.texts[0]);
+    }
+
+    void AgentUsageTests::BuildPrimaryDisplayHidesInputOutputOnly()
+    {
+        const std::vector<TerminalApp::AgentUsage::Item> items{
+            TerminalApp::AgentUsage::Item{
+                .metricId = "acp.tokens.input",
+                .valueDecimalText = "12341",
+                .unitId = "token",
+                .scope = "session",
+                .source = "acp_standard",
+            },
+            TerminalApp::AgentUsage::Item{
+                .metricId = "acp.tokens.output",
+                .valueDecimalText = "23",
+                .unitId = "token",
+                .scope = "session",
+                .source = "acp_standard",
+            },
+        };
+
+        const auto display = TerminalApp::AgentUsage::BuildPrimaryDisplay(items, L"Tokens");
+
+        VERIFY_IS_FALSE(display.visible);
+        VERIFY_IS_TRUE(display.texts.empty());
     }
 
     void AgentUsageTests::BuildPrimaryDisplayHidesAfterContainedError()

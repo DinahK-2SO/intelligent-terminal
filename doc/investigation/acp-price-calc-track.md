@@ -43,8 +43,39 @@ code it describes.
 | 16. Real provider comparison results | Missing, malformed, mismatched-question, or credential-bearing results fail validation | Run all five local ACP agents and save one sanitized JSON result each | Complete |
 | 17. Dynamic same-session provider turns | Fixed one-question plans and stale result files fail the harness contract | Drive an indexed question array in one session per provider and clean result before capture | Complete |
 | 18. Two-turn provider comparison results | Missing rounds or different session IDs fail result validation | Regenerate ten real ACP JSON files and compare first/second-turn Usage | Complete |
+| 19. Context/cost-only Bottom Bar | Input/output metrics must not render or keep Usage visible | Select only context-window and monetary-cost metrics in the pure C++ display policy | Complete |
+| 20. ACP-only runtime policy | Standard context/cost continues; turn-token and Gemini-private paths produce no Usage | Remove token runtime ingestion and private Gemini behavior while retaining provider interfaces | Pending |
 
 ## Completed Steps
+
+### Step 19 - Context/Cost-Only Bottom Bar
+
+**RED**
+
+- Replaced the prior input/output formatter expectation with a contract that supplies input,
+  output, context, and cost but requires only `1024 / 8192 Tokens` and `0.004 USD`.
+- Added an explicit two-item cap and an input/output-only hidden-state contract.
+- The first focused run failed exactly on the old behavior: three rendered items and
+  `MaxPrimaryItems == 3` (12 passed, 2 failed).
+
+**GREEN**
+
+- Reduced the primary display cap to two and selected only `acp.context.window` followed by
+  `acp.billing.cost`. Input/output and unknown/custom metrics remain parsed but do not render.
+- Visibility now derives from the filtered display texts, so input/output-only reports collapse
+  the Usage group instead of leaving an empty visible container.
+- Preserved context-only, cost-only, context+cost, malformed-clear, and no-report behavior.
+
+**Validation**
+
+- x64 Debug TerminalApp unit-test build: succeeded with 0 errors.
+- `AgentUsageTests`: 15 passed, 0 failed, 0 skipped.
+
+**Committed files**
+
+- `src/cascadia/TerminalApp/AgentUsage.h/.cpp`
+- `src/cascadia/ut_app/AgentUsageTests.cpp`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 15 - Self-Contained Provider Capture Harness
 

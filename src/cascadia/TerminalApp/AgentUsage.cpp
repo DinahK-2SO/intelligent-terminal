@@ -144,15 +144,7 @@ namespace TerminalApp::AgentUsage
             }
 
             auto text = til::u8u16(item.valueDecimalText);
-            if (item.metricId == "acp.tokens.input")
-            {
-                text += L" (in)";
-            }
-            else if (item.metricId == "acp.tokens.output")
-            {
-                text += L" (out)";
-            }
-            else if (item.metricId == "acp.context.window" && item.limitDecimalText)
+            if (item.metricId == "acp.context.window" && item.limitDecimalText)
             {
                 text += L" / ";
                 text += til::u8u16(*item.limitDecimalText);
@@ -167,23 +159,13 @@ namespace TerminalApp::AgentUsage
             texts.emplace_back(std::move(text));
         };
 
-        const auto hasTokenBreakdown = std::ranges::any_of(items, [](const auto& item) {
-            return item.metricId == "acp.tokens.input" || item.metricId == "acp.tokens.output";
-        });
-        if (hasTokenBreakdown)
+        for (const auto metricId : { "acp.context.window", "acp.billing.cost" })
         {
-            for (const auto metricId : { "acp.tokens.input", "acp.tokens.output", "acp.billing.cost" })
+            const auto item = std::ranges::find(items, metricId, &Item::metricId);
+            if (item != items.end())
             {
-                const auto item = std::ranges::find(items, metricId, &Item::metricId);
-                if (item != items.end())
-                {
-                    append(*item);
-                }
+                append(*item);
             }
-        }
-        else
-        {
-            std::ranges::for_each(items, append);
         }
         return texts;
     }
@@ -193,9 +175,10 @@ namespace TerminalApp::AgentUsage
         const std::wstring_view tokensUnit)
     {
         auto texts = BuildPrimaryDisplayTexts(items, tokensUnit);
+        const auto visible = !texts.empty();
         return PrimaryDisplay{
             .texts = std::move(texts),
-            .visible = !items.empty(),
+            .visible = visible,
         };
     }
 }
