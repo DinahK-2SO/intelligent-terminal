@@ -95,7 +95,7 @@ fixture/记录并重新跑 Claude/Codex E2E mock。
 | Usage receive | master已可靠coalesce/定向latest value；helper原样保留typed context gauge，无效optional cost只省略cost metric | 保持provider-neutral；按实际agent版本继续维护structured Usage兼容矩阵 |
 | Provider usage layer | `tools/wta/src/usage/providers/`为五个family提供统一typed registry；所有private extractor当前no-op，Copilot保留`Reserved`接口 | 未来provider实现标准ACP无需特殊代码；private扩展必须重新review |
 | Usage state/UI | Rust按session保存/合并optional context/cost并立即投影；C++只选择context/cost两项 | 首版已完成；不增加平行UI/state route |
-| C++ event route | 现有`agent_state_changed`按`tab_id`路由并消费可选`usage`/null；missing保持、null清除、malformed fail-fast；Rust clear沿同一projection发送null；`_UpdateBottomBarState`从active tab cache渲染 | 不新增COM/IDL route或第二个业务异常层 |
+| C++ event route | 现有`agent_state_changed`按`tab_id`路由并消费可选`usage`/null；missing保持、null清除、malformed fail-fast；Rust session-boundary reset沿同一projection发送null；`_UpdateBottomBarState`从active tab cache渲染 | 不新增COM/IDL route或第二个业务异常层 |
 | Rust codegen | [tools/wta/build.rs](../../tools/wta/build.rs) 当前只生成 ETW telemetry metadata | 增加 Agent registry codegen，但保留现有 ETW 生成 |
 | Gemini / Antigravity | Gemini CLI 0.51.0使用官方`--acp`，但private quota不进入Usage产品路径 | 等待标准ACP context/cost；Antigravity另行调查且不预先复用identity |
 
@@ -1090,7 +1090,8 @@ round-trip和Session view截图；它本身没有证明provider会发送Usage pa
 
 | 事件 | Turn/Session usage | Account/账期 usage |
 |---|---|---|
-| `session/new` / `/clear` | 新 snapshot；不继承旧 session | 保留，但标记同一 account generation |
+| `session/new`、restart、reset | 清除旧snapshot；等待新session报告 | 保留，但标记同一account generation |
+| `/clear`本地聊天记录 | 保留当前snapshot；provider session未改变 | 保留 |
 | `session/load` / resume | 不从旧 UI snapshot 猜测；等待 agent 重新报告 | 保留；若 provider 报告新值则替换 |
 | model switch | session 累计值不清零；没有 wire attribution 时不拆成 per-model | 保留 |
 | prompt 失败、取消、拒绝、内部重试 | 不减、不回滚；provider 仍可能计费 | 只接受后续报告值 |

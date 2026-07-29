@@ -48,12 +48,45 @@ code it describes.
 | 21. Provider-owned context capacity | Zero-size and over-capacity gauges must route unchanged and keep chat flowing | Remove client-side context ratio rejection while retaining independent cost validation | Complete |
 | 22. Provider-rejected turn recovery | A prompt protocol error must be visible without failing its healthy session | Keep `Protocol` failures connected while ending only the rejected turn | Complete |
 | 23. Optional cost isolation | Invalid optional cost must not discard valid context or log values | Make context normalization infallible and omit only invalid cost | Complete |
+| 24. Local clear preserves Usage | `/clear` must not hide the unchanged provider session's context/cost | Move Usage resets from chat clearing to explicit ACP session boundaries | Complete |
 
 ## Completed Steps
 
 > Steps 13-14 record an earlier prototype decision to display turn token breakdown and parse
 > Gemini private quota. Step 19-20 supersede that product behavior after the five-provider,
 > two-turn investigation and team review.
+
+### Step 24 - Local Clear Preserves Usage
+
+**RED**
+
+- Replaced the old generic clear-history expectation with a `/clear` command contract requiring
+  the same ACP session's Usage snapshot to remain visible.
+- The focused test failed because `TabSession::clear_chat_history` erased Usage even though
+  `/clear` does not create, load, restart, or drop the provider session.
+
+**GREEN**
+
+- Removed Usage mutation from generic local chat-history clearing.
+- Added explicit Usage resets at the actual session boundaries that reuse that helper: `/new`,
+  `load_session`, `/restart`, and `reset_tab_session`; new SessionId binding already cleared it.
+- Model changes and `/clear` preserve Usage because neither operation changes the provider-owned
+  session context or cumulative cost.
+- Added restart and reset regression guards so future local-chat refactors cannot leak old Usage
+  across a real session replacement.
+
+**Validation**
+
+- RED `/clear` lifecycle test: 1 failed, 0 passed.
+- First GREEN run exposed one reset placed on `/clear` instead of `/new`: 3 passed, 2 failed.
+- Corrected lifecycle slice: 5 passed, 0 failed.
+- Final lifecycle slice with restart/reset guards: 7 passed, 0 failed.
+
+**Committed files**
+
+- `tools/wta/src/app.rs`
+- `doc/investigation/acp-price-calc.md`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 23 - Optional Cost Isolation
 

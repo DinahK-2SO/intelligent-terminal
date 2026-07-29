@@ -1660,7 +1660,6 @@ impl TabSession {
     pub fn clear_chat_history(&mut self) {
         self.messages.clear();
         self.tool_calls.clear();
-        self.usage = None;
         // Dropping pending responders signals `Cancelled` back to the
         // agent — appropriate when the user wipes chat history mid-turn.
         self.permission.clear();
@@ -6034,6 +6033,7 @@ impl App {
                         let tab = self.tab_mut(tab_id);
                         tab.current_view = View::Chat;
                         tab.clear_chat_history();
+                        tab.usage = None;
                         tab.completed_turns.clear();
                         tab.selected_completed_turn_idx = None;
                         tab.session_id = None;
@@ -8080,6 +8080,7 @@ impl App {
             .send(NewSessionForTab { tab_id, cwd: None });
         let tab = self.current_tab_mut();
         tab.clear_chat_history();
+        tab.usage = None;
         tab.completed_turns.clear();
         tab.selected_completed_turn_idx = None;
         tab.session_id = None;
@@ -8259,6 +8260,7 @@ impl App {
         self.session_id.clear();
         for (_, tab) in self.tab_sessions.iter_mut() {
             tab.clear_chat_history();
+            tab.usage = None;
             tab.completed_turns.clear();
             tab.selected_completed_turn_idx = None;
             tab.session_id = None;
@@ -8655,6 +8657,7 @@ impl App {
         // `clear_chat_history` deliberately leaves alone.
         if let Some(tab) = self.tab_sessions.get_mut(tab_id) {
             tab.clear_chat_history();
+            tab.usage = None;
             tab.completed_turns.clear();
             tab.selected_completed_turn_idx = None;
             tab.scroll_to_bottom();
@@ -11971,15 +11974,14 @@ mod tests {
     }
 
     #[test]
-    fn usage_lifecycle_clear_history_clears_snapshot() {
-        let mut tab = TabSession {
-            usage: Some(lifecycle_usage_snapshot()),
-            ..Default::default()
-        };
+    fn usage_lifecycle_clear_command_preserves_same_session_snapshot() {
+        let mut app = test_app();
+        let snapshot = lifecycle_usage_snapshot();
+        app.current_tab_mut().usage = Some(snapshot.clone());
 
-        tab.clear_chat_history();
+        app.cmd_clear();
 
-        assert!(tab.usage.is_none());
+        assert_eq!(app.current_tab().usage, Some(snapshot));
     }
 
     #[test]
@@ -11988,6 +11990,26 @@ mod tests {
         app.current_tab_mut().usage = Some(lifecycle_usage_snapshot());
 
         app.cmd_new(false);
+
+        assert!(app.current_tab().usage.is_none());
+    }
+
+    #[test]
+    fn usage_lifecycle_restart_clears_snapshot() {
+        let mut app = test_app();
+        app.current_tab_mut().usage = Some(lifecycle_usage_snapshot());
+
+        app.cmd_restart();
+
+        assert!(app.current_tab().usage.is_none());
+    }
+
+    #[test]
+    fn usage_lifecycle_reset_tab_session_clears_snapshot() {
+        let mut app = test_app();
+        app.current_tab_mut().usage = Some(lifecycle_usage_snapshot());
+
+        app.reset_tab_session_for(DEFAULT_TAB_ID);
 
         assert!(app.current_tab().usage.is_none());
     }
