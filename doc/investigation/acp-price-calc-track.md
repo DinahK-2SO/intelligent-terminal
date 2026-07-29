@@ -46,12 +46,41 @@ code it describes.
 | 19. Context/cost-only Bottom Bar | Input/output metrics must not render or keep Usage visible | Select only context-window and monetary-cost metrics in the pure C++ display policy | Complete |
 | 20. ACP-only runtime policy | Standard context/cost continues; turn-token and Gemini-private paths produce no Usage | Remove token runtime ingestion and private Gemini behavior while retaining provider interfaces | Complete |
 | 21. Provider-owned context capacity | Zero-size and over-capacity gauges must route unchanged and keep chat flowing | Remove client-side context ratio rejection while retaining independent cost validation | Complete |
+| 22. Provider-rejected turn recovery | A prompt protocol error must be visible without failing its healthy session | Keep `Protocol` failures connected while ending only the rejected turn | Complete |
 
 ## Completed Steps
 
 > Steps 13-14 record an earlier prototype decision to display turn token breakdown and parse
 > Gemini private quota. Step 19-20 supersede that product behavior after the five-provider,
 > two-turn investigation and team review.
+
+### Step 22 - Provider-Rejected Turn Recovery
+
+**RED**
+
+- Strengthened the existing typed protocol-error test to require the error line to remain visible,
+  the turn to return to `Idle`, and the connection to remain `Connected`.
+- The focused test failed because `AppEvent::AgentError` changed the global state to
+  `Failed("protocol error")` even though `AgentFailure::Protocol` declares that the session lives.
+
+**GREEN**
+
+- `AgentFailure::Protocol` now leaves the current connection state unchanged while reusing the
+  existing per-turn progress cleanup, `Idle` transition, duplicate suppression, and error line.
+- Authentication, handshake, resource, and transport-loss recovery paths remain unchanged.
+- A provider can therefore reject a context-heavy prompt without WTA declaring its still-live ACP
+  session dead; capacity recovery remains provider-owned.
+
+**Validation**
+
+- RED protocol-error state test: 1 failed, 0 passed (`Failed` versus `Connected`).
+- GREEN protocol-error state test: 1 passed, 0 failed.
+
+**Committed files**
+
+- `tools/wta/src/app.rs`
+- `doc/investigation/acp-price-calc.md`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 21 - Provider-Owned Context Capacity
 

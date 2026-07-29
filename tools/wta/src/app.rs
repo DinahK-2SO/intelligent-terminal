@@ -5138,6 +5138,11 @@ impl App {
                     return;
                 }
 
+                let session_survives = matches!(
+                    &failure,
+                    crate::protocol::acp::failure::AgentFailure::Protocol { .. }
+                );
+
                 // The transport to master is gone — latch the degraded state
                 // so the slash-command popup greys out everything but
                 // /restart (the only command that can recover without the
@@ -5198,8 +5203,10 @@ impl App {
                     let tab = self.current_tab_mut();
                     tab.messages.retain(|m| !matches!(m, ChatMessage::Error(_)));
                 } else {
-                    self.state = ConnectionState::Failed(message.clone());
-                    self.publish_agent_status();
+                    if !session_survives {
+                        self.state = ConnectionState::Failed(message.clone());
+                        self.publish_agent_status();
+                    }
                     let tab = match session_id.as_deref() {
                         Some(sid) => self.session_tab_mut(sid),
                         None => self.current_tab_mut(),
@@ -14252,10 +14259,10 @@ mod tests {
         );
     }
 
-    /// A non-transport failure (a one-off protocol error) must NOT arm the
-    /// latch — the session is still alive, so commands stay enabled.
+    /// A non-transport failure ends only the rejected turn. The provider
+    /// session remains connected so the user can submit another prompt.
     #[test]
-    fn protocol_error_does_not_arm_degraded_latch() {
+    fn protocol_error_ends_turn_without_failing_connection() {
         let mut app = test_app();
         app.state = ConnectionState::Connected;
 
@@ -14272,6 +14279,16 @@ mod tests {
             !app.transport_lost,
             "a non-transport protocol error must not degrade the pane"
         );
+        assert_eq!(
+            app.state,
+            ConnectionState::Connected,
+            "a provider-rejected turn must not fail the healthy session"
+        );
+        assert!(matches!(
+            app.current_tab().messages.last(),
+            Some(ChatMessage::Error(message)) if message == "protocol error"
+        ));
+        assert_eq!(app.current_tab().turn, TurnState::Idle);
     }
 
     /// An auth failure routes to sign-in, not the dead-transport path, so it
