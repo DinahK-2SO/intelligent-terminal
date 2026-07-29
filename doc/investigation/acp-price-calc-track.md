@@ -53,6 +53,7 @@ code it describes.
 | 26. Per-metric stale state | Transport loss must not present retained Usage as current | Track context/cost freshness independently and hide stale primary metrics | Complete |
 | 27. Provider-reported currency | Non-uppercase or non-three-character currency must pass through unchanged | Remove application-level currency shape policy | Complete |
 | 28. Main integration | Main's WTA module extraction must retain every Usage contract and pass full desktop/provider validation | Merge main, migrate code/tests to new owners, repair stale launch assertions | Complete |
+| 29. Compact cost display | Main bar must show two-decimal cost without losing reported precision | Add exact decimal rounding plus full-value tooltip/HelpText | Complete |
 
 ## Completed Steps
 
@@ -60,6 +61,44 @@ code it describes.
 > Gemini private quota. Step 19-20 supersede that product behavior after the five-provider,
 > two-turn investigation and team review. Step 27 supersedes Step 23's currency-shape filtering;
 > amount validity and metric isolation remain unchanged.
+
+### Step 29 - Compact Cost Display
+
+**RED**
+
+- Added pure C++ display contracts requiring `1.235 -> 1.24`, `1.234 -> 1.23`, positive
+  `0.004 -> <0.01`, and exact zero `0 -> 0.00` in the Bottom Bar.
+- Required each cost display item to retain the full provider-reported text (`1.235 USD`,
+  `0.004 USD`, etc.) separately for hover and accessibility.
+- The focused build failed because `PrimaryDisplay` had only a vector of strings and no per-item
+  `text` / `fullText` contract.
+
+**GREEN**
+
+- Replaced primary display strings with typed `PrimaryDisplayItem { text, fullText }`; retained
+  `BuildPrimaryDisplayTexts` as a compatibility projection for existing pure-format tests.
+- Cost formatting uses decimal-string rounding rather than binary floating-point conversion, so
+  half-up behavior is deterministic for provider text. Context values remain unmodified.
+- Positive values below one cent display `<0.01 <currency>` instead of the misleading
+  `0.00 <currency>`; exact zero displays `0.00 <currency>`.
+- Each cost TextBlock receives the complete provider value through XAML Tooltip and
+  `AutomationProperties.HelpText`. Rust state, ACP payload precision, currency, and cost
+  aggregation semantics are unchanged.
+
+**Validation**
+
+- RED focused C++ build failed on missing `PrimaryDisplay::items` / `fullText`.
+- GREEN cost-rounding/full-text test: 1 passed, 0 failed.
+- Full `AgentUsageTests`: 17 passed, 0 failed, 0 skipped.
+
+**Committed files**
+
+- `src/cascadia/TerminalApp/AgentUsage.h`
+- `src/cascadia/TerminalApp/AgentUsage.cpp`
+- `src/cascadia/TerminalApp/TerminalPage.cpp`
+- `src/cascadia/ut_app/AgentUsageTests.cpp`
+- `doc/investigation/acp-price-calc.md`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 28 - Main Integration
 

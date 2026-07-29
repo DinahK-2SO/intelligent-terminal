@@ -856,7 +856,7 @@ Usage 位于 C++ window-level Bottom Bar 的右侧（session按钮左边）。�
 顺序渲染最多两个normalized items；其他metric不进入主栏。当前实际格式示例：
 
 ```text
-1024 / 8192 Tokens    0.004 USD
+1024 / 8192 Tokens    <0.01 USD
 ```
 
 这是synthetic typed validation的展示值，不代表当前agent已经实际发送对应字段。没有可信报告
@@ -876,6 +876,9 @@ Usage 位于 C++ window-level Bottom Bar 的右侧（session按钮左边）。�
 
 - currency保留agent/provider报告的原字符串，显示为`<数值> <currency>`，例如
   `0.55 USD`；WTA不验证长度/大小写，不纠正OpenCode已知上游bug，也不转换货币；
+- Bottom Bar中的cost按decimal text做half-up两位显示；正数但不足`0.01`时显示
+  `<0.01 <currency>`，精确零显示`0.00 <currency>`；hover tooltip与Automation HelpText显示
+  provider报告的完整amount与currency；
 - provider credit 使用稳定 `unit_id`，`display_name` 只是已知单位的本地化/fallback label；
 - unknown/custom label 视为 agent 提供的显示文本，必须限制长度并清理控制字符；
 - tooltip 显示 scope、aggregation、更新时间和 reporter/source；
@@ -1323,7 +1326,8 @@ direct Web API。
 
 - API 报告的稳定 `unit_id` 与显示名称分开保存；未知单位保留 provider 报告名称，不翻译；
 - 标准 `Tokens`、currency code 等通用单位可由 UI 本地化格式化，但不能换算数值；
-- 小数位规则按单位定义，不统一强制两位；不能把 `0.004 USD` 显示成 `0.00 USD`；
+- 主Bottom Bar的货币cost统一为两位；正数sub-cent使用`<0.01`避免显示为假零，完整值保留在
+  tooltip/HelpText和Rust state中；
 - Bottom Bar 在窄宽度下优先保留数值和单位，详细 source/scope 放 tooltip；
 - XAML 增加 AutomationProperties.Name；终端路径需要纯文本、不能只靠颜色表达 stale/error；
 - 数字更新不要被屏幕阅读器按 token/chunk 高频朗读，只在 turn 完成或显著变化时通知。
