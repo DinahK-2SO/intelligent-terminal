@@ -1124,7 +1124,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         }
         if (lower == "codex")
         {
-            return L"npx -y @agentclientprotocol/codex-acp@1.1.0";
+            return L"npx -y @agentclientprotocol/codex-acp@1.1.4";
         }
         if (lower == "opencode")
         {

@@ -1441,6 +1441,8 @@ fn pack_replayed_messages_groups_into_collapsed_turns() {
             id: "t1".to_string(),
             title: "ls".to_string(),
             status: "done".to_string(),
+            location: None,
+            location_is_command: false,
         },
         ChatMessage::Agent("Here are the files...".to_string()),
     ];
@@ -3553,65 +3555,6 @@ fn transport_loss_surfaces_restart_hint_even_behind_another_error() {
     assert_eq!(n, 1, "identical connection.lost must not duplicate");
 }
 
-/// `is_post_login_auth_failure` must catch BOTH the plain `AuthRequired`
-/// and the `HandshakeFailed { NewSession }` the pipe client wraps a
-/// still-AuthRequired post-login `new_session` into — `is_auth()` alone
-/// would miss the latter and the auth recovery would never fire. It must
-/// NOT match `HandshakeFailed { Authenticate }` (a genuine authenticate
-/// RPC rejection/timeout) — that routes to sign-in, not a master restart.
-#[test]
-fn post_login_auth_failure_matches_auth_required_and_handshake_new_session() {
-    use crate::protocol::acp::failure::{AgentFailure, HandshakeStage};
-    assert!(is_post_login_auth_failure(&AgentFailure::AuthRequired {
-        message: "auth".to_string()
-    }));
-    assert!(is_post_login_auth_failure(&AgentFailure::HandshakeFailed {
-        stage: HandshakeStage::NewSession,
-        detail: "still auth after authenticate".to_string()
-    }));
-    // An authenticate-RPC rejection/timeout must NOT trigger auth recovery
-    // (a master restart can't fix bad credentials) — it routes to sign-in.
-    assert!(!is_post_login_auth_failure(&AgentFailure::HandshakeFailed {
-        stage: HandshakeStage::Authenticate,
-        detail: "authenticate rejected/timed out".to_string()
-    }));
-    // A non-auth handshake stage must NOT trigger auth recovery.
-    assert!(!is_post_login_auth_failure(&AgentFailure::HandshakeFailed {
-        stage: HandshakeStage::Initialize,
-        detail: "boom".to_string()
-    }));
-}
-
-#[test]
-fn post_login_master_unavailable_matches_only_pipe_connect() {
-    use crate::protocol::acp::failure::{AgentFailure, HandshakeStage};
-
-    assert!(is_post_login_master_unavailable(
-        &AgentFailure::HandshakeFailed {
-            stage: HandshakeStage::PipeConnect,
-            detail: "pipe missing".to_string()
-        }
-    ));
-    assert!(!is_post_login_master_unavailable(
-        &AgentFailure::HandshakeFailed {
-            stage: HandshakeStage::Initialize,
-            detail: "init failed".to_string()
-        }
-    ));
-    assert!(!is_post_login_master_unavailable(
-        &AgentFailure::HandshakeFailed {
-            stage: HandshakeStage::Authenticate,
-            detail: "auth failed".to_string()
-        }
-    ));
-    assert!(!is_post_login_master_unavailable(
-        &AgentFailure::HandshakeFailed {
-            stage: HandshakeStage::NewSession,
-            detail: "session failed".to_string()
-        }
-    ));
-}
-
 #[test]
 fn typed_pipe_connect_failure_survives_classify_anyhow() {
     use crate::protocol::acp::failure::{AgentFailure, HandshakeStage};
@@ -3655,6 +3598,18 @@ fn post_login_recovery_route_covers_pipe_connect_without_external_auth_gate() {
         "non-post-login pipe failures should surface normally"
     );
 
+    let auth_required = AgentFailure::AuthRequired {
+        message: "auth".to_string(),
+    };
+    assert!(
+        should_trigger_post_login_recovery(true, true, &auth_required),
+        "external post-login auth failures should recover via a fresh master"
+    );
+    assert!(
+        !should_trigger_post_login_recovery(true, false, &auth_required),
+        "non-external auth failures should route to sign-in"
+    );
+
     let still_auth = AgentFailure::HandshakeFailed {
         stage: HandshakeStage::NewSession,
         detail: "still auth".to_string(),
@@ -3666,6 +3621,15 @@ fn post_login_recovery_route_covers_pipe_connect_without_external_auth_gate() {
     assert!(
         !should_trigger_post_login_recovery(true, false, &still_auth),
         "non-external auth failures should not use auth-stale recovery"
+    );
+
+    let authenticate_failed = AgentFailure::HandshakeFailed {
+        stage: HandshakeStage::Authenticate,
+        detail: "authenticate rejected".to_string(),
+    };
+    assert!(
+        !should_trigger_post_login_recovery(true, true, &authenticate_failed),
+        "authenticate failures should route to sign-in instead of restarting master"
     );
 }
 
@@ -4684,6 +4648,10 @@ fn perm_option_kind_matching_is_case_insensitive() {
     let perm = PermissionState {
         tool_call_id: "tool".into(),
         description: String::new(),
+        title: String::new(),
+        kind_label: None,
+        target: None,
+        target_is_command: false,
         options: vec![opt("AllowOnce"), opt("RejectOnce")],
         selected: 0,
         responder: None,
@@ -4693,7 +4661,7 @@ fn perm_option_kind_matching_is_case_insensitive() {
 }
 
 #[test]
-fn permission_request_permanently_clears_thinking_latch() {
+fn permission_request_keeps_thinking_until_turn_ends() {
     let mut app = test_app();
     let prompt = SubmittedPrompt {
         id: 1,
@@ -4706,14 +4674,15 @@ fn permission_request_permanently_clears_thinking_latch() {
         outcome: TurnOutcome::Empty,
         end_pending: true,
     };
-    app.tab_mut(DEFAULT_TAB_ID)
-        .waiting_for_first_visible_activity = true;
-
     let (responder, _response) = tokio::sync::oneshot::channel();
     app.handle_event(AppEvent::PermissionRequest {
         session_id: DEFAULT_TAB_ID.into(),
         tool_call_id: "tool".into(),
         description: "Allow tool X?".into(),
+        title: "Allow tool X?".into(),
+        kind_label: None,
+        target: None,
+        target_is_command: false,
         options: vec![
             PermOption { id: "allow-once".into(), name: "Allow".into(), kind: "AllowOnce".into() },
             PermOption { id: "reject-once".into(), name: "Deny".into(), kind: "RejectOnce".into() },
@@ -4721,12 +4690,14 @@ fn permission_request_permanently_clears_thinking_latch() {
         responder,
     });
 
-    assert!(!app.current_tab().should_show_thinking());
+    assert!(app.current_tab().should_show_thinking());
     app.current_tab_mut().permission.pop_front();
-    assert!(
-        !app.current_tab().should_show_thinking(),
-        "resolving permission must not re-enable Thinking in the same turn"
-    );
+    assert!(app.current_tab().should_show_thinking());
+    let TurnState::Surfaced { end_pending, .. } = &mut app.current_tab_mut().turn else {
+        panic!("expected surfaced turn");
+    };
+    *end_pending = false;
+    assert!(!app.current_tab().should_show_thinking());
 }
 
 /// Tool-call card: when the mock proposes a command (a `ToolCall`
@@ -5086,6 +5057,10 @@ fn render_permission_card_shows_options() {
     app.current_tab_mut().permission.push_back(PermissionState {
         tool_call_id: "tool".into(),
         description: "Run: echo PERM_XYZ".into(),
+        title: "Run: echo PERM_XYZ".into(),
+        kind_label: None,
+        target: None,
+        target_is_command: false,
         options: vec![
             PermOption {
                 id: "allow-once".into(),
@@ -5113,6 +5088,43 @@ fn render_permission_card_shows_options() {
     );
 }
 
+/// Render: the full permission card must show the kind glyph next to the
+/// title and the concrete target (path or command) on its own line — even
+/// though the target here is deliberately the same text already implied by
+/// the title, it must still render (the permission card never dedupes,
+/// unlike the chat tool-call card). A command target additionally gets the
+/// `$ ` shell-prompt prefix so it reads distinctly from a path.
+#[test]
+fn render_permission_card_shows_kind_glyph_and_target() {
+    let mut app = test_app();
+    app.state = ConnectionState::Connected;
+    app.current_tab_mut().permission.push_back(PermissionState {
+        tool_call_id: "tool".into(),
+        description: "Run command (rm -rf build)".into(),
+        title: "Run command".into(),
+        kind_label: Some("$".into()),
+        target: Some("rm -rf build".into()),
+        target_is_command: true,
+        options: vec![PermOption {
+            id: "allow-once".into(),
+            name: "Allow once".into(),
+            kind: "AllowOnce".into(),
+        }],
+        selected: 0,
+        responder: None,
+    });
+
+    let text = render_to_text(&mut app, 80, 24);
+    assert!(
+        text.contains("$ Run command"),
+        "the header must show the kind glyph next to the title; rendered:\n{text}"
+    );
+    assert!(
+        text.contains("$ rm -rf build"),
+        "the target line must show the command with a shell-prompt prefix; rendered:\n{text}"
+    );
+}
+
 /// Render: a tool-call card must paint its title in the chat. Lifts the
 /// tool-call branch of `ui/chat.rs`.
 #[test]
@@ -5123,6 +5135,8 @@ fn render_tool_call_card_in_chat() {
         id: "mock-tool-1".into(),
         title: "Run: echo TOOL_XYZ".into(),
         status: "Pending".into(),
+        location: None,
+        location_is_command: false,
     });
 
     let text = render_to_text(&mut app, 80, 24);
@@ -5959,9 +5973,8 @@ fn render_chat_completed_turn_expanded_with_marker() {
     }
 }
 
-/// Render: while the helper is still connecting, the chat must paint the
-/// animated "Connecting…" activity line. Lifts the `Connecting` branch of
-/// `build_activity_line` in `ui/chat.rs`.
+/// Render: while the helper is still connecting, the fixed activity row must
+/// paint the animated "Connecting…" label.
 #[test]
 fn render_chat_connecting_activity_line() {
     let mut app = test_app();
@@ -5995,7 +6008,7 @@ fn render_chat_welcome_hint() {
 }
 
 #[test]
-fn connecting_activity_row_is_included_in_estimated_chat_height() {
+fn fixed_activity_row_does_not_change_estimated_chat_height() {
     let mut app = test_app();
     app.current_tab_mut()
         .messages
@@ -6006,7 +6019,7 @@ fn connecting_activity_row_is_included_in_estimated_chat_height() {
     app.state = ConnectionState::Connecting("Starting agent".into());
     let with_activity = crate::ui::chat::estimated_block_height(&app, 80);
 
-    assert_eq!(with_activity, without_activity + 1);
+    assert_eq!(with_activity, without_activity);
     assert!(
         app.has_activity_indicator(),
         "Connecting must keep Tick redraws active for the shimmer"
@@ -6025,6 +6038,10 @@ fn render_permission_compact_shows_hint() {
     app.current_tab_mut().permission.push_back(PermissionState {
         tool_call_id: "tool".into(),
         description: "Run: echo PERM_COMPACT_XYZ".into(),
+        title: "Run: echo PERM_COMPACT_XYZ".into(),
+        kind_label: None,
+        target: None,
+        target_is_command: false,
         options: vec![
             PermOption {
                 id: "allow-once".into(),
@@ -6151,10 +6168,13 @@ fn first_message_chunk_transitions_to_streaming_with_buf() {
     assert!(app.current_tab().turn.is_streaming());
     assert!(
         app.current_tab().should_show_thinking(),
-        "Thinking remains until text is actually revealed"
+        "Thinking remains throughout the in-flight turn"
     );
     app.advance_reveal();
-    assert!(!app.current_tab().should_show_thinking());
+    assert!(
+        app.current_tab().should_show_thinking(),
+        "revealing response text must not hide Thinking before turn end"
+    );
 }
 
 #[test]
@@ -6173,7 +6193,7 @@ fn thought_chunk_first_transitions_with_empty_buf() {
 }
 
 #[test]
-fn hidden_structured_tokens_keep_thinking_until_explanation_is_visible() {
+fn structured_stream_keeps_thinking_after_explanation_is_visible() {
     let mut app = test_app();
     submit_test_prompt(&mut app, "hi");
     app.turn_observe_chunk(
@@ -6190,11 +6210,11 @@ fn hidden_structured_tokens_keep_thinking_until_explanation_is_visible() {
         r#","explanation":"Visible answer"}"#,
     );
     app.advance_reveal();
-    assert!(!app.current_tab().should_show_thinking());
+    assert!(app.current_tab().should_show_thinking());
 }
 
 #[test]
-fn tool_call_permanently_clears_thinking_latch() {
+fn tool_call_keeps_thinking_while_turn_is_in_flight() {
     let mut app = test_app();
     submit_test_prompt(&mut app, "inspect");
     app.handle_event(AppEvent::ToolCall {
@@ -6202,18 +6222,44 @@ fn tool_call_permanently_clears_thinking_latch() {
         id: "tool".into(),
         title: "Find files".into(),
         status: "InProgress".into(),
+        location: None,
+        location_is_command: false,
     });
-    assert!(!app.current_tab().should_show_thinking());
+    assert!(app.current_tab().should_show_thinking());
 
     app.handle_event(AppEvent::ToolCallUpdate {
         session_id: DEFAULT_TAB_ID.into(),
         id: "tool".into(),
         status: "Completed".into(),
+        location: None,
+        location_is_command: false,
     });
     assert!(
-        !app.current_tab().should_show_thinking(),
-        "tool completion must not re-enable Thinking"
+        app.current_tab().should_show_thinking(),
+        "tool completion does not end the agent turn"
     );
+}
+
+#[test]
+fn thinking_is_pinned_one_row_above_input() {
+    const WIDTH: u16 = 80;
+    const HEIGHT: u16 = 24;
+
+    let mut app = test_app();
+    app.state = ConnectionState::Connected;
+    submit_test_prompt(&mut app, "inspect");
+
+    let input_height =
+        crate::ui::input_height(&app.current_tab().input, app.current_tab().cursor_pos, WIDTH);
+    let text = render_to_text(&mut app, WIDTH, HEIGHT);
+    let label = t!("chat.activity_thinking").into_owned();
+    let row = text
+        .lines()
+        .position(|line| line.contains(&label))
+        .expect("Thinking row must render");
+    let expected_row = usize::from(HEIGHT - input_height - 1);
+
+    assert_eq!(row, expected_row, "Thinking must sit directly above the input box");
 }
 
 #[test]
@@ -6448,6 +6494,10 @@ fn perm_with(desc: &str) -> PermissionState {
     PermissionState {
         tool_call_id: "tool".into(),
         description: desc.to_string(),
+        title: desc.to_string(),
+        kind_label: None,
+        target: None,
+        target_is_command: false,
         options: vec![PermOption {
             id: "allow_once".into(),
             name: "Allow".into(),
@@ -6664,6 +6714,63 @@ fn rec_card_height_matches_predict_and_render_paths() {
 }
 
 // ─── Per-tab input history ──────────────────────────────────────────
+
+#[test]
+fn mouse_wheel_scrolls_chat_without_changing_input_history() {
+    use crossterm::event::{KeyModifiers, MouseEvent, MouseEventKind};
+    let mut app = test_app();
+    app.current_tab_mut().record_input_history("previous prompt");
+    app.current_tab_mut().chat_scroll.set_max(20);
+
+    app.handle_event(AppEvent::Mouse(MouseEvent {
+        kind: MouseEventKind::ScrollUp,
+        column: 0,
+        row: 0,
+        modifiers: KeyModifiers::NONE,
+    }));
+    assert_eq!(app.current_tab().chat_scroll.offset, 3);
+    assert!(app.current_tab().input.is_empty());
+
+    app.handle_event(AppEvent::Mouse(MouseEvent {
+        kind: MouseEventKind::ScrollDown,
+        column: 0,
+        row: 0,
+        modifiers: KeyModifiers::NONE,
+    }));
+    assert_eq!(app.current_tab().chat_scroll.offset, 0);
+    assert!(app.current_tab().input.is_empty());
+}
+
+#[test]
+fn alt_mouse_wheel_scrolls_chat_one_line() {
+    use crossterm::event::{KeyModifiers, MouseEvent, MouseEventKind};
+    let mut app = test_app();
+    app.current_tab_mut().chat_scroll.set_max(20);
+
+    app.handle_event(AppEvent::Mouse(MouseEvent {
+        kind: MouseEventKind::ScrollUp,
+        column: 0,
+        row: 0,
+        modifiers: KeyModifiers::ALT,
+    }));
+    assert_eq!(app.current_tab().chat_scroll.offset, 1);
+}
+
+#[test]
+fn mouse_wheel_does_not_scroll_hidden_chat() {
+    use crossterm::event::{KeyModifiers, MouseEvent, MouseEventKind};
+    let mut app = test_app();
+    app.current_tab_mut().chat_scroll.set_max(20);
+    app.current_tab_mut().current_view = View::Agents;
+
+    app.handle_event(AppEvent::Mouse(MouseEvent {
+        kind: MouseEventKind::ScrollUp,
+        column: 0,
+        row: 0,
+        modifiers: KeyModifiers::NONE,
+    }));
+    assert_eq!(app.current_tab().chat_scroll.offset, 0);
+}
 
 #[test]
 fn input_history_navigates_newest_first_and_restores_draft() {

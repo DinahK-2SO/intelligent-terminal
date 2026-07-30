@@ -10,7 +10,62 @@ use super::*;
 impl App {
     pub(super) fn handle_event(&mut self, event: AppEvent) {
         match event {
-            AppEvent::Key(key) => self.handle_key(key),
+            AppEvent::Key(key) => {
+                let is_copy = matches!(key.code, KeyCode::Char('c'))
+                    && key.modifiers.contains(KeyModifiers::CONTROL);
+                if is_copy {
+                    if let Some(text) = self.text_selection.selected_text() {
+                        match crate::win32::copy_text_to_clipboard(&text) {
+                            Ok(()) => {
+                                self.text_selection.clear();
+                                self.close_pane_armed_at = None;
+                                self.transient_hint = Some((
+                                    t!("system.selection_copied").into_owned(),
+                                    std::time::Instant::now() + SELECTION_COPIED_HINT_WINDOW,
+                                ));
+                            }
+                            Err(error) => {
+                                tracing::warn!(
+                                    target: "clipboard",
+                                    error = %error,
+                                    "failed to copy mouse-selected text"
+                                );
+                            }
+                        }
+                        return;
+                    }
+                }
+                self.text_selection.clear();
+                self.handle_key(key);
+            }
+            AppEvent::Mouse(mouse) => {
+                match mouse.kind {
+                    crossterm::event::MouseEventKind::ScrollUp
+                    | crossterm::event::MouseEventKind::ScrollDown
+                        if self.mode == AppMode::Chat
+                            && self.current_tab().current_view == View::Chat =>
+                    {
+                        self.text_selection.clear();
+                        let lines = if mouse.modifiers.contains(KeyModifiers::ALT) {
+                            1
+                        } else {
+                            3
+                        };
+                        match mouse.kind {
+                            crossterm::event::MouseEventKind::ScrollUp => {
+                                self.current_tab_mut().chat_scroll.by(lines);
+                            }
+                            crossterm::event::MouseEventKind::ScrollDown => {
+                                self.current_tab_mut().chat_scroll.by(-lines);
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {
+                        self.text_selection.handle_mouse(mouse);
+                    }
+                }
+            }
             AppEvent::AgentPasteTextReady {
                 tab_id,
                 generation,
@@ -73,6 +128,7 @@ impl App {
                 }
             }
             AppEvent::Resize(w, h) => {
+                self.text_selection.clear();
                 self.terminal_cols = w;
                 self.terminal_rows = h;
             }
@@ -568,6 +624,8 @@ impl App {
                 id,
                 title,
                 status,
+                location,
+                location_is_command,
             } => {
                 let tab = self.session_tab_mut(&session_id);
                 if !tab.turn.is_in_flight() && !tab.loading_session {
@@ -586,15 +644,21 @@ impl App {
                 }
                 tab.tool_calls
                     .insert(id.clone(), (title.clone(), status.clone()));
-                tab.messages
-                    .push(ChatMessage::ToolCall { id, title, status });
-                tab.mark_visible_agent_activity();
+                tab.messages.push(ChatMessage::ToolCall {
+                    id,
+                    title,
+                    status,
+                    location,
+                    location_is_command,
+                });
                 tab.scroll_to_bottom();
             }
             AppEvent::ToolCallUpdate {
                 session_id,
                 id,
                 status,
+                location,
+                location_is_command,
             } => {
                 let tab = self.session_tab_mut(&session_id);
                 if !tab.turn.is_in_flight() && !tab.loading_session {
@@ -608,11 +672,20 @@ impl App {
                     if let ChatMessage::ToolCall {
                         id: ref mid,
                         status: ref mut s,
+                        location: ref mut loc,
+                        location_is_command: ref mut loc_is_cmd,
                         ..
                     } = msg
                     {
                         if mid == &id {
                             *s = status.clone();
+                            // Only overwrite when the update actually carried
+                            // a fresh location — `None` means "unchanged",
+                            // not "clear it" (see `AppEvent::ToolCallUpdate`).
+                            if location.is_some() {
+                                *loc = location.clone();
+                                *loc_is_cmd = location_is_command;
+                            }
                         }
                     }
                 }
@@ -636,13 +709,16 @@ impl App {
                     }
                 }
                 tab.messages.push(ChatMessage::Plan(entries));
-                tab.mark_visible_agent_activity();
                 tab.scroll_to_bottom();
             }
             AppEvent::PermissionRequest {
                 session_id,
                 tool_call_id,
                 description,
+                title,
+                kind_label,
+                target,
+                target_is_command,
                 options,
                 responder,
             } => {
@@ -660,11 +736,14 @@ impl App {
                 tab.permission.push_back(PermissionState {
                     tool_call_id,
                     description,
+                    title,
+                    kind_label,
+                    target,
+                    target_is_command,
                     options,
                     selected: 0,
                     responder: Some(responder),
                 });
-                tab.mark_visible_agent_activity();
             }
             AppEvent::SystemMessage(message) => {
                 self.current_tab_mut()
