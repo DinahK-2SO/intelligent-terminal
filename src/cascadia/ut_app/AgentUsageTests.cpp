@@ -51,6 +51,7 @@ namespace TerminalAppUnitTests
         TEST_METHOD(BuildPrimaryDisplayHidesInputOutputOnly);
         TEST_METHOD(BuildPrimaryDisplayHidesAfterContainedError);
         TEST_METHOD(BuildPrimaryDisplayHidesWhenNothingReported);
+        TEST_METHOD(BuildPrimaryDisplayRespectsVisibilitySetting);
     };
 
     void AgentUsageTests::ParseValidItems()
@@ -293,6 +294,35 @@ namespace TerminalAppUnitTests
         VERIFY_ARE_EQUAL(static_cast<size_t>(1), display.items.size());
         VERIFY_ARE_EQUAL(std::wstring{ L"1024 / 8192 Tokens" }, display.items[0].text);
         VERIFY_IS_TRUE(display.items[0].fullText.empty());
+    }
+
+    void AgentUsageTests::BuildPrimaryDisplayRespectsVisibilitySetting()
+    {
+        const std::vector<TerminalApp::AgentUsage::Item> items{
+            TerminalApp::AgentUsage::Item{
+                .metricId = "acp.context.window",
+                .valueDecimalText = "1024",
+                .limitDecimalText = "8192",
+                .unitId = "token",
+                .scope = "session",
+                .source = "acp_standard",
+            },
+            TerminalApp::AgentUsage::Item{
+                .metricId = "acp.billing.cost",
+                .valueDecimalText = "0.004",
+                .unitId = "USD",
+                .scope = "session",
+                .source = "acp_standard",
+            },
+        };
+
+        const auto hidden = TerminalApp::AgentUsage::BuildPrimaryDisplay(items, L"Tokens", false);
+        VERIFY_IS_FALSE(hidden.visible);
+        VERIFY_IS_TRUE(hidden.items.empty());
+
+        const auto visible = TerminalApp::AgentUsage::BuildPrimaryDisplay(items, L"Tokens", true);
+        VERIFY_IS_TRUE(visible.visible);
+        VERIFY_ARE_EQUAL(static_cast<size_t>(2), visible.items.size());
     }
 
     void AgentUsageTests::BuildPrimaryDisplayHidesStaleMetrics()

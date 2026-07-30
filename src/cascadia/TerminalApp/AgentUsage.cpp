@@ -294,8 +294,14 @@ namespace TerminalApp::AgentUsage
 
     PrimaryDisplay BuildPrimaryDisplay(
         const std::vector<Item>& items,
-        const std::wstring_view tokensUnit)
+        const std::wstring_view tokensUnit,
+        const bool showUsage)
     {
+        if (!showUsage)
+        {
+            return {};
+        }
+
         auto displayItems = buildPrimaryDisplayItems(items, tokensUnit);
         const auto visible = !displayItems.empty();
         return PrimaryDisplay{

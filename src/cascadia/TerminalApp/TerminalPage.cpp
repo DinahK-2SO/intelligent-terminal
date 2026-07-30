@@ -2744,7 +2744,8 @@ namespace winrt::TerminalApp::implementation
                 const auto impl = winrt::get_self<winrt::TerminalApp::implementation::AgentPaneContent>(activeAgent);
                 const auto display = ::TerminalApp::AgentUsage::BuildPrimaryDisplay(
                     impl->GetAgentUsage(),
-                    RS_(L"Usage_TokensUnit"));
+                    RS_(L"Usage_TokensUnit"),
+                    _settings && _settings.GlobalSettings().ShowAgentUsage());
                 usageVisible = display.visible;
                 for (const auto& item : display.items)
                 {

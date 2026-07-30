@@ -57,6 +57,7 @@ code it describes.
 | 30. Portable PowerShell host | Tracked files must not contain a machine-specific pwsh installation path | Restore main's PATH/current-host behavior and keep local harnesses ignored | Complete |
 | 31. One-click packaged installer | Plan must be portable and clean x64 build must produce a signed validated MSIX ZIP | Add dynamic tool discovery, ordered dependencies, signing, and ZIP verification | Complete |
 | 32. Provider-neutral Gemini coverage | Tests must not freeze a temporary Gemini compatibility gap as a vendor-specific exclusion | Remove Gemini-negative cases while retaining standard ACP and generic private-metadata contracts | Complete |
+| 33. Default-off Usage preference | Valid context/cost must stay hidden by default and appear only when the persisted preference is enabled | Add `showAgentUsage` and gate only the Bottom Bar display projection | Complete |
 
 ## Completed Steps
 
@@ -65,6 +66,54 @@ code it describes.
 > two-turn investigation and team review. Step 27 supersedes Step 23's currency-shape filtering;
 > amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
 > PowerShell installation path.
+
+### Step 33 - Default-Off Usage Preference
+
+**Investigation**
+
+- The first-run experience and Settings > Agents share `GlobalAppSettings`, but not UI controls
+  or view models. FRE uses `FreOverlay.xaml` with direct code-behind reads/writes; Settings uses
+  `AIAgents.xaml` with `AIAgentsViewModel` bindings.
+- This feature follows those existing ownership boundaries. A future refactor may extract shared
+  agent-setting controls, but this feature does not introduce that architectural change.
+- Context-window usage and monetary cost currently share one Bottom Bar `UsageGroup`. The
+  preference controls that complete group while ACP data continues to be received and cached.
+
+**RED**
+
+- Added a SettingsModel contract requiring `showAgentUsage` to default to `false` and round-trip
+  an explicit `true` value.
+- Added an AgentUsage contract requiring valid context and cost to produce an empty, hidden
+  display when disabled and the existing two display items when enabled.
+- The first focused build failed with C2660 because `BuildPrimaryDisplay` did not accept the new
+  visibility input.
+
+**GREEN**
+
+- Added the inheritable global `showAgentUsage` setting with a default of `false`.
+- Extended the pure AgentUsage display projection with a visibility input. Disabled display
+  returns no items, while parsing, ACP routing, and per-pane Usage caching remain unchanged.
+- Passed the current setting from `TerminalPage` into the Bottom Bar display projection, so
+  enabling the preference can reveal already-reported data without waiting for another turn.
+
+**Validation**
+
+- Terminal App unit-test project build: 0 errors.
+- SettingsModel unit-test project build: 0 errors.
+- AgentUsage test class: 18 passed, 0 failed.
+- CustomAgentAndPolicy test class: 26 passed, 0 failed.
+- CRLF-aware patch whitespace check and editor diagnostics: clean.
+
+**Committed files**
+
+- `src/cascadia/TerminalSettingsModel/MTSMSettings.h`
+- `src/cascadia/TerminalSettingsModel/GlobalAppSettings.idl`
+- `src/cascadia/TerminalApp/AgentUsage.h`
+- `src/cascadia/TerminalApp/AgentUsage.cpp`
+- `src/cascadia/TerminalApp/TerminalPage.cpp`
+- `src/cascadia/UnitTests_SettingsModel/CustomAgentAndPolicyTests.cpp`
+- `src/cascadia/ut_app/AgentUsageTests.cpp`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 32 - Provider-Neutral Gemini Coverage
 

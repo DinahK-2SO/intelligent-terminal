@@ -74,6 +74,7 @@ namespace SettingsModelUnitTests
         TEST_METHOD(BuiltInDelegateAgentRoundtrips);
         TEST_METHOD(AcpAndDelegateModelRoundtrip);
         TEST_METHOD(AgentPanePositionRoundtripsAndDefaults);
+        TEST_METHOD(ShowAgentUsageRoundtripsAndDefaultsOff);
         TEST_METHOD(AutoErrorSettingsRoundtrip);
         TEST_METHOD(EffectiveAutoFixFalseWhenDetectionOff);
 
@@ -354,6 +355,15 @@ namespace SettingsModelUnitTests
         // Absent → falls back to the "bottom" default (MTSMSettings.h).
         const auto defaulted = MakeSettings({});
         VERIFY_ARE_EQUAL(winrt::hstring{ L"bottom" }, defaulted->GlobalSettings().AgentPanePosition());
+    }
+
+    void CustomAgentAndPolicyTests::ShowAgentUsageRoundtripsAndDefaultsOff()
+    {
+        const auto enabled = MakeSettings(R"("showAgentUsage": true)");
+        VERIFY_IS_TRUE(enabled->GlobalSettings().ShowAgentUsage());
+
+        const auto defaulted = MakeSettings({});
+        VERIFY_IS_FALSE(defaulted->GlobalSettings().ShowAgentUsage());
     }
 
     void CustomAgentAndPolicyTests::AutoErrorSettingsRoundtrip()
