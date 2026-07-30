@@ -65,6 +65,7 @@ code it describes.
 | 38. Final design sync | Final PM toggle semantics and both UI ownership paths must be documented as current behavior | Update status, current-state table, UI contract, and implemented scope | Complete |
 | 39. Whole Usage group visibility | Turning the toggle off must hide both context tokens and monetary cost | Gate the complete display projection before selecting either metric | Complete |
 | 40. Explicit usage-and-cost contract | Setting, controls, and text must state that both metrics are controlled | Rename to `showTokenUsageAndCost` and “Show token usage and cost” | Complete |
+| 41. Final whole-group E2E/docs | Packaged UI and final design must match the clarified whole-group behavior | Redeploy, verify Off/On cache projection, refresh screenshots, and sync docs | Complete |
 
 ## Completed Steps
 
@@ -73,6 +74,33 @@ code it describes.
 > two-turn investigation and team review. Step 27 supersedes Step 23's currency-shape filtering;
 > amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
 > PowerShell installation path.
+
+### Step 41 - Final Whole-Group E2E and Documentation
+
+**Final contract**
+
+- Steps 39-40 supersede the token-only behavior documented in Steps 36-38.
+- `showTokenUsageAndCost=false` hides the complete Bottom Bar Usage group. Enabling it shows any
+  fresh context and/or monetary cost already present in the active tab cache.
+
+**Validation**
+
+- Rebuilt and deployed the packaged Debug Dev app successfully.
+- Committed Settings/FRE feature suites against the final package: 8 passed, 0 failed, 0 skipped.
+- Local ignored UIA E2E verified:
+  - FRE and Settings both display “Show token usage and cost” and default Off.
+  - Settings Toggle -> Save persists `showTokenUsageAndCost=true`.
+  - After one context+cost injection, Off collapses the complete `UsageGroup`.
+  - Enabling by settings hot reload reveals both cached metrics without another provider event.
+- Refreshed and visually reviewed all five ignored screenshots; controls, labels, Bottom Bar values,
+  and layouts are visible without overlap or clipping.
+- AgentUsage tests: 18 passed, 0 failed. CustomAgentAndPolicy tests: 26 passed, 0 failed.
+- Final design audit found no active token-only contract outside superseded tracking history.
+
+**Committed files**
+
+- `doc/investigation/acp-price-calc.md`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 40 - Explicit Usage-and-Cost Contract
 

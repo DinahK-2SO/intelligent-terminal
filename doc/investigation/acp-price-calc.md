@@ -1,6 +1,6 @@
 # ACP Usage / Cost 调查与统一展示设计
 
-- **状态**：首版实现完成；TDD Step 0-38 与真实provider、本地完整pipeline及packaged toggle E2E验证已完成
+- **状态**：首版实现完成；TDD Step 0-41 与真实provider、本地完整pipeline及packaged toggle E2E验证已完成
 - **首次调查**：2026-07-17
 - **最后核验**：2026-07-30
 - **协议基线**：ACP protocol version 1
@@ -37,8 +37,8 @@
   boundary 加一次 release 降级：失败则隐藏 Usage，不影响聊天主流程。
 10. 首版继续支持Gemini CLI的聊天能力，但不解析其private quota，因为它没有遵守本功能采用
   的标准ACP UsageUpdate contract。若未来Gemini发送标准context/cost，通用路径自动生效。
-11. Context-window token usage默认隐藏。用户可在首次启动FRE或Settings → Agents开启
-  `showTokenUsage`；该设置不隐藏monetary cost，也不停止Usage接收/缓存。
+11. Context-window token usage与monetary cost默认都隐藏。用户可在首次启动FRE或
+  Settings → Agents开启`showTokenUsageAndCost`；该设置不停止Usage接收/缓存。
 
 > **2026-07-29 final product decision**：只显示标准ACP直接报告的context-window data和
 > monetary cost。本文较早的input/output和Gemini private adapter设计是历史记录，已被本节、
@@ -96,7 +96,7 @@ fixture/记录并重新跑 Claude/Codex E2E mock。
 | Custom selection | Settings 将 `npx ...` 保存为 `custom:npx`；master 对未知 helper ID 回退到 host 已信任的 default command，从不执行 pipe 上传来的 command | 分离 instance/family/reporter；custom 可识别 compatible family，但首版不能启用私有 usage extension |
 | Usage receive | master已可靠按metric coalesce/定向latest value；helper原样保留typed context gauge，无效optional cost只省略cost metric | 保持provider-neutral；按实际agent版本继续维护structured Usage兼容矩阵 |
 | Provider usage layer | `tools/wta/src/usage/providers/`为五个family提供统一typed registry；所有private extractor当前no-op，Copilot保留`Reserved`接口 | 未来provider实现标准ACP无需特殊代码；private扩展必须重新review |
-| Usage state/UI | Rust按session保存/合并optional context/cost并立即投影；C++只选择context/cost两项。`showTokenUsage`默认false且只过滤context item，cost独立显示 | 首版已完成；不增加平行UI/state route；FRE与Settings共用GlobalAppSettings source of truth |
+| Usage state/UI | Rust按session保存/合并optional context/cost并立即投影；C++只选择context/cost两项。`showTokenUsageAndCost`默认false并控制整个UsageGroup | 首版已完成；不增加平行UI/state route；FRE与Settings共用GlobalAppSettings source of truth |
 | C++ event route | 现有`agent_state_changed`按`tab_id`路由并消费可选`usage`/null；missing保持、null清除、malformed fail-fast；Rust session-boundary reset沿同一projection发送null；`_UpdateBottomBarState`从active tab cache渲染 | 不新增COM/IDL route或第二个业务异常层 |
 | Rust codegen | [tools/wta/build.rs](../../tools/wta/build.rs) 当前只生成 ETW telemetry metadata | 增加 Agent registry codegen，但保留现有 ETW 生成 |
 | Gemini / Antigravity | Gemini CLI 0.51.0使用官方`--acp`，但private quota不进入Usage产品路径 | 等待标准ACP context/cost；Antigravity另行调查且不预先复用identity |
@@ -1212,17 +1212,15 @@ Step 5 已在 Rust projection 中实现该 transport shape。最终产品selecto
   `UsageGroup`；
 - XAML：在 Bottom Bar Column 2 增加右对齐的动态 usage presenter。
 
-#### Token usage visibility
+#### Token usage and cost visibility
 
-- 全局设置键为`showTokenUsage`，默认`false`。默认隐藏的是`acp.context.window` token gauge，
-  不是整个Usage组件。
-- `acp.billing.cost`只要由provider报告且fresh，就继续显示；token toggle不能被解释为billing
-  privacy/kill switch。
+- 全局设置键为`showTokenUsageAndCost`，默认`false`。关闭时整个`UsageGroup`隐藏，
+  `acp.context.window`与`acp.billing.cost`都不渲染。
 - 关闭只影响C++ display projection。Rust state、`agent_state_changed`传输和per-tab C++ cache
   继续接收context/cost，因此重新开启时不需要provider重发Usage。
 - Settings保存或settings.json热更新后，`_RefreshUIForSettingsReload()`调用现有
   `_UpdateBottomBarState()`，立即用active tab cache重算可见items。
-- 两个用户入口写同一`GlobalAppSettings.ShowTokenUsage`：
+- 两个用户入口写同一`GlobalAppSettings.ShowTokenUsageAndCost`：
   - 首次启动FRE：`FreOverlay.xaml`与code-behind直接初始化/保存；
   - 日常Settings → Agents：`AIAgents.xaml`通过`AIAgentsViewModel`双向投影并由Save落盘。
 - 两处UI当前只复用settings model，不复用control/view model。这与既有FRE code-behind和
@@ -1375,8 +1373,9 @@ direct Web API。
 7. custom agent 标准 ACP 自动支持；
 8. provider扩展接口保留，但所有private extractor当前no-op；Copilot等待未来标准ACP数据。
 9. Gemini不做private特殊处理；OpenCode标准UsageUpdate按原currency显示，不修正已知上游bug。
-10. `showTokenUsage`默认false；FRE与Settings → Agents都可开启。
-11. toggle只控制context-window token显示；monetary cost独立显示。
+10. `showTokenUsageAndCost`默认false；FRE与Settings → Agents都可开启。
+11. toggle关闭时整个UsageGroup隐藏；开启时按provider实际报告显示context-window、
+  monetary cost或两者。
 12. 设置变更立即从当前active tab的cache重投影，不等待下一条provider消息。
 
 Copilot 1.0.71 因没有结构化动态 usage，首版仍隐藏其 usage。这样可以先验证通用 contract，
