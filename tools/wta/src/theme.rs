@@ -10,6 +10,7 @@ pub const INPUT_TEXT: Style = Style::new().fg(Color::Reset);
 // schemes. A hardcoded white was invisible on light color schemes (#234).
 pub const AGENT_TEXT: Style = Style::new().fg(Color::Reset);
 pub const SYSTEM_TEXT: Style = Style::new().fg(Color::Cyan);
+pub const STATUS_TEXT: Style = Style::new().fg(Color::Reset);
 pub const TOOL_CALL_TITLE: Style = Style::new().fg(Color::Reset).add_modifier(Modifier::DIM);
 pub const TOOL_CALL_PENDING: Style = Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD);
 pub const TOOL_CALL_RUNNING: Style = Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD);

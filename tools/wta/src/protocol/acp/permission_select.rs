@@ -100,36 +100,39 @@ pub(crate) fn init_yolo_state(global_auto_approve: bool, yolo_sessions: Arc<Mute
     *YOLO_STATE.write().unwrap() = (global_auto_approve, Some(yolo_sessions));
 }
 
-/// Whether `session_id` should run in yolo mode — either the global toggle
-/// is on, or this specific session ran `/yolo`. Mirrors the same check in
+/// Whether `session_id` should run in yolo mode. Membership in the per-session
+/// set inverts the global setting, allowing `/yolo off` to opt out when the
+/// global toggle is on. Mirrors the same check in
 /// `client.rs`'s `request_permission` handler; kept here too so the
 /// session-creation call sites can decide whether it's worth attempting the
 /// native allow-all apply at all.
 pub(crate) fn is_yolo_session(session_id: &str) -> bool {
     let guard = YOLO_STATE.read().unwrap();
-    guard.0
-        || guard
-            .1
-            .as_ref()
-            .map(|s| s.lock().unwrap().contains(session_id))
-            .unwrap_or(false)
+    let toggled_from_global = guard
+        .1
+        .as_ref()
+        .map(|s| s.lock().unwrap().contains(session_id))
+        .unwrap_or(false);
+    guard.0 ^ toggled_from_global
 }
 
-/// Switch the recorded native allow-all config to `on` for one session, via
+/// Switch the recorded native allow-all config for one session, via
 /// `session/set_config_option`. Returns `Ok(false)` (not an error) when the
 /// current agent doesn't advertise the config — callers rely on the
 /// client-side `request_permission` auto-approve fallback in that case
 /// instead. Returns `Ok(true)` when the native call was actually made and
 /// succeeded.
-pub(crate) async fn apply_native_allow_all(
+pub(crate) async fn set_native_allow_all(
     conn: &crate::protocol::acp::conn::ClientLink,
     session_id: acp::schema::v1::SessionId,
+    enabled: bool,
 ) -> acp::Result<bool> {
     let Some(config_id) = native_allow_all_config_id() else {
         return Ok(false);
     };
+    let value = if enabled { "on" } else { "off" };
     conn.set_session_config_option(
-        acp::schema::v1::SetSessionConfigOptionRequest::new(session_id, config_id, "on"),
+        acp::schema::v1::SetSessionConfigOptionRequest::new(session_id, config_id, value),
     )
     .await
     .map(|_| true)
@@ -210,11 +213,24 @@ mod tests {
         assert!(!is_yolo_session("s-a"));
 
         sessions.lock().unwrap().insert("s-a".to_string());
-        assert!(is_yolo_session("s-a"), "per-session /yolo membership must be honored");
-        assert!(!is_yolo_session("s-b"), "an unrelated session must not be affected");
+        assert!(
+            is_yolo_session("s-a"),
+            "per-session /yolo must invert the off global state"
+        );
+        assert!(
+            !is_yolo_session("s-b"),
+            "an unrelated session must not be affected"
+        );
 
         init_yolo_state(true, sessions.clone());
-        assert!(is_yolo_session("s-b"), "global toggle must cover every session");
+        assert!(
+            !is_yolo_session("s-a"),
+            "per-session /yolo must invert the on global state"
+        );
+        assert!(
+            is_yolo_session("s-b"),
+            "global toggle must cover every session"
+        );
     }
 
     #[test]

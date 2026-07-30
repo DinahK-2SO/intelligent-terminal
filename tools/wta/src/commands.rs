@@ -57,8 +57,8 @@ pub enum CommandKind {
     /// setting or any other tab.
     Move,
     /// Enable "yolo mode" (auto-approve tool calls) for this tab's *current*
-    /// ACP session only. Does not persist across `/new` (a fresh session_id
-    /// is not in the auto-approve set) and is refused when the
+    /// ACP session. Bare `/yolo` means on; `/yolo on|off` keeps the state
+    /// explicit. Does not persist across `/new` and is refused when the
     /// `AllowYoloMode` admin policy blocks it. See `App::cmd_yolo`.
     Yolo,
 }
@@ -156,7 +156,7 @@ pub const REGISTRY: &[CommandSpec] = &[
         name: "yolo",
         summary_key: "commands.yolo.summary",
         kind: CommandKind::Yolo,
-        takes_args: false,
+        takes_args: true,
     },
 ];
 
@@ -187,6 +187,23 @@ pub const MOVE_POSITIONS: &[MovePositionSpec] = &[
         name: "down",
         alias: "d",
         pane_position: "bottom",
+    },
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct YoloOptionSpec {
+    pub name: &'static str,
+    pub enabled: bool,
+}
+
+pub const YOLO_OPTIONS: &[YoloOptionSpec] = &[
+    YoloOptionSpec {
+        name: "on",
+        enabled: true,
+    },
+    YoloOptionSpec {
+        name: "off",
+        enabled: false,
     },
 ];
 
@@ -330,6 +347,21 @@ pub fn match_move_positions(prefix: &str) -> Vec<&'static MovePositionSpec> {
         .collect()
 }
 
+pub fn lookup_yolo_option(value: &str) -> Option<&'static YoloOptionSpec> {
+    let value = value.trim();
+    YOLO_OPTIONS
+        .iter()
+        .find(|option| option.name.eq_ignore_ascii_case(value))
+}
+
+pub fn match_yolo_options(prefix: &str) -> Vec<&'static YoloOptionSpec> {
+    let needle = prefix.trim().to_ascii_lowercase();
+    YOLO_OPTIONS
+        .iter()
+        .filter(|option| option.name.starts_with(&needle))
+        .collect()
+}
+
 /// Return the canonical agent-id prefix while completing `/agent <id>`.
 ///
 /// The command name must be complete and followed by whitespace. Agent IDs
@@ -344,6 +376,14 @@ pub fn agent_id_prefix(input: &str) -> Option<&str> {
 /// argument hides the popup because `/move` accepts exactly one position.
 pub fn move_position_prefix(input: &str) -> Option<&str> {
     single_argument_prefix(input, "move")
+}
+
+pub fn yolo_option_prefix(input: &str) -> Option<&str> {
+    let trimmed = input.trim_start();
+    if trimmed.eq_ignore_ascii_case("/yolo") {
+        return Some("");
+    }
+    single_argument_prefix(input, "yolo")
 }
 
 fn single_argument_prefix<'a>(input: &'a str, command: &str) -> Option<&'a str> {

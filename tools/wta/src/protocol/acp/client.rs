@@ -204,15 +204,15 @@ pub enum MasterExtRequest {
     },
     /// Retroactively apply the agent-native allow-all permission config
     /// (see `permission_select`) to an *already-connected* session, for the
-    /// `/yolo` slash command: `App::cmd_yolo` has already inserted the
-    /// session into `yolo_sessions` (so the client-side `request_permission`
-    /// fallback works immediately), but if the current agent advertises the
-    /// native channel, this makes the agent stop asking altogether rather
-    /// than relying on WTA intercepting and auto-answering each request.
+    /// `/yolo on|off` slash command: `App::cmd_yolo` has already updated
+    /// `yolo_sessions` (so the client-side `request_permission` fallback
+    /// changes immediately), and this mirrors the effective state into the
+    /// agent's native channel when one is advertised.
     /// A no-op (logged, not fatal) when the current agent doesn't advertise
     /// the native config — the client-side fallback still covers it.
     SetSessionAllowAll {
         session_id: acp::schema::v1::SessionId,
+        enabled: bool,
     },
 }
 
@@ -1747,18 +1747,19 @@ impl WtaClient {
             })
             .collect();
 
-        // Yolo mode: either the global `--auto-approve-tools` helper flag is
-        // set, or this session ran `/yolo`. In either case, skip the UI
+        // Yolo mode starts from the global `--auto-approve-tools` helper flag;
+        // membership in `yolo_sessions` inverts it for this session. When
+        // enabled, skip the UI
         // prompt entirely and pick the best "allow" option ourselves —
         // preferring `allow_always` (fewer future prompts) over a one-shot
         // `allow_once`, matching what a user doing this manually would pick.
-        let is_yolo = self.state.global_auto_approve_tools
-            || self
-                .state
-                .yolo_sessions
-                .lock()
-                .unwrap()
-                .contains(&session_id);
+        let toggled_from_global = self
+            .state
+            .yolo_sessions
+            .lock()
+            .unwrap()
+            .contains(&session_id);
+        let is_yolo = self.state.global_auto_approve_tools ^ toggled_from_global;
         if is_yolo {
             if let Some(option) = pick_allow_option(&options) {
                 acp_log(&format!(
@@ -2283,9 +2284,10 @@ async fn maybe_apply_native_allow_all(
 ) {
     crate::protocol::acp::permission_select::record_from_new_session(resp);
     if crate::protocol::acp::permission_select::is_yolo_session(&session_id.to_string()) {
-        match crate::protocol::acp::permission_select::apply_native_allow_all(
+        match crate::protocol::acp::permission_select::set_native_allow_all(
             conn,
             session_id.clone(),
+            true,
         )
         .await
         {
@@ -3351,17 +3353,22 @@ fn dispatch_master_ext_request(
                     }
                 }
             }
-            MasterExtRequest::SetSessionAllowAll { session_id } => {
-                match crate::protocol::acp::permission_select::apply_native_allow_all(
+            MasterExtRequest::SetSessionAllowAll {
+                session_id,
+                enabled,
+            } => {
+                match crate::protocol::acp::permission_select::set_native_allow_all(
                     &conn,
                     session_id.clone(),
+                    enabled,
                 )
                 .await
                 {
                     Ok(true) => tracing::info!(
                         target: "acp",
                         session_id = %session_id.0,
-                        "native allow-all hot-applied to live /yolo session"
+                        enabled,
+                        "native allow-all hot-updated for live /yolo session"
                     ),
                     Ok(false) => tracing::debug!(
                         target: "acp",
@@ -3373,8 +3380,8 @@ fn dispatch_master_ext_request(
                         target: "acp",
                         session_id = %session_id.0,
                         error = ?err,
-                        "native allow-all hot-apply failed; \
-                         request_permission interception still covers this session"
+                        enabled,
+                        "native allow-all hot-update failed"
                     ),
                 }
             }

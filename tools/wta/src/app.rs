@@ -4031,6 +4031,8 @@ impl App {
             crate::ui::PopupCandidates::Agents(agent_candidates)
         } else if !tab.move_position_candidates.is_empty() {
             crate::ui::PopupCandidates::MovePositions(tab.move_position_candidates.as_slice())
+        } else if !tab.yolo_option_candidates.is_empty() {
+            crate::ui::PopupCandidates::YoloOptions(tab.yolo_option_candidates.as_slice())
         } else {
             crate::ui::PopupCandidates::Commands(std::borrow::Cow::Borrowed(
                 tab.command_popup_candidates.as_slice(),
@@ -4127,7 +4129,9 @@ impl App {
             agent_count
         } else {
             let tab = self.current_tab();
-            tab.command_popup_candidates.len() + tab.move_position_candidates.len()
+            tab.command_popup_candidates.len()
+                + tab.move_position_candidates.len()
+                + tab.yolo_option_candidates.len()
         }
     }
 
@@ -4248,6 +4252,17 @@ impl App {
                     self.handle_slash_command(parsed);
                     return true;
                 }
+                if let Some(option) = self.current_tab().selected_yolo_option() {
+                    let spec = commands::lookup("yolo").expect("/yolo is registered");
+                    let parsed = ParsedCommand {
+                        kind: CommandKind::Yolo,
+                        spec,
+                        rest: option.name.to_string(),
+                    };
+                    self.current_tab_mut().clear_input();
+                    self.handle_slash_command(parsed);
+                    return true;
+                }
             }
 
             let spec = if self.transport_lost {
@@ -4353,7 +4368,7 @@ impl App {
             CommandKind::Agent => self.cmd_agent(cmd.rest),
             CommandKind::Model => self.cmd_model(cmd.rest),
             CommandKind::Move => self.cmd_move(cmd.rest),
-            CommandKind::Yolo => self.cmd_yolo(),
+            CommandKind::Yolo => self.cmd_yolo(cmd.rest),
         }
     }
 
@@ -4579,7 +4594,8 @@ impl App {
         self.project_active_tab_state();
     }
 
-    /// `/yolo` — enable auto-approve for tool-call permission requests, but
+    /// `/yolo [on|off]` — set auto-approve for tool-call permission requests.
+    /// Bare `/yolo` defaults to on.
     /// scoped to *this tab's current* ACP session only (keyed by
     /// `session_id`, not `tab_id`). Deliberately does **not** persist across
     /// `/new`: a fresh session gets a fresh session_id, which is simply not
@@ -4590,7 +4606,7 @@ impl App {
     /// `yolo_command_blocked` is set — i.e. the `AllowYoloMode` admin policy
     /// blocks auto-approve, independent of whatever the global "Auto-approve
     /// tool calls" setting happens to be.
-    fn cmd_yolo(&mut self) {
+    fn cmd_yolo(&mut self, value: String) {
         if self.yolo_command_blocked {
             let tab = self.current_tab_mut();
             tab.messages.push(ChatMessage::System(
@@ -4599,9 +4615,29 @@ impl App {
             tab.scroll_to_bottom();
             return;
         }
+        let value = if value.trim().is_empty() {
+            "on"
+        } else {
+            value.trim()
+        };
+        let Some(option) = commands::lookup_yolo_option(value) else {
+            let tab = self.current_tab_mut();
+            tab.input = "/yolo ".to_string();
+            tab.cursor_pos = tab.input.len();
+            tab.refresh_command_popup();
+            return;
+        };
         let session_id = self.current_tab().session_id.clone();
         if let Some(sid) = session_id {
-            self.yolo_sessions.lock().unwrap().insert(sid.clone());
+            let enabled = option.enabled;
+            let toggled_from_global = enabled != self.global_auto_approve_tools;
+            let mut sessions = self.yolo_sessions.lock().unwrap();
+            if toggled_from_global {
+                sessions.insert(sid.clone());
+            } else {
+                sessions.remove(&sid);
+            }
+            drop(sessions);
             // Best-effort: if the connected agent advertises a native
             // per-session allow-all permission config (currently confirmed
             // for Copilot CLI's ACP server — see `permission_select` module
@@ -4614,8 +4650,14 @@ impl App {
             let _ = self.master_request_tx.send(
                 crate::protocol::acp::client::MasterExtRequest::SetSessionAllowAll {
                     session_id: agent_client_protocol::schema::v1::SessionId::new(sid),
+                    enabled,
                 },
             );
+            let marker = if enabled { "●" } else { "○" };
+            let confirmation = format!("{} {}", marker, t!("commands.yolo.summary"));
+            let tab = self.current_tab_mut();
+            tab.messages.push(ChatMessage::Status(confirmation));
+            tab.scroll_to_bottom();
         }
         // If there's no session yet (pane still connecting), `/yolo` is a
         // no-op beyond nothing above running: this tab's session_id isn't
@@ -4625,8 +4667,8 @@ impl App {
         // the only channel that covers a session created after this point;
         // there is currently no queued/pending state that makes a `/yolo`
         // typed before the session exists retroactively apply once it does.
-        // Deliberately silent either way: no chat message is posted so
-        // auto-approved tool calls don't clutter the conversation.
+        // Only a successfully updated live session gets the confirmation
+        // above; don't claim success when there was no session to update.
     }
 
     /// `/restart` — reset the agent CLI subprocess. Behavior depends on which

@@ -2261,6 +2261,40 @@ async fn request_permission_session_yolo_is_scoped_to_that_session_only() {
         .await;
 }
 
+/// A per-session `/yolo` toggle can opt one session out when global yolo is
+/// enabled. The request must return to the normal interactive prompt path.
+#[tokio::test]
+async fn request_permission_session_yolo_can_override_global_on() {
+    let (client, mut rx) = bare_client_with_yolo(true, &["s1"]);
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let handle = tokio::task::spawn_local(async move {
+                client.request_permission(permission_request("s1")).await
+            });
+            match rx.recv().await {
+                Some(AppEvent::PermissionRequest {
+                    session_id,
+                    responder,
+                    ..
+                }) => {
+                    assert_eq!(session_id, "s1");
+                    responder.send("allow-once".to_string()).unwrap();
+                }
+                other => panic!(
+                    "expected PermissionRequest for the session-level opt-out, got is_some={}",
+                    other.is_some()
+                ),
+            }
+            let resp = handle.await.unwrap().unwrap();
+            assert!(matches!(
+                resp.outcome,
+                acp::schema::v1::RequestPermissionOutcome::Selected(_)
+            ));
+        })
+        .await;
+}
+
 /// When an `allow_always` option is offered alongside `allow_once`, yolo
 /// mode prefers `allow_always` (fewer future prompts for the rest of this
 /// session), matching what a user manually clicking through would pick.

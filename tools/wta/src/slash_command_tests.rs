@@ -122,6 +122,89 @@ fn slash_new_when_idle_resets_session() {
     assert!(app.current_tab().messages.is_empty());
 }
 
+#[test]
+fn slash_yolo_sets_current_session_and_uses_low_emphasis_status() {
+    let mut app = test_app();
+    app.current_tab_mut().session_id = Some("sid-yolo".into());
+
+    run_slash_args(&mut app, "yolo", "on");
+
+    assert!(app.yolo_sessions.lock().unwrap().contains("sid-yolo"));
+    assert_eq!(
+        app.current_tab().messages.last(),
+        Some(&ChatMessage::Status(format!(
+            "● {}",
+            t!("commands.yolo.summary")
+        ))),
+        "/yolo must confirm that auto-approval was enabled for the current session"
+    );
+
+    run_slash_args(&mut app, "yolo", "off");
+
+    assert!(!app.yolo_sessions.lock().unwrap().contains("sid-yolo"));
+    assert_eq!(
+        app.current_tab().messages.last(),
+        Some(&ChatMessage::Status(format!(
+            "○ {}",
+            t!("commands.yolo.summary")
+        ))),
+        "/yolo off must disable auto-approval for the current session"
+    );
+}
+
+#[test]
+fn slash_yolo_can_disable_a_globally_enabled_session() {
+    let mut app = test_app();
+    app.global_auto_approve_tools = true;
+    app.current_tab_mut().session_id = Some("sid-global-yolo".into());
+
+    run_slash_args(&mut app, "yolo", "off");
+
+    assert!(app
+        .yolo_sessions
+        .lock()
+        .unwrap()
+        .contains("sid-global-yolo"));
+    assert!(matches!(
+        app.current_tab().messages.last(),
+        Some(ChatMessage::Status(message)) if message.starts_with("○ ")
+    ));
+}
+
+#[test]
+fn slash_yolo_without_state_enables_current_session() {
+    let mut app = test_app();
+    app.current_tab_mut().session_id = Some("sid-bare-yolo".into());
+
+    run_slash(&mut app, "yolo");
+
+    assert!(app
+        .yolo_sessions
+        .lock()
+        .unwrap()
+        .contains("sid-bare-yolo"));
+    assert!(matches!(
+        app.current_tab().messages.last(),
+        Some(ChatMessage::Status(message)) if message.starts_with("● ")
+    ));
+}
+
+#[test]
+fn typing_bare_yolo_opens_on_off_completion() {
+    let mut app = test_app();
+
+    type_input(&mut app, "/yolo");
+
+    assert_eq!(
+        app.current_tab()
+            .yolo_option_candidates
+            .iter()
+            .map(|option| option.name)
+            .collect::<Vec<_>>(),
+        vec!["on", "off"]
+    );
+}
+
 /// Dispatch a slash command with free-form args (e.g. `/model gpt-5`) through
 /// the same `handle_slash_command` path the Enter handler uses.
 fn run_slash_args(app: &mut App, name: &str, rest: &str) {

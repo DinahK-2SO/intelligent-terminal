@@ -75,7 +75,9 @@ fn message_height(msg: &ChatMessage, wrap_width: usize) -> usize {
     match msg {
         ChatMessage::Agent(t) | ChatMessage::Error(t) => dot_wrap_count(t, body_width) + 1,
         ChatMessage::User(t) => wrap_count(t, body_width) + 1,
-        ChatMessage::System(t) | ChatMessage::AgentEvent(t) => wrap_count(t, wrap_width) + 1,
+        ChatMessage::System(t) | ChatMessage::Status(t) | ChatMessage::AgentEvent(t) => {
+            wrap_count(t, wrap_width) + 1
+        }
         ChatMessage::ToolCall { location, location_is_command, .. } => {
             // Command targets render one line per split statement (see
             // the render arm below, and `command_format`) — must count
@@ -583,6 +585,15 @@ fn build_message_lines<'a>(
                 lines.push(Line::from(Span::styled(
                     truncate_render_text(line_text),
                     theme::SYSTEM_TEXT,
+                )));
+            }
+            lines.push(Line::default());
+        }
+        ChatMessage::Status(text) => {
+            for line_text in text.lines() {
+                lines.push(Line::from(Span::styled(
+                    truncate_render_text(line_text),
+                    theme::STATUS_TEXT,
                 )));
             }
             lines.push(Line::default());
