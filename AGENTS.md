@@ -19,9 +19,11 @@ try to reuse existing tests code, but note that the existing test framework 可�
 用 PATH 中解析到的 pwsh（PowerShell 7+）来做 e2e test。需要启动同一 host 的子进程时，
 复用当前 PowerShell 进程路径；不要硬编码本机安装目录。
 
-注意做好 moduralization，and reusing existing code.
+注意做好 moduralization，我们新增的代码应 reuse existing code. 但是如果现有的架构已经有多个部分分别coding了duplicate的功能，我们应该在未来的其他branch上做refactoring, so we follow the existing pattern to add code in seperated places for now, 不应在一个新增的feature branch上做巨大地改变系统架构的refactoring。
 
-每当你完成一个步骤并测试成功，将你实现的东西记录在 "./doc/investigation/acp-price-calc-track.md" 中，并将与这一部分feature相关的代码，e2e测试截图 和 acp-price-calc-track.md中的新note，通过 commit + push 到 本地和远程的 branch： user/DinahK-2SO/acp-price-calc
+每当你完成一个步骤并测试成功，将你实现的东西记录在 "./doc/investigation/acp-price-calc-track.md" 中，并将与这一部分feature相关的代码，e2e测试截图 和 acp-price-calc-track.md中的新note，通过 commit + push 到 本地和远程的 branch： user/DinahK-2SO/acp-price-calc ；
+
+做完之后，回头看一下 doc\investigation\acp-price-calc.md，有没有我们在对话中提到的，但是没有 properly 记录在 doc\investigation\acp-price-calc.md 中的功能，将缺失的功能补充在 doc\investigation\acp-price-calc.md中。
 
 关于tests是否commits：our dev PR doesn't mean to introduce a brand new test framework here. 因此，现有的 test framework 能够cover的tests才加入commits，其他只留在本地。未来我们会另开一个PR to make the tests more E2E and closer to the actual user interaction, 因此，本地的测试代码都不要删除。
 
