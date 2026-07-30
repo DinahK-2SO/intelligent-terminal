@@ -227,8 +227,8 @@ namespace winrt::TerminalApp::implementation
         AutoDetectToggle().OffContent(winrt::box_value(RS_(L"FreOverlay_ToggleOff")));
         AutoErrorToggle().OnContent(winrt::box_value(RS_(L"FreOverlay_ToggleOn")));
         AutoErrorToggle().OffContent(winrt::box_value(RS_(L"FreOverlay_ToggleOff")));
-        ShowUsageToggle().OnContent(winrt::box_value(RS_(L"FreOverlay_ToggleOn")));
-        ShowUsageToggle().OffContent(winrt::box_value(RS_(L"FreOverlay_ToggleOff")));
+        ShowTokenUsageToggle().OnContent(winrt::box_value(RS_(L"FreOverlay_ToggleOn")));
+        ShowTokenUsageToggle().OffContent(winrt::box_value(RS_(L"FreOverlay_ToggleOff")));
         SessionManagementToggle().OnContent(winrt::box_value(RS_(L"FreOverlay_ToggleOn")));
         SessionManagementToggle().OffContent(winrt::box_value(RS_(L"FreOverlay_ToggleOff")));
 
@@ -271,7 +271,7 @@ namespace winrt::TerminalApp::implementation
         // master toggle (and reflects the stored preference when detection is
         // on).
         AutoErrorToggle().IsOn(globals.EffectiveAutoFixEnabled());
-        ShowUsageToggle().IsOn(globals.ShowAgentUsage());
+        ShowTokenUsageToggle().IsOn(globals.ShowTokenUsage());
         if (globals.IsAutoFixPolicyLocked())
         {
             const auto policyText = RS_(L"FreOverlay_PolicyLocked");
@@ -310,7 +310,7 @@ namespace winrt::TerminalApp::implementation
         Automation::AutomationProperties::SetName(
             AutoErrorToggle(), RS_(L"FreOverlay_AutoErrorLabel/Text"));
         Automation::AutomationProperties::SetName(
-            ShowUsageToggle(), RS_(L"FreOverlay_ShowUsageLabel/Text"));
+            ShowTokenUsageToggle(), RS_(L"FreOverlay_ShowTokenUsageLabel/Text"));
         Automation::AutomationProperties::SetName(
             SessionManagementToggle(), RS_(L"FreOverlay_SessionLabel/Text"));
         Automation::AutomationProperties::SetName(
@@ -1434,7 +1434,7 @@ namespace winrt::TerminalApp::implementation
             globals.DelegateAgent(agentId);
             globals.AutoErrorDetectionEnabled(AutoDetectToggle().IsOn());
             globals.AutoFixEnabled(AutoErrorToggle().IsOn());
-            globals.ShowAgentUsage(ShowUsageToggle().IsOn());
+            globals.ShowTokenUsage(ShowTokenUsageToggle().IsOn());
 
             const auto posIdx = PanePositionComboBox().SelectedIndex();
             switch (posIdx)
@@ -1461,7 +1461,7 @@ namespace winrt::TerminalApp::implementation
             + " needsNode=" + (needsNode ? "y" : "n")
             + " detect=" + (AutoDetectToggle().IsOn() ? "on" : "off")
             + " suggest=" + (AutoErrorToggle().IsOn() ? "on" : "off")
-            + " usage=" + (ShowUsageToggle().IsOn() ? "on" : "off")
+            + " tokenUsage=" + (ShowTokenUsageToggle().IsOn() ? "on" : "off")
             + " hooks=" + (SessionManagementToggle().IsOn() ? "on" : "off"));
 
         // If any bootstrap step needs winget, make sure winget itself is

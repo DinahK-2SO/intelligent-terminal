@@ -1091,8 +1091,8 @@ In this context, "agent" refers to an AI agent (e.g. Copilot, Claude, Gemini), n
     <value>これを有効にすると、エージェント全体でセッションを追跡するための統合 hooks がインストールされます。</value>
     <comment>{Locked="hooks"}</comment>
   </data>
-  <data name="FreOverlay_ShowUsageLabel.Text" xml:space="preserve"><value>使用量とコストを表示</value><comment>Header for the first-run setting that controls whether agent usage and monetary cost appear in the terminal bottom bar.</comment></data>
-  <data name="FreOverlay_ShowUsageDescription.Text" xml:space="preserve"><value>ターミナルの下部バーにコンテキスト ウィンドウの使用量と金銭的コストを表示します。</value><comment>Description for the agent usage and cost visibility toggle in the first-run wizard.</comment></data>
+  <data name="FreOverlay_ShowTokenUsageLabel.Text" xml:space="preserve"><value>トークン使用量を表示</value><comment>Header for the first-run setting that controls whether context-window token usage appears in the terminal bottom bar.</comment></data>
+  <data name="FreOverlay_ShowTokenUsageDescription.Text" xml:space="preserve"><value>ターミナルの下部バーにコンテキスト ウィンドウのトークン使用量を表示します。</value><comment>Description for the token usage visibility toggle in the first-run wizard.</comment></data>
   <data name="FreOverlay_PanePositionLabel.Text" xml:space="preserve">
     <value>ペインの位置</value>
   </data>

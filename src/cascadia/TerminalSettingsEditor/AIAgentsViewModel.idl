@@ -75,7 +75,7 @@ namespace Microsoft.Terminal.Settings.Editor
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(String, DelegateModel);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, AutoErrorDetectionEnabled);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, AutoFixEnabled);
-        PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, ShowAgentUsage);
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, ShowTokenUsage);
         // Whether the auto-suggest toggle should be enabled: detection must be
         // on and the auto-fix GPO must not be locking it off.
         Boolean CanSuggestErrors { get; };

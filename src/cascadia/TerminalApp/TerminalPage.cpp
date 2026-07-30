@@ -2745,7 +2745,7 @@ namespace winrt::TerminalApp::implementation
                 const auto display = ::TerminalApp::AgentUsage::BuildPrimaryDisplay(
                     impl->GetAgentUsage(),
                     RS_(L"Usage_TokensUnit"),
-                    _settings && _settings.GlobalSettings().ShowAgentUsage());
+                    _settings && _settings.GlobalSettings().ShowTokenUsage());
                 usageVisible = display.visible;
                 for (const auto& item : display.items)
                 {

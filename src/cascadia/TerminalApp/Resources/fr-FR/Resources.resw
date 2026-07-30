@@ -1084,8 +1084,8 @@
     <value>L'activation de cette option installera des hooks d'intégration pour suivre les sessions sur vos agents.</value>
     <comment>{Locked="hooks"}</comment>
   </data>
-  <data name="FreOverlay_ShowUsageLabel.Text" xml:space="preserve"><value>Afficher l’utilisation et le coût</value><comment>Header for the first-run setting that controls whether agent usage and monetary cost appear in the terminal bottom bar.</comment></data>
-  <data name="FreOverlay_ShowUsageDescription.Text" xml:space="preserve"><value>Affiche l’utilisation de la fenêtre de contexte et le coût monétaire dans la barre inférieure du terminal.</value><comment>Description for the agent usage and cost visibility toggle in the first-run wizard.</comment></data>
+  <data name="FreOverlay_ShowTokenUsageLabel.Text" xml:space="preserve"><value>Afficher l’utilisation des jetons</value><comment>Header for the first-run setting that controls whether context-window token usage appears in the terminal bottom bar.</comment></data>
+  <data name="FreOverlay_ShowTokenUsageDescription.Text" xml:space="preserve"><value>Affiche l’utilisation des jetons de la fenêtre de contexte dans la barre inférieure du terminal.</value><comment>Description for the token usage visibility toggle in the first-run wizard.</comment></data>
   <data name="FreOverlay_PanePositionLabel.Text" xml:space="preserve">
     <value>Position du volet</value>
   </data>

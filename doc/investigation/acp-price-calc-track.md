@@ -60,6 +60,7 @@ code it describes.
 | 33. Default-off Usage preference | Valid context/cost must stay hidden by default and appear only when the persisted preference is enabled | Add `showAgentUsage` and gate only the Bottom Bar display projection | Complete |
 | 34. Settings Usage toggle | Settings > Agents must expose a localized two-way toggle for the shared preference | Reuse the projected-setting macro and existing SettingContainer pattern | Complete |
 | 35. First-run Usage toggle | FRE must initialize and save the same default-off preference | Follow the existing FRE card/code-behind pattern without duplicating setting state | Complete |
+| 36. Token-only visibility semantics | Turning token usage off must not suppress separately reported monetary cost | Filter only context-window tokens and rename the preference/UI contract to `showTokenUsage` | Complete |
 
 ## Completed Steps
 
@@ -68,6 +69,61 @@ code it describes.
 > two-turn investigation and team review. Step 27 supersedes Step 23's currency-shape filtering;
 > amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
 > PowerShell installation path.
+
+### Step 36 - Token-Only Visibility Semantics
+
+**Scope correction**
+
+- The PM requirement says token usage is hidden by default. Steps 33-35 initially interpreted the
+  preference as controlling the complete context/cost group, which also hid monetary cost.
+- This step supersedes that intermediate semantic: the toggle controls only context-window token
+  usage. Monetary cost remains visible whenever it is independently reported and current.
+
+**RED**
+
+- Changed the pure display contract to require one retained cost item when token visibility is
+  disabled for a snapshot containing both context and cost. It failed because the display was
+  completely hidden.
+- Changed the SettingsModel contract to require the token-specific `showTokenUsage` JSON key and
+  `ShowTokenUsage` property. Compilation failed because only the broader interim property existed.
+
+**GREEN**
+
+- Moved the preference into metric selection: disabled token visibility skips only
+  `acp.context.window`; `acp.billing.cost` continues through the existing formatting, tooltip, and
+  accessibility paths.
+- Renamed the new persisted setting and WinRT/UI bindings from `showAgentUsage` to
+  `showTokenUsage`, retaining the required default of `false`.
+- Renamed both Settings and FRE controls/resources to token-specific identifiers and wording.
+  Existing reviewed locale values were updated to token-specific translations; other FRE locales
+  retain the safe English fallback pending the formal localization pipeline.
+
+**Validation**
+
+- Focused token-only display test: 1 passed, 0 failed.
+- Focused `showTokenUsage` SettingsModel test: 1 passed, 0 failed.
+- AgentUsage test class: 18 passed, 0 failed.
+- CustomAgentAndPolicy test class: 26 passed, 0 failed.
+- SettingsEditor and TerminalApp focused builds: 0 errors.
+- Token resource contracts: SettingsEditor 16/16 and TerminalApp 89/89 locale files retain BOM/XML,
+  contain exactly the new two-key family, and contain no interim resource keys.
+- Source audit found no remaining `ShowAgentUsage`, `showAgentUsage`, or old UI resource/accessor
+  identifiers.
+
+**Committed files**
+
+- `src/cascadia/TerminalSettingsModel/MTSMSettings.h`
+- `src/cascadia/TerminalSettingsModel/GlobalAppSettings.idl`
+- `src/cascadia/TerminalApp/AgentUsage.{h,cpp}`
+- `src/cascadia/TerminalApp/TerminalPage.cpp`
+- `src/cascadia/TerminalApp/FreOverlay.{xaml,cpp}`
+- `src/cascadia/TerminalSettingsEditor/AIAgents.xaml`
+- `src/cascadia/TerminalSettingsEditor/AIAgentsViewModel.{h,idl}`
+- `src/cascadia/TerminalApp/Resources/*/Resources.resw`
+- `src/cascadia/TerminalSettingsEditor/Resources/*/Resources.resw`
+- `src/cascadia/UnitTests_SettingsModel/CustomAgentAndPolicyTests.cpp`
+- `src/cascadia/ut_app/AgentUsageTests.cpp`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 35 - First-Run Usage Toggle
 

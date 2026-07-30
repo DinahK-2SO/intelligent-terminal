@@ -184,8 +184,8 @@
     <value>Enabling this will install integration hooks to track sessions across your agents.</value>
     <comment>{Locked="hooks"}</comment>
   </data>
-  <data name="FreOverlay_ShowUsageLabel.Text" xml:space="preserve"><value>Show usage and cost</value><comment>Header for the first-run setting that controls whether agent usage and monetary cost appear in the terminal bottom bar.</comment></data>
-  <data name="FreOverlay_ShowUsageDescription.Text" xml:space="preserve"><value>Show context-window usage and monetary cost in the terminal bottom bar.</value><comment>Description for the agent usage and cost visibility toggle in the first-run wizard.</comment></data>
+  <data name="FreOverlay_ShowTokenUsageLabel.Text" xml:space="preserve"><value>Show token usage</value><comment>Header for the first-run setting that controls whether context-window token usage appears in the terminal bottom bar.</comment></data>
+  <data name="FreOverlay_ShowTokenUsageDescription.Text" xml:space="preserve"><value>Show context-window token usage in the terminal bottom bar.</value><comment>Description for the token usage visibility toggle in the first-run wizard.</comment></data>
   <data name="FreOverlay_PanePositionLabel.Text" xml:space="preserve">
     <value>Pane position</value>
   </data>
