@@ -180,7 +180,8 @@
 
             <local:SettingContainer x:Name="ShowTokenUsage"
                             x:Uid="AIAgents_ShowTokenUsage">
-                <ToggleSwitch MinWidth="0"
+                <ToggleSwitch x:Name="ShowTokenUsageToggle"
+                              MinWidth="0"
                               AutomationProperties.AccessibilityView="Content"
                         IsOn="{x:Bind ViewModel.ShowTokenUsage, Mode=TwoWay}" />
             </local:SettingContainer>

@@ -8389,6 +8389,10 @@ namespace winrt::TerminalApp::implementation
         // recreate the affected layers so the new values take effect
         // without a terminal restart.
         _RebuildAgentStack();
+
+        // Re-project cached per-tab status after settings-only presentation
+        // changes, including showTokenUsage.
+        _UpdateBottomBarState();
     }
 
     void TerminalPage::_updateAllTabCloseButtons()

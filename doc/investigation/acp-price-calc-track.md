@@ -61,6 +61,7 @@ code it describes.
 | 34. Settings Usage toggle | Settings > Agents must expose a localized two-way toggle for the shared preference | Reuse the projected-setting macro and existing SettingContainer pattern | Complete |
 | 35. First-run Usage toggle | FRE must initialize and save the same default-off preference | Follow the existing FRE card/code-behind pattern without duplicating setting state | Complete |
 | 36. Token-only visibility semantics | Turning token usage off must not suppress separately reported monetary cost | Filter only context-window tokens and rename the preference/UI contract to `showTokenUsage` | Complete |
+| 37. Packaged toggle E2E | Both UI entry points and Bottom Bar behavior must work in the deployed package | Add existing-framework UI contracts, stable automation ID, and settings-reload re-projection | Complete |
 
 ## Completed Steps
 
@@ -69,6 +70,62 @@ code it describes.
 > two-turn investigation and team review. Step 27 supersedes Step 23's currency-shape filtering;
 > amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
 > PowerShell installation path.
+
+### Step 37 - Packaged Toggle E2E
+
+**RED**
+
+- Added existing ItE2E feature tests requiring the FRE token toggle to exist and default Off, and
+  the Settings toggle to default Off and persist `showTokenUsage=true` through the real Save flow.
+- Against the previously deployed package, the FRE test failed because `ShowTokenUsageToggle` did
+  not exist. The Settings tests were environment-skipped because VS Code retained foreground and
+  the existing keyboard accelerator could not open Settings.
+- A local ignored UIA flow bypassed that foreground dependency and found a second behavior RED:
+  changing `showTokenUsage` to true persisted correctly but did not reveal cached context Usage
+  until another agent event arrived.
+
+**GREEN**
+
+- Added a stable `ShowTokenUsageToggle` automation ID to the Settings toggle and made the existing
+  framework test follow the product's Toggle -> Save persistence flow.
+- `_RefreshUIForSettingsReload` now calls the existing `_UpdateBottomBarState`, re-projecting
+  cached per-tab Usage after presentation-only settings change. No provider event or duplicate
+  cache is needed.
+- Reused the existing ItE2E framework for committed tests. The UIA-only Settings opener, package
+  deployment orchestration, wire injection, scripts, results, and screenshots remain ignored under
+  `test/e2e/artifacts/token-usage-toggle/`.
+
+**Validation**
+
+- Full Debug WTA + CascadiaPackage build succeeded; the deployed WTA SHA256 matched the Cargo
+  output. The initially installed signed MSIX could not use `Remove-AppxPackage
+  -PreserveApplicationData`, so its LocalState was backed up, checked 6/6 files, deployed as a
+  development layout, restored, and verified file-by-file by SHA256.
+- Committed Settings/FRE feature files against final Dev package: 5 passed, 0 failed, 3 skipped.
+  The skips are the pre-existing foreground-keyboard Settings cases; the equivalent pure-UIA local
+  flow passed.
+- Local ignored UIA E2E:
+  - FRE toggle visible and Off by default.
+  - Settings toggle visible and Off by default; Toggle -> Save persisted `showTokenUsage=true`.
+  - Token Off with injected context+cost: cost visible, context hidden.
+  - Token On by settings hot reload with no new provider event: cached context and cost visible.
+- AgentUsage tests: 18 passed, 0 failed. CustomAgentAndPolicy tests: 26 passed, 0 failed.
+- TerminalApp and SettingsEditor focused builds: 0 errors. Editor diagnostics and CRLF-aware patch
+  whitespace check: clean.
+- Screenshot review passed with no overlap or clipping:
+  - `test/e2e/artifacts/token-usage-toggle/fre-token-usage-off.png`
+  - `test/e2e/artifacts/token-usage-toggle/settings-token-usage-off.png`
+  - `test/e2e/artifacts/token-usage-toggle/settings-token-usage-on.png`
+  - `test/e2e/artifacts/token-usage-toggle/bottom-bar-token-usage-off.png`
+  - `test/e2e/artifacts/token-usage-toggle/bottom-bar-token-usage-on.png`
+
+**Committed files**
+
+- `src/cascadia/TerminalApp/TerminalPage.cpp`
+- `src/cascadia/TerminalSettingsEditor/AIAgents.xaml`
+- `test/e2e/tests/Feature.FreAgentSetup.Tests.ps1`
+- `test/e2e/tests/Feature.SettingsUi.Tests.ps1`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 36 - Token-Only Visibility Semantics
 
