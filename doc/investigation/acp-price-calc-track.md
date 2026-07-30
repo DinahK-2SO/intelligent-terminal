@@ -62,6 +62,7 @@ code it describes.
 | 35. First-run Usage toggle | FRE must initialize and save the same default-off preference | Follow the existing FRE card/code-behind pattern without duplicating setting state | Complete |
 | 36. Token-only visibility semantics | Turning token usage off must not suppress separately reported monetary cost | Filter only context-window tokens and rename the preference/UI contract to `showTokenUsage` | Complete |
 | 37. Packaged toggle E2E | Both UI entry points and Bottom Bar behavior must work in the deployed package | Add existing-framework UI contracts, stable automation ID, and settings-reload re-projection | Complete |
+| 38. Final design sync | Final PM toggle semantics and both UI ownership paths must be documented as current behavior | Update status, current-state table, UI contract, and implemented scope | Complete |
 
 ## Completed Steps
 
@@ -70,6 +71,33 @@ code it describes.
 > two-turn investigation and team review. Step 27 supersedes Step 23's currency-shape filtering;
 > amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
 > PowerShell installation path.
+
+### Step 38 - Final Design Sync
+
+**Review**
+
+- Re-read `acp-price-calc.md` after packaged E2E. It still ended at Step 29 and did not record the
+  PM's default-off token setting, the two UI entry points, token-only filtering, or immediate cache
+  re-projection.
+
+**Update**
+
+- Updated status/date and the current repository facts.
+- Documented `showTokenUsage=false`, monetary-cost independence, data/cache behavior, settings hot
+  reload, and the shared-model/separate-UI ownership of FRE versus Settings.
+- Updated the implemented minimum scope without rewriting the earlier provider investigation or
+  superseded prototype history.
+
+**Validation**
+
+- Cross-checked every documented symbol/key against the final compiled code and packaged E2E
+  results from Steps 33-37.
+- Markdown link/path and CRLF-aware patch whitespace checks: clean.
+
+**Committed files**
+
+- `doc/investigation/acp-price-calc.md`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 37 - Packaged Toggle E2E
 
