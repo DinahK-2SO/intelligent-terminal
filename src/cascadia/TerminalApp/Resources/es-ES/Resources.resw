@@ -1083,6 +1083,8 @@
     <value>Habilitar esto instalará hooks de integración para rastrear sesiones en tus agentes.</value>
     <comment>{Locked="hooks"}</comment>
   </data>
+  <data name="FreOverlay_ShowUsageLabel.Text" xml:space="preserve"><value>Mostrar uso y coste</value><comment>Header for the first-run setting that controls whether agent usage and monetary cost appear in the terminal bottom bar.</comment></data>
+  <data name="FreOverlay_ShowUsageDescription.Text" xml:space="preserve"><value>Muestra el uso de la ventana de contexto y el coste monetario en la barra inferior del terminal.</value><comment>Description for the agent usage and cost visibility toggle in the first-run wizard.</comment></data>
   <data name="FreOverlay_PanePositionLabel.Text" xml:space="preserve">
     <value>Posición del panel</value>
   </data>

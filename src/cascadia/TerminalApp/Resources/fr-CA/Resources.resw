@@ -184,6 +184,8 @@
     <value>L'activation de cette option installera des hooks d'intégration pour suivre les sessions sur vos agents.</value>
     <comment>{Locked="hooks"}</comment>
   </data>
+  <data name="FreOverlay_ShowUsageLabel.Text" xml:space="preserve"><value>Show usage and cost</value><comment>Header for the first-run setting that controls whether agent usage and monetary cost appear in the terminal bottom bar.</comment></data>
+  <data name="FreOverlay_ShowUsageDescription.Text" xml:space="preserve"><value>Show context-window usage and monetary cost in the terminal bottom bar.</value><comment>Description for the agent usage and cost visibility toggle in the first-run wizard.</comment></data>
   <data name="FreOverlay_PanePositionLabel.Text" xml:space="preserve">
     <value>Position du volet</value>
   </data>

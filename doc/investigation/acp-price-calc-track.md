@@ -59,6 +59,7 @@ code it describes.
 | 32. Provider-neutral Gemini coverage | Tests must not freeze a temporary Gemini compatibility gap as a vendor-specific exclusion | Remove Gemini-negative cases while retaining standard ACP and generic private-metadata contracts | Complete |
 | 33. Default-off Usage preference | Valid context/cost must stay hidden by default and appear only when the persisted preference is enabled | Add `showAgentUsage` and gate only the Bottom Bar display projection | Complete |
 | 34. Settings Usage toggle | Settings > Agents must expose a localized two-way toggle for the shared preference | Reuse the projected-setting macro and existing SettingContainer pattern | Complete |
+| 35. First-run Usage toggle | FRE must initialize and save the same default-off preference | Follow the existing FRE card/code-behind pattern without duplicating setting state | Complete |
 
 ## Completed Steps
 
@@ -67,6 +68,45 @@ code it describes.
 > two-turn investigation and team review. Step 27 supersedes Step 23's currency-shape filtering;
 > amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
 > PowerShell installation path.
+
+### Step 35 - First-Run Usage Toggle
+
+**RED**
+
+- Added FRE code-behind initialization, accessibility, persistence, and diagnostic references to
+  `ShowUsageToggle` before the XAML element existed.
+- The focused TerminalApp build failed with six C3861 errors because the generated
+  `ShowUsageToggle` accessor was missing.
+
+**GREEN**
+
+- Added a first-run `Border/Grid/ToggleSwitch` card matching the existing FRE settings form. The
+  toggle defaults Off in XAML, initializes from `GlobalAppSettings.ShowAgentUsage`, and writes the
+  same setting during the existing Save flow.
+- Added localized accessibility naming and On/Off content through the existing FRE resource and
+  code-behind patterns.
+- Added both resource keys to every discovered TerminalApp locale with `XmlDocument`. Sixteen
+  locales reuse the reviewed SettingsEditor translations; the remaining locales use an accurate
+  English fallback pending the repository's formal localization pipeline rather than committing
+  unreviewed machine translations.
+- No shared UI abstraction was introduced: FRE and Settings retain their existing separate UI
+  ownership while sharing the settings-model source of truth.
+
+**Validation**
+
+- TerminalApp focused build: 0 errors; the generated XAML accessor and code-behind compiled.
+- FRE resource contract: 89/89 discovered locale files are well-formed XML, retain UTF-8 BOMs,
+  and contain exactly the two `FreOverlay_ShowUsage` keys.
+- Resource diff audit: each locale has exactly two added resource entries and no unrelated XML
+  normalization churn.
+- CRLF-aware patch whitespace check and editor diagnostics: clean.
+
+**Committed files**
+
+- `src/cascadia/TerminalApp/FreOverlay.xaml`
+- `src/cascadia/TerminalApp/FreOverlay.cpp`
+- `src/cascadia/TerminalApp/Resources/*/Resources.resw`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 34 - Settings Usage Toggle
 

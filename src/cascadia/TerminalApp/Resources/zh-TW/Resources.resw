@@ -1090,6 +1090,8 @@ In this context, "agent" refers to an AI agent (e.g. Copilot, Claude, Gemini), n
     <value>啟用此功能將安裝整合 hooks，以追蹤跨智能體的工作階段。</value>
     <comment>{Locked="hooks"}</comment>
   </data>
+  <data name="FreOverlay_ShowUsageLabel.Text" xml:space="preserve"><value>顯示使用量和費用</value><comment>Header for the first-run setting that controls whether agent usage and monetary cost appear in the terminal bottom bar.</comment></data>
+  <data name="FreOverlay_ShowUsageDescription.Text" xml:space="preserve"><value>在終端機底部列中顯示內容視窗使用量和費用。</value><comment>Description for the agent usage and cost visibility toggle in the first-run wizard.</comment></data>
   <data name="FreOverlay_PanePositionLabel.Text" xml:space="preserve">
     <value>窗格位置</value>
   </data>
