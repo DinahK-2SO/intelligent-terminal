@@ -51,7 +51,7 @@ namespace TerminalAppUnitTests
         TEST_METHOD(BuildPrimaryDisplayHidesInputOutputOnly);
         TEST_METHOD(BuildPrimaryDisplayHidesAfterContainedError);
         TEST_METHOD(BuildPrimaryDisplayHidesWhenNothingReported);
-        TEST_METHOD(BuildPrimaryDisplayHidesOnlyTokensWhenDisabled);
+        TEST_METHOD(BuildPrimaryDisplayHidesUsageAndCostWhenDisabled);
     };
 
     void AgentUsageTests::ParseValidItems()
@@ -296,7 +296,7 @@ namespace TerminalAppUnitTests
         VERIFY_IS_TRUE(display.items[0].fullText.empty());
     }
 
-    void AgentUsageTests::BuildPrimaryDisplayHidesOnlyTokensWhenDisabled()
+    void AgentUsageTests::BuildPrimaryDisplayHidesUsageAndCostWhenDisabled()
     {
         const std::vector<TerminalApp::AgentUsage::Item> items{
             TerminalApp::AgentUsage::Item{
@@ -317,9 +317,8 @@ namespace TerminalAppUnitTests
         };
 
         const auto hidden = TerminalApp::AgentUsage::BuildPrimaryDisplay(items, L"Tokens", false);
-        VERIFY_IS_TRUE(hidden.visible);
-        VERIFY_ARE_EQUAL(static_cast<size_t>(1), hidden.items.size());
-        VERIFY_ARE_EQUAL(std::wstring{ L"<0.01 USD" }, hidden.items[0].text);
+        VERIFY_IS_FALSE(hidden.visible);
+        VERIFY_IS_TRUE(hidden.items.empty());
 
         const auto visible = TerminalApp::AgentUsage::BuildPrimaryDisplay(items, L"Tokens", true);
         VERIFY_IS_TRUE(visible.visible);

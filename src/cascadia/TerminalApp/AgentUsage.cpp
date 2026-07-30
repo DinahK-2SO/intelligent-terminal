@@ -175,8 +175,7 @@ namespace
 
     std::vector<TerminalApp::AgentUsage::PrimaryDisplayItem> buildPrimaryDisplayItems(
         const std::vector<TerminalApp::AgentUsage::Item>& items,
-        const std::wstring_view tokensUnit,
-        const bool showTokenUsage = true)
+        const std::wstring_view tokensUnit)
     {
         using namespace TerminalApp::AgentUsage;
 
@@ -184,11 +183,6 @@ namespace
         displayItems.reserve(std::min(items.size(), MaxPrimaryItems));
         for (const auto metricId : { "acp.context.window", "acp.billing.cost" })
         {
-            if (!showTokenUsage && metricId == std::string_view{ "acp.context.window" })
-            {
-                continue;
-            }
-
             const auto item = std::ranges::find(items, metricId, &Item::metricId);
             if (item == items.end() || item->stale || displayItems.size() == MaxPrimaryItems)
             {
@@ -301,9 +295,14 @@ namespace TerminalApp::AgentUsage
     PrimaryDisplay BuildPrimaryDisplay(
         const std::vector<Item>& items,
         const std::wstring_view tokensUnit,
-        const bool showTokenUsage)
+        const bool showUsageAndCost)
     {
-        auto displayItems = buildPrimaryDisplayItems(items, tokensUnit, showTokenUsage);
+        if (!showUsageAndCost)
+        {
+            return {};
+        }
+
+        auto displayItems = buildPrimaryDisplayItems(items, tokensUnit);
         const auto visible = !displayItems.empty();
         return PrimaryDisplay{
             .items = std::move(displayItems),

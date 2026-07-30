@@ -48,5 +48,5 @@ namespace TerminalApp::AgentUsage
     PrimaryDisplay BuildPrimaryDisplay(
         const std::vector<Item>& items,
         std::wstring_view tokensUnit,
-        bool showTokenUsage = true);
+        bool showUsageAndCost = true);
 }

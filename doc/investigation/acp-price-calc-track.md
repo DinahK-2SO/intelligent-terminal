@@ -63,6 +63,7 @@ code it describes.
 | 36. Token-only visibility semantics | Turning token usage off must not suppress separately reported monetary cost | Filter only context-window tokens and rename the preference/UI contract to `showTokenUsage` | Complete |
 | 37. Packaged toggle E2E | Both UI entry points and Bottom Bar behavior must work in the deployed package | Add existing-framework UI contracts, stable automation ID, and settings-reload re-projection | Complete |
 | 38. Final design sync | Final PM toggle semantics and both UI ownership paths must be documented as current behavior | Update status, current-state table, UI contract, and implemented scope | Complete |
+| 39. Whole Usage group visibility | Turning the toggle off must hide both context tokens and monetary cost | Gate the complete display projection before selecting either metric | Complete |
 
 ## Completed Steps
 
@@ -71,6 +72,42 @@ code it describes.
 > two-turn investigation and team review. Step 27 supersedes Step 23's currency-shape filtering;
 > amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
 > PowerShell installation path.
+
+### Step 39 - Whole Usage Group Visibility
+
+**Scope correction**
+
+- Product clarification established that “token usage” in the PM request names the complete
+  token-usage-and-cost surface, not a request to leave monetary cost visible independently.
+- This step supersedes Step 36's token-only display behavior. Provider data reception and caching
+  remain unchanged; only the complete Bottom Bar Usage projection is hidden while disabled.
+
+**RED**
+
+- Changed the pure display contract to require a snapshot containing valid context and cost to
+  return no items and `visible=false` when the preference is disabled.
+- The focused test failed because the token-only implementation still returned the cost item.
+
+**GREEN**
+
+- Renamed the pure display parameter to `showUsageAndCost` and restored an early empty return when
+  disabled.
+- Removed token-specific filtering from metric selection; when enabled, the existing independent
+  context/cost availability and stale rules still apply.
+
+**Validation**
+
+- Focused whole-group display test: 1 passed, 0 failed.
+- AgentUsage test class: 18 passed, 0 failed.
+- Terminal App unit-test project build: 0 errors.
+- Editor diagnostics and CRLF-aware patch whitespace check: clean.
+
+**Committed files**
+
+- `src/cascadia/TerminalApp/AgentUsage.h`
+- `src/cascadia/TerminalApp/AgentUsage.cpp`
+- `src/cascadia/ut_app/AgentUsageTests.cpp`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 38 - Final Design Sync
 
