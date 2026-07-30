@@ -2864,8 +2864,8 @@
     <value>启用后,AI 智能体将自动分析失败的命令并提出修复建议。禁用后,失败的命令会在状态栏中显示一个可点击的提示 — 按 Ctrl+Alt+. 或单击该提示以请求修复。</value>
     <comment>Supplementary description for the auto-error-detection setting.</comment>
   </data>
-  <data name="AIAgents_ShowTokenUsage.Header" xml:space="preserve"><value>显示令牌用量</value><comment>Header for the setting that controls whether context-window token usage appears in the terminal bottom bar.</comment></data>
-  <data name="AIAgents_ShowTokenUsage.HelpText" xml:space="preserve"><value>在终端底栏中显示上下文窗口令牌用量。</value><comment>Supplementary description for the token usage visibility setting.</comment></data>
+  <data name="AIAgents_ShowTokenUsageAndCost.Header" xml:space="preserve"><value>显示令牌用量和费用</value><comment>Header for the setting that controls whether context-window token usage and monetary cost appear in the terminal bottom bar.</comment></data>
+  <data name="AIAgents_ShowTokenUsageAndCost.HelpText" xml:space="preserve"><value>在终端底栏中显示上下文窗口令牌用量和费用。</value><comment>Supplementary description for the token usage and cost visibility setting.</comment></data>
   <data name="AIAgents_PanePosition.Header" xml:space="preserve">
     <value>窗格位置</value>
     <comment>Header for the setting that controls where the agent pane appears relative to the active pane.</comment>

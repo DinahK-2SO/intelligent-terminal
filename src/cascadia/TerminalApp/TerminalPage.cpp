@@ -2745,7 +2745,7 @@ namespace winrt::TerminalApp::implementation
                 const auto display = ::TerminalApp::AgentUsage::BuildPrimaryDisplay(
                     impl->GetAgentUsage(),
                     RS_(L"Usage_TokensUnit"),
-                    _settings && _settings.GlobalSettings().ShowTokenUsage());
+                    _settings && _settings.GlobalSettings().ShowTokenUsageAndCost());
                 usageVisible = display.visible;
                 for (const auto& item : display.items)
                 {
@@ -8391,7 +8391,7 @@ namespace winrt::TerminalApp::implementation
         _RebuildAgentStack();
 
         // Re-project cached per-tab status after settings-only presentation
-        // changes, including showTokenUsage.
+        // changes, including showTokenUsageAndCost.
         _UpdateBottomBarState();
     }
 

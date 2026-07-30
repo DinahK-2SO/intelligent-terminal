@@ -75,8 +75,8 @@
     <value>Má chuireann tú é seo ar siúl suiteálfar hooks comhtháthaithe chun seisiúin a rianú trasna do ghníomhairí.</value>
     <comment>{Locked="hooks"} In this context, "agent" refers to an AI agent (e.g. Copilot, Claude, Gemini), not a human agent or representative.</comment>
   </data>
-  <data name="FreOverlay_ShowTokenUsageLabel.Text" xml:space="preserve"><value>Show token usage</value><comment>Header for the first-run setting that controls whether context-window token usage appears in the terminal bottom bar.</comment></data>
-  <data name="FreOverlay_ShowTokenUsageDescription.Text" xml:space="preserve"><value>Show context-window token usage in the terminal bottom bar.</value><comment>Description for the token usage visibility toggle in the first-run wizard.</comment></data>
+  <data name="FreOverlay_ShowTokenUsageAndCostLabel.Text" xml:space="preserve"><value>Show token usage and cost</value><comment>Header for the first-run setting that controls whether context-window token usage and monetary cost appear in the terminal bottom bar.</comment></data>
+  <data name="FreOverlay_ShowTokenUsageAndCostDescription.Text" xml:space="preserve"><value>Show context-window token usage and monetary cost in the terminal bottom bar.</value><comment>Description for the token usage and cost visibility toggle in the first-run wizard.</comment></data>
   <data name="FreOverlay_PanePositionLabel.Text" xml:space="preserve">
     <value>Suíomh pána</value>
   </data>

@@ -178,12 +178,12 @@
                           Style="{StaticResource ComboBoxSettingStyle}" />
             </local:SettingContainer>
 
-            <local:SettingContainer x:Name="ShowTokenUsage"
-                            x:Uid="AIAgents_ShowTokenUsage">
-                <ToggleSwitch x:Name="ShowTokenUsageToggle"
+            <local:SettingContainer x:Name="ShowTokenUsageAndCost"
+                        x:Uid="AIAgents_ShowTokenUsageAndCost">
+                <ToggleSwitch x:Name="ShowTokenUsageAndCostToggle"
                               MinWidth="0"
                               AutomationProperties.AccessibilityView="Content"
-                        IsOn="{x:Bind ViewModel.ShowTokenUsage, Mode=TwoWay}" />
+                    IsOn="{x:Bind ViewModel.ShowTokenUsageAndCost, Mode=TwoWay}" />
             </local:SettingContainer>
 
             <!--  Automatic error detection (parent) + Automatic error

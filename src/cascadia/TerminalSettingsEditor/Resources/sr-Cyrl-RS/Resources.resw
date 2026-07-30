@@ -752,8 +752,8 @@
   </data><data name="AIAgents_AutoFix.HelpText" xml:space="preserve">
     <value>Када је омогућено, ВИ агент аутоматски анализира неуспеле команде и предлаже исправку. Када је онемогућено, неуспеле команде приказују наговештај на који је могуће кликнути у статусној траци — притисните Ctrl+Alt+. или кликните на наговештај да бисте затражили исправку.</value>
     <comment>Supplementary description for the auto-error-detection setting.</comment>
-  </data><data name="AIAgents_ShowTokenUsage.Header" xml:space="preserve"><value>Прикажи коришћење токена</value><comment>Header for the setting that controls whether context-window token usage appears in the terminal bottom bar.</comment></data>
-  <data name="AIAgents_ShowTokenUsage.HelpText" xml:space="preserve"><value>Приказује коришћење токена контекстног прозора на доњој траци терминала.</value><comment>Supplementary description for the token usage visibility setting.</comment></data>
+  </data><data name="AIAgents_ShowTokenUsageAndCost.Header" xml:space="preserve"><value>Прикажи коришћење токена и трошак</value><comment>Header for the setting that controls whether context-window token usage and monetary cost appear in the terminal bottom bar.</comment></data>
+  <data name="AIAgents_ShowTokenUsageAndCost.HelpText" xml:space="preserve"><value>Приказује коришћење токена контекстног прозора и новчани трошак на доњој траци терминала.</value><comment>Supplementary description for the token usage and cost visibility setting.</comment></data>
   <data name="AIAgents_PanePosition.Header" xml:space="preserve">
     <value>Позиција панела</value>
     <comment>Header for the setting that controls where the agent pane appears relative to the active pane.</comment>

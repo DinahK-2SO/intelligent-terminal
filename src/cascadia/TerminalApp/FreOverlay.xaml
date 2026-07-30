@@ -508,14 +508,14 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Grid.Column="0" Spacing="2">
-                                    <TextBlock x:Uid="FreOverlay_ShowTokenUsageLabel"
+                                    <TextBlock x:Uid="FreOverlay_ShowTokenUsageAndCostLabel"
                                                FontSize="14" FontWeight="SemiBold"
                                                Foreground="White" />
-                                    <TextBlock x:Uid="FreOverlay_ShowTokenUsageDescription"
+                                    <TextBlock x:Uid="FreOverlay_ShowTokenUsageAndCostDescription"
                                                FontSize="12" Foreground="#99FFFFFF"
                                                TextWrapping="Wrap" />
                                 </StackPanel>
-                                <ToggleSwitch x:Name="ShowTokenUsageToggle" Grid.Column="1"
+                                <ToggleSwitch x:Name="ShowTokenUsageAndCostToggle" Grid.Column="1"
                                               IsOn="False" VerticalAlignment="Center"
                                               HorizontalAlignment="Right" MinWidth="0" />
                             </Grid>

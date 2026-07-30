@@ -1107,8 +1107,8 @@
     <value>Habilitar isso instalará hooks de integração para rastrear sessões nos seus agentes.</value>
     <comment>{Locked="hooks"}</comment>
   </data>
-  <data name="FreOverlay_ShowTokenUsageLabel.Text" xml:space="preserve"><value>Mostrar uso de tokens</value><comment>Header for the first-run setting that controls whether context-window token usage appears in the terminal bottom bar.</comment></data>
-  <data name="FreOverlay_ShowTokenUsageDescription.Text" xml:space="preserve"><value>Mostra o uso de tokens da janela de contexto na barra inferior do terminal.</value><comment>Description for the token usage visibility toggle in the first-run wizard.</comment></data>
+  <data name="FreOverlay_ShowTokenUsageAndCostLabel.Text" xml:space="preserve"><value>Mostrar uso de tokens e custo</value><comment>Header for the first-run setting that controls whether context-window token usage and monetary cost appear in the terminal bottom bar.</comment></data>
+  <data name="FreOverlay_ShowTokenUsageAndCostDescription.Text" xml:space="preserve"><value>Mostra o uso de tokens da janela de contexto e o custo monetário na barra inferior do terminal.</value><comment>Description for the token usage and cost visibility toggle in the first-run wizard.</comment></data>
   <data name="FreOverlay_PanePositionLabel.Text" xml:space="preserve">
     <value>Posição do painel</value>
   </data>

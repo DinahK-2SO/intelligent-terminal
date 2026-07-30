@@ -2828,8 +2828,8 @@
   <data name="AIAgents_DelegateAgent.HelpText" xml:space="preserve"><value>コマンド パレットでのクイック アクションに使用するエージェントを選択します。</value><comment>Supplementary description for the command palette agent setting.</comment></data>
   <data name="AIAgents_AutoFix.Header" xml:space="preserve"><value>失敗したコマンドの修正候補を自動的に提案する</value><comment>Header for the toggle that enables automatic fix suggestions when commands fail.</comment></data>
   <data name="AIAgents_AutoFix.HelpText" xml:space="preserve"><value>有効にすると、AI エージェントが失敗したコマンドを自動的に分析し、修正案を提案します。無効にすると、失敗したコマンドはステータス バーにクリック可能なヒントを表示します — Ctrl+Alt+. を押すか、ヒントをクリックすると修正をリクエストできます。</value><comment>Supplementary description for the auto-error-detection setting.</comment></data>
-  <data name="AIAgents_ShowTokenUsage.Header" xml:space="preserve"><value>トークン使用量を表示</value><comment>Header for the setting that controls whether context-window token usage appears in the terminal bottom bar.</comment></data>
-  <data name="AIAgents_ShowTokenUsage.HelpText" xml:space="preserve"><value>ターミナルの下部バーにコンテキスト ウィンドウのトークン使用量を表示します。</value><comment>Supplementary description for the token usage visibility setting.</comment></data>
+  <data name="AIAgents_ShowTokenUsageAndCost.Header" xml:space="preserve"><value>トークン使用量とコストを表示</value><comment>Header for the setting that controls whether context-window token usage and monetary cost appear in the terminal bottom bar.</comment></data>
+  <data name="AIAgents_ShowTokenUsageAndCost.HelpText" xml:space="preserve"><value>ターミナルの下部バーにコンテキスト ウィンドウのトークン使用量と金銭的コストを表示します。</value><comment>Supplementary description for the token usage and cost visibility setting.</comment></data>
   <data name="AIAgents_PanePosition.Header" xml:space="preserve"><value>ペインの位置</value><comment>Header for the setting that controls where the agent pane appears relative to the active pane.</comment></data>
   <data name="AIAgents_PanePosition.HelpText" xml:space="preserve"><value>エージェント ペインをターミナルのどこに開くかを指定します。</value><comment>Supplementary description for the pane position setting.</comment></data>
   <data name="AIAgents_PanePosition_Bottom" xml:space="preserve">

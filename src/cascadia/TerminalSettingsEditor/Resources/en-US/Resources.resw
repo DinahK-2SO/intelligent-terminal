@@ -784,8 +784,8 @@ In this context, "agent" refers to an AI agent (e.g. Copilot, Claude, Gemini), n
     <comment>{Locked=qps-ploc,qps-ploca,qps-plocm} "Intelligent Terminal" is the product name. Caption under the automatic-error-suggestion title.
 In this context, "agent" refers to an AI agent (e.g. Copilot, Claude, Gemini), not a human agent or representative.</comment>
   </data>
-  <data name="AIAgents_ShowTokenUsage.Header" xml:space="preserve"><value>Show token usage</value><comment>Header for the setting that controls whether context-window token usage appears in the terminal bottom bar.</comment></data>
-  <data name="AIAgents_ShowTokenUsage.HelpText" xml:space="preserve"><value>Show context-window token usage in the terminal bottom bar.</value><comment>Supplementary description for the token usage visibility setting.</comment></data>
+  <data name="AIAgents_ShowTokenUsageAndCost.Header" xml:space="preserve"><value>Show token usage and cost</value><comment>Header for the setting that controls whether context-window token usage and monetary cost appear in the terminal bottom bar.</comment></data>
+  <data name="AIAgents_ShowTokenUsageAndCost.HelpText" xml:space="preserve"><value>Show context-window token usage and monetary cost in the terminal bottom bar.</value><comment>Supplementary description for the token usage and cost visibility setting.</comment></data>
   <data name="AIAgents_PanePosition.Header" xml:space="preserve">
     <value>Pane position</value>
     <comment>Header for the setting that controls where the agent pane appears relative to the active pane. 

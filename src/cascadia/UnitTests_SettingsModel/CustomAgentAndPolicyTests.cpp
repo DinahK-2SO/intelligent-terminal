@@ -74,7 +74,7 @@ namespace SettingsModelUnitTests
         TEST_METHOD(BuiltInDelegateAgentRoundtrips);
         TEST_METHOD(AcpAndDelegateModelRoundtrip);
         TEST_METHOD(AgentPanePositionRoundtripsAndDefaults);
-        TEST_METHOD(ShowTokenUsageRoundtripsAndDefaultsOff);
+        TEST_METHOD(ShowTokenUsageAndCostRoundtripsAndDefaultsOff);
         TEST_METHOD(AutoErrorSettingsRoundtrip);
         TEST_METHOD(EffectiveAutoFixFalseWhenDetectionOff);
 
@@ -357,13 +357,13 @@ namespace SettingsModelUnitTests
         VERIFY_ARE_EQUAL(winrt::hstring{ L"bottom" }, defaulted->GlobalSettings().AgentPanePosition());
     }
 
-    void CustomAgentAndPolicyTests::ShowTokenUsageRoundtripsAndDefaultsOff()
+    void CustomAgentAndPolicyTests::ShowTokenUsageAndCostRoundtripsAndDefaultsOff()
     {
-        const auto enabled = MakeSettings(R"("showTokenUsage": true)");
-        VERIFY_IS_TRUE(enabled->GlobalSettings().ShowTokenUsage());
+        const auto enabled = MakeSettings(R"("showTokenUsageAndCost": true)");
+        VERIFY_IS_TRUE(enabled->GlobalSettings().ShowTokenUsageAndCost());
 
         const auto defaulted = MakeSettings({});
-        VERIFY_IS_FALSE(defaulted->GlobalSettings().ShowTokenUsage());
+        VERIFY_IS_FALSE(defaulted->GlobalSettings().ShowTokenUsageAndCost());
     }
 
     void CustomAgentAndPolicyTests::AutoErrorSettingsRoundtrip()

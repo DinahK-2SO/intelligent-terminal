@@ -64,6 +64,7 @@ code it describes.
 | 37. Packaged toggle E2E | Both UI entry points and Bottom Bar behavior must work in the deployed package | Add existing-framework UI contracts, stable automation ID, and settings-reload re-projection | Complete |
 | 38. Final design sync | Final PM toggle semantics and both UI ownership paths must be documented as current behavior | Update status, current-state table, UI contract, and implemented scope | Complete |
 | 39. Whole Usage group visibility | Turning the toggle off must hide both context tokens and monetary cost | Gate the complete display projection before selecting either metric | Complete |
+| 40. Explicit usage-and-cost contract | Setting, controls, and text must state that both metrics are controlled | Rename to `showTokenUsageAndCost` and “Show token usage and cost” | Complete |
 
 ## Completed Steps
 
@@ -72,6 +73,51 @@ code it describes.
 > two-turn investigation and team review. Step 27 supersedes Step 23's currency-shape filtering;
 > amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
 > PowerShell installation path.
+
+### Step 40 - Explicit Usage-and-Cost Contract
+
+**RED**
+
+- Changed the SettingsModel test to require the `showTokenUsageAndCost` JSON key and
+  `ShowTokenUsageAndCost` WinRT property.
+- Compilation failed because the interim token-only setting property did not satisfy that public
+  contract.
+
+**GREEN**
+
+- Renamed the new, not-yet-released setting to `showTokenUsageAndCost`, retaining default `false`.
+  No compatibility alias or migration is needed within this unshipped feature branch.
+- Renamed Settings/FRE view-model properties, XAML elements, automation IDs, resource keys,
+  diagnostics, and tracked ItE2E selectors to the explicit usage-and-cost terminology.
+- Updated visible UI text to “Show token usage and cost” and descriptions to state that both
+  context-window token usage and monetary cost appear in the Bottom Bar.
+- Updated local ignored Usage/E2E scripts to set the new key explicitly.
+
+**Validation**
+
+- Focused `showTokenUsageAndCost` SettingsModel test: 1 passed, 0 failed.
+- AgentUsage test class: 18 passed, 0 failed.
+- CustomAgentAndPolicy test class: 26 passed, 0 failed.
+- SettingsEditor and TerminalApp focused builds: 0 errors.
+- Resource contracts: SettingsEditor 16/16 and TerminalApp 89/89 locale files retain BOM/XML and
+  contain exactly the new two-key family.
+- Source audit found no interim product-code setting/property/control/resource identifiers.
+- Editor diagnostics and CRLF-aware patch whitespace check: clean.
+
+**Committed files**
+
+- `src/cascadia/TerminalSettingsModel/MTSMSettings.h`
+- `src/cascadia/TerminalSettingsModel/GlobalAppSettings.idl`
+- `src/cascadia/TerminalApp/TerminalPage.cpp`
+- `src/cascadia/TerminalApp/FreOverlay.{xaml,cpp}`
+- `src/cascadia/TerminalSettingsEditor/AIAgents.xaml`
+- `src/cascadia/TerminalSettingsEditor/AIAgentsViewModel.{h,idl}`
+- `src/cascadia/TerminalApp/Resources/*/Resources.resw`
+- `src/cascadia/TerminalSettingsEditor/Resources/*/Resources.resw`
+- `src/cascadia/UnitTests_SettingsModel/CustomAgentAndPolicyTests.cpp`
+- `test/e2e/tests/Feature.FreAgentSetup.Tests.ps1`
+- `test/e2e/tests/Feature.SettingsUi.Tests.ps1`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 39 - Whole Usage Group Visibility
 

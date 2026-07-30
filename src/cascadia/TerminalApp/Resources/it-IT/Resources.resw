@@ -1083,8 +1083,8 @@
     <value>L'abilitazione di questa opzione installerà hooks di integrazione per monitorare le sessioni nei tuoi agenti.</value>
     <comment>{Locked="hooks"}</comment>
   </data>
-  <data name="FreOverlay_ShowTokenUsageLabel.Text" xml:space="preserve"><value>Mostra utilizzo dei token</value><comment>Header for the first-run setting that controls whether context-window token usage appears in the terminal bottom bar.</comment></data>
-  <data name="FreOverlay_ShowTokenUsageDescription.Text" xml:space="preserve"><value>Mostra l’utilizzo dei token della finestra di contesto nella barra inferiore del terminale.</value><comment>Description for the token usage visibility toggle in the first-run wizard.</comment></data>
+  <data name="FreOverlay_ShowTokenUsageAndCostLabel.Text" xml:space="preserve"><value>Mostra utilizzo dei token e costi</value><comment>Header for the first-run setting that controls whether context-window token usage and monetary cost appear in the terminal bottom bar.</comment></data>
+  <data name="FreOverlay_ShowTokenUsageAndCostDescription.Text" xml:space="preserve"><value>Mostra l’utilizzo dei token della finestra di contesto e il costo monetario nella barra inferiore del terminale.</value><comment>Description for the token usage and cost visibility toggle in the first-run wizard.</comment></data>
   <data name="FreOverlay_PanePositionLabel.Text" xml:space="preserve">
     <value>Posizione del riquadro</value>
   </data>
