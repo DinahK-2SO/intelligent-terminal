@@ -58,6 +58,7 @@ code it describes.
 | 31. One-click packaged installer | Plan must be portable and clean x64 build must produce a signed validated MSIX ZIP | Add dynamic tool discovery, ordered dependencies, signing, and ZIP verification | Complete |
 | 32. Provider-neutral Gemini coverage | Tests must not freeze a temporary Gemini compatibility gap as a vendor-specific exclusion | Remove Gemini-negative cases while retaining standard ACP and generic private-metadata contracts | Complete |
 | 33. Default-off Usage preference | Valid context/cost must stay hidden by default and appear only when the persisted preference is enabled | Add `showAgentUsage` and gate only the Bottom Bar display projection | Complete |
+| 34. Settings Usage toggle | Settings > Agents must expose a localized two-way toggle for the shared preference | Reuse the projected-setting macro and existing SettingContainer pattern | Complete |
 
 ## Completed Steps
 
@@ -66,6 +67,40 @@ code it describes.
 > two-turn investigation and team review. Step 27 supersedes Step 23's currency-shape filtering;
 > amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
 > PowerShell installation path.
+
+### Step 34 - Settings Usage Toggle
+
+**RED**
+
+- Added a `SettingContainer` and `ToggleSwitch` in Settings > Agents bound two-way to
+  `ViewModel.ShowAgentUsage` before that view-model property existed.
+- The focused SettingsEditor build failed with XAML compiler error WMC1110: property
+  `ShowAgentUsage` was not found on `AIAgentsViewModel`.
+
+**GREEN**
+
+- Projected `GlobalAppSettings.ShowAgentUsage` through `AIAgentsViewModel` using the existing
+  `PERMANENT_OBSERVABLE_PROJECTED_SETTING` pattern. The generated setter writes directly to the
+  shared settings model and raises the existing property-changed notifications.
+- Added the toggle to the Agent pane group, immediately after pane position, using the existing
+  `SettingContainer + ToggleSwitch` layout and a two-way binding.
+- Added title and help text to every discovered SettingsEditor locale. Resource files were edited
+  with `XmlDocument`, retain UTF-8 BOMs, and include translator comments.
+
+**Validation**
+
+- SettingsEditor focused build: 0 errors; the new XAML binding compiled successfully.
+- Localized resource contract: 16/16 discovered locale files are well-formed XML, retain their
+  UTF-8 BOM, and contain exactly the two `AIAgents_ShowAgentUsage` keys.
+- CRLF-aware patch whitespace check and editor diagnostics: clean.
+
+**Committed files**
+
+- `src/cascadia/TerminalSettingsEditor/AIAgents.xaml`
+- `src/cascadia/TerminalSettingsEditor/AIAgentsViewModel.h`
+- `src/cascadia/TerminalSettingsEditor/AIAgentsViewModel.idl`
+- `src/cascadia/TerminalSettingsEditor/Resources/*/Resources.resw`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 33 - Default-Off Usage Preference
 

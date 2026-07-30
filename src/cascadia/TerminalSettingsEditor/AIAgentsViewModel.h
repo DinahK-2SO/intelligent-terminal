@@ -108,6 +108,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         bool AutoFixEnabled() const;
         void AutoFixEnabled(bool value);
         bool HasAutoFixEnabled() const;
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, ShowAgentUsage);
         bool CanSuggestErrors() const;
 
         // GPO policy lock indicators

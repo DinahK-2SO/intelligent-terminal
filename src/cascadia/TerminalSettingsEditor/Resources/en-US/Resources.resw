@@ -784,6 +784,8 @@ In this context, "agent" refers to an AI agent (e.g. Copilot, Claude, Gemini), n
     <comment>{Locked=qps-ploc,qps-ploca,qps-plocm} "Intelligent Terminal" is the product name. Caption under the automatic-error-suggestion title.
 In this context, "agent" refers to an AI agent (e.g. Copilot, Claude, Gemini), not a human agent or representative.</comment>
   </data>
+  <data name="AIAgents_ShowAgentUsage.Header" xml:space="preserve"><value>Show usage and cost</value><comment>Header for the setting that controls whether agent usage and monetary cost appear in the terminal bottom bar.</comment></data>
+  <data name="AIAgents_ShowAgentUsage.HelpText" xml:space="preserve"><value>Show context-window usage and monetary cost in the terminal bottom bar.</value><comment>Supplementary description for the agent usage and cost visibility setting.</comment></data>
   <data name="AIAgents_PanePosition.Header" xml:space="preserve">
     <value>Pane position</value>
     <comment>Header for the setting that controls where the agent pane appears relative to the active pane. 
