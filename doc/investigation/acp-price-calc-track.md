@@ -55,6 +55,7 @@ code it describes.
 | 28. Main integration | Main's WTA module extraction must retain every Usage contract and pass full desktop/provider validation | Merge main, migrate code/tests to new owners, repair stale launch assertions | Complete |
 | 29. Compact cost display | Main bar must show two-decimal cost without losing reported precision | Add exact decimal rounding plus full-value tooltip/HelpText | Complete |
 | 30. Portable PowerShell host | Tracked files must not contain a machine-specific pwsh installation path | Restore main's PATH/current-host behavior and keep local harnesses ignored | Complete |
+| 31. One-click packaged installer | Plan must be portable and clean x64 build must produce a signed validated MSIX ZIP | Add dynamic tool discovery, ordered dependencies, signing, and ZIP verification | Complete |
 
 ## Completed Steps
 
@@ -63,6 +64,53 @@ code it describes.
 > two-turn investigation and team review. Step 27 supersedes Step 23's currency-shape filtering;
 > amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
 > PowerShell installation path.
+
+### Step 31 - One-Click Packaged Installer
+
+**RED**
+
+- Added existing Pester unit contracts requiring a tracked installer script, manifest-derived
+  version/output paths, x64 and ARM64 target mapping, and no machine-specific installation paths.
+- RED failed 3/3 because `build/scripts/New-LocalMsixInstaller.ps1` did not exist.
+- The first complete x64 run exposed a clean-build dependency failure: direct project builds did
+  not apply the solution-level `OpenConsoleProxy` dependency, so `ITerminalHandoff.h` was missing.
+
+**GREEN**
+
+- Added `New-LocalMsixInstaller.ps1`, defaulting to x64 Release, with dynamic discovery of
+  PATH-resolved Cargo, repository MSBuild setup, and the newest registered Windows SDK x64
+  `mdmerge.exe` / `signtool.exe` tools.
+- The script reads package version/publisher from `Package-Dev.appxmanifest`; it contains no fixed
+  Visual Studio edition, drive, SDK version, package version, or PowerShell install directory.
+- Explicitly passes `MdMergePath`, `WindowsSDK_ExecutablePath`, and `ExecutablePath` to nested
+  MSBuild invocations, preventing the previously observed `mdmerge` exit 9009.
+- Prebuilds `Host.Proxy.vcxproj`, Settings Model, and Settings Editor before CascadiaPackage so
+  generated handoff headers, WinMD projections, and XBF files exist deterministically.
+- Creates/reuses a local matching PFX/CER pair, validates publisher/thumbprint/expiry, signs the
+  exact manifest-version MSIX, assembles the ZIP, checks required entries, and rejects any PFX in
+  the distributable.
+
+**Validation**
+
+- Plan/portability Pester contracts: 3 passed, 0 failed.
+- PowerShell parser and editor diagnostics: clean.
+- First complete x64 run RED: missing `ITerminalHandoff.h`; no `mdmerge` 9009 occurred.
+- Corrected complete x64 Release run: WTA, OpenConsoleProxy, Settings Model, Settings Editor,
+  CascadiaPackage, signing, and ZIP assembly all succeeded.
+- Full ItE2E Unit suite: 14 passed, 0 failed. The documented no-restore/no-rebuild fast path also
+  re-signed and reassembled the existing package successfully.
+- Final output ZIP: `intelligent-terminal-0.8.0.2-x64-msix.zip`, 20,250,144 bytes, SHA256
+  `6AA4FD8C92E22EC8A56322E182E3C49892CA7DE87B9363871C9259AF3CE91E07`.
+- ZIP contains signed MSIX, public CER, x64 XAML dependency, `Install-Msix.ps1`, and FRE reset;
+  no PFX. MSIX identity is `IntelligentTerminal 0.8.0.2 x64`, contains `wtcli.exe` and a signature
+  entry, and its embedded WTA hash matches the x64 Release WTA artifact.
+
+**Committed files**
+
+- `build/scripts/New-LocalMsixInstaller.ps1`
+- `test/e2e/selftests/LocalMsixInstaller.Unit.Tests.ps1`
+- `doc/building-installer.md`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 30 - Portable PowerShell Host
 
