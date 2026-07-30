@@ -56,6 +56,7 @@ code it describes.
 | 29. Compact cost display | Main bar must show two-decimal cost without losing reported precision | Add exact decimal rounding plus full-value tooltip/HelpText | Complete |
 | 30. Portable PowerShell host | Tracked files must not contain a machine-specific pwsh installation path | Restore main's PATH/current-host behavior and keep local harnesses ignored | Complete |
 | 31. One-click packaged installer | Plan must be portable and clean x64 build must produce a signed validated MSIX ZIP | Add dynamic tool discovery, ordered dependencies, signing, and ZIP verification | Complete |
+| 32. Provider-neutral Gemini coverage | Tests must not freeze a temporary Gemini compatibility gap as a vendor-specific exclusion | Remove Gemini-negative cases while retaining standard ACP and generic private-metadata contracts | Complete |
 
 ## Completed Steps
 
@@ -64,6 +65,43 @@ code it describes.
 > two-turn investigation and team review. Step 27 supersedes Step 23's currency-shape filtering;
 > amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
 > PowerShell installation path.
+
+### Step 32 - Provider-Neutral Gemini Coverage
+
+**RED**
+
+- A focused source audit found dedicated Gemini-private quota mock behavior and three adapter tests
+  whose only assertion was that Gemini usage did not surface.
+- These cases duplicated the provider-neutral private-metadata boundary and made a temporary
+  interoperability state look like a permanent vendor-specific product contract.
+
+**GREEN**
+
+- Removed the Gemini-private prompt-response mock behavior and its negative dispatch test.
+- Removed the Gemini adapter's dedicated negative test module while retaining the adapter as a
+  future extension point.
+- Kept the provider-neutral positive ACP `UsageUpdate` routing test and the registry-wide contract
+  that unverified private metadata does not invent usage for any provider.
+- Product behavior is unchanged: standard ACP context/cost is accepted without provider-specific
+  gating, including when Gemini emits it in a future compatible release.
+
+**Validation**
+
+- `cargo test --target x86_64-pc-windows-msvc --manifest-path tools/wta/Cargo.toml usage`:
+  22 passed, 0 failed.
+- Full WTA Rust suite: 1,222 passed, 0 failed.
+- Focused source audit found no remaining Gemini-private negative mock/test identifiers.
+- Generic contracts `session_notification_routes_usage_update` and
+  `provider_adapters_do_not_invent_unverified_private_usage` remain present and passing.
+- `rustfmt --check` passes for the remaining Gemini adapter. The mock file has unrelated existing
+  whole-file formatting drift, so this deletion-only step intentionally does not reformat it;
+  patch whitespace and editor diagnostics are clean.
+
+**Committed files**
+
+- `tools/wta/src/protocol/acp/mock_agent_tests.rs`
+- `tools/wta/src/usage/providers/gemini.rs`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 31 - One-Click Packaged Installer
 

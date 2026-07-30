@@ -46,8 +46,6 @@ enum MockBehavior {
     /// Stream the reply in two `AgentMessageChunk`s (`MOCK_` + `OK`), then end
     /// the turn — exercises streaming coalescing.
     StreamTwoChunks,
-    /// Return Gemini's private quota metadata, which product policy ignores.
-    GeminiPrivateQuota,
 }
 
 /// Deterministic ACP agent. Implements only what the scenarios need; the rest
@@ -257,20 +255,6 @@ impl MockAgent {
                                 .await;
                         }
                     });
-                }
-                MockBehavior::GeminiPrivateQuota => {
-                    return Ok(serde_json::from_value(serde_json::json!({
-                        "stopReason": "end_turn",
-                        "_meta": {
-                            "quota": {
-                                "token_count": {
-                                    "input_tokens": 10_270,
-                                    "output_tokens": 9
-                                }
-                            }
-                        }
-                    }))
-                    .expect("valid Gemini prompt response"));
                 }
             }
         }
@@ -761,51 +745,6 @@ async fn dispatch_prompt_round_trips_through_agent() {
                 in_flight.lock().unwrap().is_empty(),
                 "single-flight slot must be released when the turn completes"
             );
-        })
-        .await;
-}
-
-#[tokio::test]
-async fn dispatch_prompt_ignores_gemini_private_quota() {
-    let local = tokio::task::LocalSet::new();
-    local
-        .run_until(async {
-            let h = connect_for_dispatch(MockBehavior::GeminiPrivateQuota);
-            h.conn
-                .initialize(acp::schema::v1::InitializeRequest::new(
-                    acp::schema::ProtocolVersion::LATEST,
-                ))
-                .await
-                .expect("initialize failed");
-            let (tab_to_session, in_flight, cancel_signals, memo) = fresh_dispatch_state();
-            let mut event_rx = h.event_rx;
-
-            dispatch_prompt(
-                test_prompt(1, "hello", false),
-                &h.conn,
-                &tab_to_session,
-                &memo,
-                &in_flight,
-                &cancel_signals,
-                &h.event_tx,
-                &h.shell_mgr,
-                &h.prompt_timing,
-                false,
-                false,
-            );
-
-            loop {
-                match tokio::time::timeout(std::time::Duration::from_secs(5), event_rx.recv()).await
-                {
-                    Ok(Some(AppEvent::UsageReported { .. })) => {
-                        panic!("Gemini private quota must not produce Usage")
-                    }
-                    Ok(Some(AppEvent::AgentMessageEnd { .. })) => break,
-                    Ok(Some(_)) => continue,
-                    Ok(None) => panic!("event channel closed before turn end"),
-                    Err(_) => panic!("timed out waiting for turn end"),
-                }
-            }
         })
         .await;
 }
