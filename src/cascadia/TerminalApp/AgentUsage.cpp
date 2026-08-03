@@ -10,9 +10,11 @@
 namespace
 {
     constexpr size_t MaxMetricIdLength = 64;
+    constexpr size_t MaxDisplayKindLength = 16;
     constexpr size_t MaxDecimalTextLength = 64;
     constexpr size_t MaxDisplayTextLength = 64;
     constexpr size_t MaxUnitIdLength = 16;
+    constexpr size_t MaxUnitDisplayTextLength = 64;
     constexpr size_t MaxScopeLength = 32;
     constexpr size_t MaxSourceLength = 32;
     constexpr int64_t MaxFormattedIntegerDigits = 512;
@@ -71,7 +73,21 @@ namespace
         return index == text.size();
     }
 
-    std::wstring formatCostAmount(const std::string_view text)
+    TerminalApp::AgentUsage::DisplayKind parseDisplayKind(const Json::Value& item)
+    {
+        const auto text = requiredString(item, "display_kind", MaxDisplayKindLength);
+        if (text == "context")
+        {
+            return TerminalApp::AgentUsage::DisplayKind::Context;
+        }
+        if (text == "billing")
+        {
+            return TerminalApp::AgentUsage::DisplayKind::Billing;
+        }
+        return TerminalApp::AgentUsage::DisplayKind::Other;
+    }
+
+    std::wstring formatBillingAmount(const std::string_view text)
     {
         const auto exponentMarker = text.find_first_of("eE");
         const auto mantissa = text.substr(0, exponentMarker);
@@ -121,9 +137,8 @@ namespace
             return L"<0.01";
         }
 
-        // Standard ACP cost originates as a finite f64, so its fixed form is
-        // bounded. Keep the UI safe if a synthetic normalized event bypasses
-        // that boundary with an extreme exponent.
+        // Keep the UI safe if a synthetic normalized event bypasses the
+        // bounded projection contract with an extreme exponent.
         if (decimalPosition > MaxFormattedIntegerDigits)
         {
             return til::u8u16(text);
@@ -251,18 +266,22 @@ namespace
 
         std::vector<PrimaryDisplayItem> displayItems;
         displayItems.reserve(std::min(items.size(), MaxPrimaryItems));
-        const auto cost = std::ranges::find(items, "acp.billing.cost", &Item::metricId);
-        for (const auto metricId : { "acp.context.window", "acp.billing.cost", "github.copilot.ai_credits" })
+        for (const auto displayKind : { DisplayKind::Context, DisplayKind::Billing })
         {
-            const auto item = std::ranges::find(items, metricId, &Item::metricId);
-            if (item == items.end() || item->stale || displayItems.size() == MaxPrimaryItems ||
-                (item->metricId == "github.copilot.ai_credits" && cost != items.end() && !cost->stale))
+            const auto item = std::ranges::find_if(items, [displayKind](const auto& candidate) {
+                return candidate.displayKind == displayKind && !candidate.stale;
+            });
+            if (item == items.end() || displayItems.size() == MaxPrimaryItems)
             {
                 continue;
             }
 
-            if (item->metricId == "acp.context.window" && item->limitDecimalText)
+            if (displayKind == DisplayKind::Context)
             {
+                if (!item->limitDecimalText)
+                {
+                    continue;
+                }
                 const auto percentageText = item->reportedPercent ?
                                                 std::to_wstring(*item->reportedPercent) + L"%" :
                                                 formatContextPercentage(
@@ -290,27 +309,14 @@ namespace
                     .fullText = std::move(fullText),
                 });
             }
-            else if (item->metricId == "acp.billing.cost")
-            {
-                auto fullText = til::u8u16(item->valueDecimalText);
-                fullText += L" ";
-                fullText += til::u8u16(item->unitId);
-                auto text = formatCostAmount(item->valueDecimalText);
-                text += L" ";
-                text += til::u8u16(item->unitId);
-                displayItems.emplace_back(PrimaryDisplayItem{
-                    .text = std::move(text),
-                    .fullText = std::move(fullText),
-                });
-            }
             else
             {
                 auto fullText = til::u8u16(item->valueDecimalText);
                 fullText += L" ";
-                fullText += til::u8u16(item->unitId);
-                auto text = formatCostAmount(item->valueDecimalText);
+                fullText += til::u8u16(item->unitDisplayText);
+                auto text = formatBillingAmount(item->valueDecimalText);
                 text += L" ";
-                text += til::u8u16(item->unitId);
+                text += til::u8u16(item->unitDisplayText);
                 displayItems.emplace_back(PrimaryDisplayItem{
                     .text = std::move(text),
                     .fullText = std::move(fullText),
@@ -351,6 +357,7 @@ namespace TerminalApp::AgentUsage
 
             Item result;
             result.metricId = requiredString(item, "metric_id", MaxMetricIdLength);
+            result.displayKind = parseDisplayKind(item);
             result.valueDecimalText = requiredString(item, "value_decimal_text", MaxDecimalTextLength);
             if (!isDecimalText(result.valueDecimalText))
             {
@@ -381,6 +388,9 @@ namespace TerminalApp::AgentUsage
                 result.reportedPercent = item["reported_percent"].asUInt64();
             }
             result.unitId = requiredString(item, "unit_id", MaxUnitIdLength);
+            result.unitDisplayText = item.isMember("unit_display_text") ?
+                                         requiredString(item, "unit_display_text", MaxUnitDisplayTextLength) :
+                                         result.unitId;
             result.scope = requiredString(item, "scope", MaxScopeLength);
             result.source = requiredString(item, "source", MaxSourceLength);
             if (!item.isMember("stale") || !item["stale"].isBool())

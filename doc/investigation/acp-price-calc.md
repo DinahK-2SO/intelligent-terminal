@@ -864,7 +864,8 @@ C++ UI 已支持但 WTA 后端静默落到 `unknown`。
   COM/IDL/event transport。Projection为每个item提供provider-neutral `display_kind`和
   `unit_display_text`；metric ID/source只用于identity/provenance，不驱动应用展示；
 6. **C++ rendering**：复用 `OnAgentStateChanged()`、`AgentPaneContent::StateChanged` 和
-  `_UpdateBottomBarState()`，只消费 provider-neutral projection。
+  `_UpdateBottomBarState()`，只消费 provider-neutral projection。应用层按`display_kind`选择
+  context/billing，并统一使用`unit_display_text`；不按metric ID、source或retrieval来源分支。
 
 禁止重复实现 provider ID 字符串、ACP launch command、command-line family 猜测、usage
 合并、单位格式化或 per-provider UI。新增 provider 的正常改动应局限于 registry metadata
@@ -953,6 +954,8 @@ Context Window: 7%     7.54 AIC
 - Copilot AIC主栏复用cost的exact-decimal half-up两位格式；正数sub-cent显示`<0.01 AIC`，
   完整`totalNanoAiu/1e9` decimal保留在tooltip/Automation HelpText。AIC仍不是currency，不参与
   monetary cost换算；
+- 所有`display_kind=billing` item共享上述主栏/hover格式，无论数据来自标准ACP、provider local
+  source或未来extension。底层提供的`unit_display_text`用于UI；`unit_id`只用于稳定identity；
 - unknown/custom label 视为 agent 提供的显示文本，必须限制长度并清理控制字符；
 - 当前主栏tooltip只显示用户可核对的精确context counts/percentage或完整cost amount/currency；
 - 不显示“精确费用”“实际账单”等无法由协议保证的措辞。

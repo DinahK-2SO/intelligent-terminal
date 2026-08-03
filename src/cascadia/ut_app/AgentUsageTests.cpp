@@ -14,16 +14,19 @@ namespace TerminalAppUnitTests
         const std::string& metricId,
         const std::string& value,
         const std::string& unitId,
+        const std::string& displayKind,
         const std::optional<std::string>& limit = std::nullopt)
     {
         Json::Value item{ Json::objectValue };
         item["metric_id"] = metricId;
+        item["display_kind"] = displayKind;
         item["value_decimal_text"] = value;
         if (limit)
         {
             item["limit_decimal_text"] = *limit;
         }
         item["unit_id"] = unitId;
+        item["unit_display_text"] = unitId;
         item["scope"] = "session";
         item["source"] = "acp_standard";
         item["stale"] = false;
@@ -50,7 +53,7 @@ namespace TerminalAppUnitTests
         TEST_METHOD(BuildPrimaryDisplayShowsTokensWithoutCost);
         TEST_METHOD(BuildPrimaryDisplayRoundsContextPercentageAndHandlesInvalidCapacity);
         TEST_METHOD(BuildPrimaryDisplayShowsProviderContextAndAic);
-        TEST_METHOD(BuildPrimaryDisplayPrefersMonetaryCostOverAic);
+        TEST_METHOD(BuildPrimaryDisplayUsesFirstBillingItem);
         TEST_METHOD(BuildPrimaryDisplayHidesStaleMetrics);
         TEST_METHOD(BuildPrimaryDisplayHidesInputOutputOnly);
         TEST_METHOD(BuildPrimaryDisplayHidesAfterContainedError);
@@ -63,8 +66,8 @@ namespace TerminalAppUnitTests
         const auto usage = Json::Value{ Json::objectValue };
         auto input = usage;
         input["items"] = Json::Value{ Json::arrayValue };
-        input["items"].append(makeUsageItem("acp.context.window", "1024", "token", "8192"));
-        input["items"].append(makeUsageItem("acp.billing.cost", "0.004", "USD"));
+        input["items"].append(makeUsageItem("acp.context.window", "1024", "token", "context", "8192"));
+        input["items"].append(makeUsageItem("acp.billing.cost", "0.004", "USD", "billing"));
 
         const auto parsed = TerminalApp::AgentUsage::Parse(input);
 
@@ -80,7 +83,7 @@ namespace TerminalAppUnitTests
     {
         Json::Value usage{ Json::objectValue };
         usage["items"] = Json::Value{ Json::arrayValue };
-        auto context = makeUsageItem("acp.context.window", "30000", "token", "264000");
+        auto context = makeUsageItem("acp.context.window", "30000", "token", "context", "264000");
         context["source"] = "provider_reported";
         context["value_display_text"] = "30k";
         context["limit_display_text"] = "264k";
@@ -107,8 +110,8 @@ namespace TerminalAppUnitTests
     {
         Json::Value input{ Json::objectValue };
         input["items"] = Json::Value{ Json::arrayValue };
-        input["items"].append(makeUsageItem("acp.context.window", "20", "token", "100"));
-        auto malformed = makeUsageItem("acp.billing.cost", "1.0", "USD");
+        input["items"].append(makeUsageItem("acp.context.window", "20", "token", "context", "100"));
+        auto malformed = makeUsageItem("acp.billing.cost", "1.0", "USD", "billing");
         malformed["stale"] = "false";
         input["items"].append(std::move(malformed));
 
@@ -122,7 +125,7 @@ namespace TerminalAppUnitTests
     {
         Json::Value input{ Json::objectValue };
         input["items"] = Json::Value{ Json::arrayValue };
-        input["items"].append(makeUsageItem("acp.billing.cost", "NaN", "USD"));
+        input["items"].append(makeUsageItem("acp.billing.cost", "NaN", "USD", "billing"));
 
         VERIFY_THROWS_SPECIFIC(
             TerminalApp::AgentUsage::Parse(input),
@@ -136,7 +139,7 @@ namespace TerminalAppUnitTests
         input["items"] = Json::Value{ Json::arrayValue };
         for (size_t i = 0; i < TerminalApp::AgentUsage::MaxItems + 1; ++i)
         {
-            input["items"].append(makeUsageItem("acp.context.window", "20", "token"));
+            input["items"].append(makeUsageItem("acp.context.window", "20", "token", "context"));
         }
 
         VERIFY_THROWS_SPECIFIC(
@@ -150,7 +153,7 @@ namespace TerminalAppUnitTests
         std::vector<TerminalApp::AgentUsage::Item> cache;
         Json::Value usage{ Json::objectValue };
         usage["items"] = Json::Value{ Json::arrayValue };
-        usage["items"].append(makeUsageItem("acp.context.window", "20", "token", "100"));
+        usage["items"].append(makeUsageItem("acp.context.window", "20", "token", "context", "100"));
 
         TerminalApp::AgentUsage::UpdateCache(cache, usage);
         VERIFY_ARE_EQUAL(static_cast<size_t>(1), cache.size());
@@ -161,7 +164,7 @@ namespace TerminalAppUnitTests
 
     void AgentUsageTests::UpdateCachePreservesPreviousOnMalformedInput()
     {
-        const auto previous = makeUsageItem("acp.context.window", "20", "token", "100");
+        const auto previous = makeUsageItem("acp.context.window", "20", "token", "context", "100");
         Json::Value valid{ Json::objectValue };
         valid["items"] = Json::Value{ Json::arrayValue };
         valid["items"].append(previous);
@@ -186,8 +189,8 @@ namespace TerminalAppUnitTests
     {
         Json::Value usage{ Json::objectValue };
         usage["items"] = Json::Value{ Json::arrayValue };
-        usage["items"].append(makeUsageItem("acp.context.window", "1024", "token", "8192"));
-        usage["items"].append(makeUsageItem("acp.billing.cost", "0.004", "USD"));
+        usage["items"].append(makeUsageItem("acp.context.window", "1024", "token", "context", "8192"));
+        usage["items"].append(makeUsageItem("acp.billing.cost", "0.004", "USD", "billing"));
 
         const auto texts = TerminalApp::AgentUsage::BuildPrimaryDisplayTexts(
             TerminalApp::AgentUsage::Parse(usage),
@@ -202,10 +205,10 @@ namespace TerminalAppUnitTests
     {
         Json::Value usage{ Json::objectValue };
         usage["items"] = Json::Value{ Json::arrayValue };
-        usage["items"].append(makeUsageItem("acp.tokens.input", "12341", "token"));
-        usage["items"].append(makeUsageItem("acp.tokens.output", "23", "token"));
-        usage["items"].append(makeUsageItem("acp.context.window", "1024", "token", "8192"));
-        usage["items"].append(makeUsageItem("acp.billing.cost", "0.004", "USD"));
+        usage["items"].append(makeUsageItem("acp.tokens.input", "12341", "token", "other"));
+        usage["items"].append(makeUsageItem("acp.tokens.output", "23", "token", "other"));
+        usage["items"].append(makeUsageItem("acp.context.window", "1024", "token", "context", "8192"));
+        usage["items"].append(makeUsageItem("acp.billing.cost", "0.004", "USD", "billing"));
 
         const auto texts = TerminalApp::AgentUsage::BuildPrimaryDisplayTexts(
             TerminalApp::AgentUsage::Parse(usage),
@@ -223,16 +226,20 @@ namespace TerminalAppUnitTests
         const std::vector<TerminalApp::AgentUsage::Item> items{
             TerminalApp::AgentUsage::Item{
                 .metricId = "acp.context.window",
+                .displayKind = TerminalApp::AgentUsage::DisplayKind::Context,
                 .valueDecimalText = "20",
                 .limitDecimalText = "100",
                 .unitId = "token",
+                .unitDisplayText = "token",
                 .scope = "session",
                 .source = "acp_standard",
             },
             TerminalApp::AgentUsage::Item{
                 .metricId = "acp.billing.cost",
+                .displayKind = TerminalApp::AgentUsage::DisplayKind::Billing,
                 .valueDecimalText = "0.004",
                 .unitId = "USD",
+                .unitDisplayText = "USD",
                 .scope = "session",
                 .source = "acp_standard",
             },
@@ -240,6 +247,7 @@ namespace TerminalAppUnitTests
                 .metricId = "provider.other",
                 .valueDecimalText = "7",
                 .unitId = "unit",
+                .unitDisplayText = "unit",
                 .scope = "session",
                 .source = "provider_reported",
             },
@@ -255,8 +263,10 @@ namespace TerminalAppUnitTests
         const std::vector<TerminalApp::AgentUsage::Item> items{
             TerminalApp::AgentUsage::Item{
                 .metricId = "acp.billing.cost",
+                .displayKind = TerminalApp::AgentUsage::DisplayKind::Billing,
                 .valueDecimalText = "0.004",
                 .unitId = "USD",
+                .unitDisplayText = "USD",
                 .scope = "session",
                 .source = "provider_reported",
             },
@@ -276,8 +286,10 @@ namespace TerminalAppUnitTests
             return TerminalApp::AgentUsage::BuildPrimaryDisplay(
                 { TerminalApp::AgentUsage::Item{
                     .metricId = "acp.billing.cost",
+                    .displayKind = TerminalApp::AgentUsage::DisplayKind::Billing,
                     .valueDecimalText = value,
                     .unitId = "USD",
+                    .unitDisplayText = "USD",
                     .scope = "session",
                     .source = "acp_standard",
                 } },
@@ -302,9 +314,11 @@ namespace TerminalAppUnitTests
         const std::vector<TerminalApp::AgentUsage::Item> items{
             TerminalApp::AgentUsage::Item{
                 .metricId = "acp.context.window",
+                .displayKind = TerminalApp::AgentUsage::DisplayKind::Context,
                 .valueDecimalText = "1024",
                 .limitDecimalText = "8192",
                 .unitId = "token",
+                .unitDisplayText = "token",
                 .scope = "session",
                 .source = "acp_standard",
             },
@@ -324,9 +338,11 @@ namespace TerminalAppUnitTests
             return TerminalApp::AgentUsage::BuildPrimaryDisplay(
                 { TerminalApp::AgentUsage::Item{
                     .metricId = "acp.context.window",
+                    .displayKind = TerminalApp::AgentUsage::DisplayKind::Context,
                     .valueDecimalText = used,
                     .limitDecimalText = size,
                     .unitId = "token",
+                    .unitDisplayText = "token",
                     .scope = "session",
                     .source = "acp_standard",
                 } },
@@ -350,14 +366,16 @@ namespace TerminalAppUnitTests
     {
         Json::Value usage{ Json::objectValue };
         usage["items"] = Json::Value{ Json::arrayValue };
-        auto context = makeUsageItem("acp.context.window", "30000", "token", "264000");
+        auto context = makeUsageItem("vendor.context.gauge", "30000", "token", "context", "264000");
         context["source"] = "provider_reported";
         context["value_display_text"] = "30k";
         context["limit_display_text"] = "264k";
         context["reported_percent"] = Json::UInt64{ 11 };
+        context["unit_display_text"] = "tokens";
         usage["items"].append(std::move(context));
-        auto aiCredits = makeUsageItem("github.copilot.ai_credits", "7.5539", "AIC");
+        auto aiCredits = makeUsageItem("vendor.billing.credits", "7.5539", "github.ai_credit", "billing");
         aiCredits["source"] = "provider_reported";
+        aiCredits["unit_display_text"] = "AIC";
         usage["items"].append(std::move(aiCredits));
 
         const auto display = TerminalApp::AgentUsage::BuildPrimaryDisplay(
@@ -372,22 +390,26 @@ namespace TerminalAppUnitTests
         VERIFY_ARE_EQUAL(std::wstring{ L"7.5539 AIC" }, display.items[1].fullText);
     }
 
-    void AgentUsageTests::BuildPrimaryDisplayPrefersMonetaryCostOverAic()
+    void AgentUsageTests::BuildPrimaryDisplayUsesFirstBillingItem()
     {
         const std::vector<TerminalApp::AgentUsage::Item> items{
             TerminalApp::AgentUsage::Item{
-                .metricId = "acp.billing.cost",
+                .metricId = "vendor.billing.primary",
+                .displayKind = TerminalApp::AgentUsage::DisplayKind::Billing,
                 .valueDecimalText = "1.235",
-                .unitId = "USD",
+                .unitId = "vendor.currency.usd",
+                .unitDisplayText = "USD",
                 .scope = "session",
-                .source = "acp_standard",
+                .source = "first_source",
             },
             TerminalApp::AgentUsage::Item{
-                .metricId = "github.copilot.ai_credits",
+                .metricId = "vendor.billing.secondary",
+                .displayKind = TerminalApp::AgentUsage::DisplayKind::Billing,
                 .valueDecimalText = "7.5539",
-                .unitId = "AIC",
+                .unitId = "vendor.credit.aic",
+                .unitDisplayText = "AIC",
                 .scope = "session",
-                .source = "provider_reported",
+                .source = "second_source",
             },
         };
 
@@ -402,16 +424,20 @@ namespace TerminalAppUnitTests
         const std::vector<TerminalApp::AgentUsage::Item> items{
             TerminalApp::AgentUsage::Item{
                 .metricId = "acp.context.window",
+                .displayKind = TerminalApp::AgentUsage::DisplayKind::Context,
                 .valueDecimalText = "1024",
                 .limitDecimalText = "8192",
                 .unitId = "token",
+                .unitDisplayText = "token",
                 .scope = "session",
                 .source = "acp_standard",
             },
             TerminalApp::AgentUsage::Item{
                 .metricId = "acp.billing.cost",
+                .displayKind = TerminalApp::AgentUsage::DisplayKind::Billing,
                 .valueDecimalText = "0.004",
                 .unitId = "USD",
+                .unitDisplayText = "USD",
                 .scope = "session",
                 .source = "acp_standard",
             },
@@ -430,10 +456,10 @@ namespace TerminalAppUnitTests
     {
         Json::Value usage{ Json::objectValue };
         usage["items"] = Json::Value{ Json::arrayValue };
-        auto staleContext = makeUsageItem("acp.context.window", "1024", "token", "8192");
+        auto staleContext = makeUsageItem("acp.context.window", "1024", "token", "context", "8192");
         staleContext["stale"] = true;
         usage["items"].append(std::move(staleContext));
-        usage["items"].append(makeUsageItem("acp.billing.cost", "0.004", "USD"));
+        usage["items"].append(makeUsageItem("acp.billing.cost", "0.004", "USD", "billing"));
 
         const auto display = TerminalApp::AgentUsage::BuildPrimaryDisplay(
             TerminalApp::AgentUsage::Parse(usage),
@@ -452,6 +478,7 @@ namespace TerminalAppUnitTests
                 .metricId = "acp.tokens.input",
                 .valueDecimalText = "12341",
                 .unitId = "token",
+                .unitDisplayText = "token",
                 .scope = "session",
                 .source = "acp_standard",
             },
@@ -459,6 +486,7 @@ namespace TerminalAppUnitTests
                 .metricId = "acp.tokens.output",
                 .valueDecimalText = "23",
                 .unitId = "token",
+                .unitDisplayText = "token",
                 .scope = "session",
                 .source = "acp_standard",
             },
@@ -475,9 +503,11 @@ namespace TerminalAppUnitTests
         std::vector<TerminalApp::AgentUsage::Item> cache{
             TerminalApp::AgentUsage::Item{
                 .metricId = "acp.context.window",
+                .displayKind = TerminalApp::AgentUsage::DisplayKind::Context,
                 .valueDecimalText = "20",
                 .limitDecimalText = "100",
                 .unitId = "token",
+                .unitDisplayText = "token",
                 .scope = "session",
                 .source = "acp_standard",
             },

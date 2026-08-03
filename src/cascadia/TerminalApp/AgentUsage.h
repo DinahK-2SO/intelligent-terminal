@@ -16,15 +16,24 @@ namespace TerminalApp::AgentUsage
     inline constexpr size_t MaxItems = 8;
     inline constexpr size_t MaxPrimaryItems = 2;
 
+    enum class DisplayKind
+    {
+        Other,
+        Context,
+        Billing,
+    };
+
     struct Item
     {
         std::string metricId;
+        DisplayKind displayKind{ DisplayKind::Other };
         std::string valueDecimalText;
         std::optional<std::string> limitDecimalText;
         std::optional<std::string> valueDisplayText;
         std::optional<std::string> limitDisplayText;
         std::optional<uint64_t> reportedPercent;
         std::string unitId;
+        std::string unitDisplayText;
         std::string scope;
         std::string source;
         bool stale{ false };

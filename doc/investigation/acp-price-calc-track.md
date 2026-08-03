@@ -80,6 +80,7 @@ code it describes.
 | 52. Provider-owned local sources | Copilot path/schema/commands must not live in the common ACP client | Add adapter hooks and opaque cursors; keep client orchestration provider-neutral | Complete |
 | 53. Version-neutral Copilot try-get | Compatible future CLI shapes should keep working; missing fields should hide only that metric | Remove CLI-version binding and return empty contributions for absent shapes | Complete |
 | 54. Unified billing projection | Application rendering must not infer billing semantics from ACP/provider metric IDs | Project stable display kind and underlying unit display text for every billing source | Complete |
+| 55. Unified billing consumer | C++ must render all billing items identically without knowing ACP/provider origins | Parse display kind/unit text and use one billing selection/formatting branch | Complete |
 
 ## Completed Steps
 
@@ -89,6 +90,53 @@ code it describes.
 > amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
 > PowerShell installation path. **Step 50 supersedes every AIC/AI Units conclusion in Steps 45-49**;
 > those entries remain as an audit trail of the incorrect assumption and its correction.
+
+### Step 55 - Unified Billing Consumer
+
+**RED**
+
+- Replaced the C++ display fixture's known context/AIC metric IDs with arbitrary `vendor.*` IDs,
+  supplied `display_kind=context|billing`, and separated stable unit ID `github.ai_credit` from
+  display text `AIC`.
+- The focused test hid the entire Usage group because C++ still selected
+  `acp.billing.cost`/`github.copilot.ai_credits` by metric ID.
+
+**GREEN**
+
+- Added typed C++ `DisplayKind::{Context,Billing,Other}` and parsed the projection's
+  `display_kind` plus bounded `unit_display_text`.
+- Primary selection now iterates semantic context then billing kinds and chooses the first current
+  item of each kind. Metric ID and source are not consulted.
+- All billing items use one `formatBillingAmount` branch: half-up two-decimal main text, positive
+  sub-cent `<0.01`, exact zero `0.00`, and full provider value in Tooltip/Automation HelpText.
+- Both main and full text use the underlying `unit_display_text`; stable `unit_id` remains for
+  identity/merge semantics only.
+- Removed the duplicated ACP-cost/AIC formatting branches and all ACP/Copilot/source strings from
+  `TerminalApp/AgentUsage.cpp`.
+- Direct C++ fixtures now declare display semantics explicitly rather than inferring them from
+  metric IDs.
+
+**Validation**
+
+- Focused RED: arbitrary provider metric IDs produced hidden Usage.
+- Focused GREEN: arbitrary IDs rendered `Context Window: 11%` and `7.55 AIC`; full text retained
+  `7.5539 AIC` even though stable unit ID was `github.ai_credit`.
+- Complete `AgentUsageTests`: 22 passed, 0 failed, 0 skipped.
+- Terminal App and CascadiaPackage builds/deploy: 0 errors; packaged WTA hash matched Cargo output
+  and package status was `Ok`.
+- Real authenticated Copilot session `ecbbae1a-1900-4b54-a457-d2331536787e`: checkpoint
+  `7.53975 AIC`, Bottom Bar `7.54 AIC`, HelpText `7.53975 AIC`, context
+  `19k / 264k tokens (7%)`, and clean chat.
+- C++ source scan found no ACP/Copilot/source-specific rendering identifiers. Clang-format and
+  editor diagnostics: clean.
+
+**Committed files**
+
+- `src/cascadia/TerminalApp/AgentUsage.h`
+- `src/cascadia/TerminalApp/AgentUsage.cpp`
+- `src/cascadia/ut_app/AgentUsageTests.cpp`
+- `doc/investigation/acp-price-calc.md`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 54 - Unified Billing Projection
 
