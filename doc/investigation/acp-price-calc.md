@@ -1,6 +1,6 @@
 # ACP Usage / Cost 调查与统一展示设计
 
-- **状态**：首版实现完成；TDD Step 0-41 与真实provider、本地完整pipeline及packaged toggle E2E验证已完成
+- **状态**：首版实现完成；TDD Step 0-43 与真实provider、本地完整pipeline及packaged Usage E2E验证已完成
 - **首次调查**：2026-07-17
 - **最后核验**：2026-07-30
 - **协议基线**：ACP protocol version 1
@@ -858,7 +858,7 @@ Usage 位于 C++ window-level Bottom Bar 的右侧（session按钮左边）。�
 顺序渲染最多两个normalized items；其他metric不进入主栏。当前实际格式示例：
 
 ```text
-1024 / 8192 Tokens    <0.01 USD
+Context Window: 13%    <0.01 USD
 ```
 
 这是synthetic typed validation的展示值，不代表当前agent已经实际发送对应字段。没有可信报告
@@ -869,8 +869,10 @@ Usage 位于 C++ window-level Bottom Bar 的右侧（session按钮左边）。�
 | 输入状态 | Bottom Bar行为 |
 |---|---|
 | normalized cost-only item | 只显示 `<amount> <currency>` |
-| 标准ACP tokens-only | 只显示 `<used> / <size> Tokens` |
+| 标准ACP tokens-only | 主栏显示 `Context Window: <percentage>%`；hover/HelpText显示精确counts与percentage |
 | context有效但optional cost无效 | 保留并显示context，只省略cost；chat保持可用 |
+| provider报告`used > size` | 显示大于100%的观察值，不clamp、不触发客户端容量策略 |
+| provider报告`size == 0` | 主栏显示`Context Window: N/A`；hover保留原始`used / 0 tokens (N/A)` |
 | transport断连后的旧metric | 保留在tab state并投影`stale=true`；Bottom Bar隐藏，直到provider重新报告该metric |
 | agent没有发送Usage | Usage保持隐藏，不显示`0`、`N/A`或占位符 |
 
@@ -881,9 +883,12 @@ Usage 位于 C++ window-level Bottom Bar 的右侧（session按钮左边）。�
 - Bottom Bar中的cost按decimal text做half-up两位显示；正数但不足`0.01`时显示
   `<0.01 <currency>`，精确零显示`0.00 <currency>`；hover tooltip与Automation HelpText显示
   provider报告的完整amount与currency；
+- context-window主栏percentage按最接近的整数显示，`.5`向上取整。计算使用无溢出的整数算法，
+  不经过浮点数；hover tooltip与Automation HelpText显示两行明细：
+  `Context Window:\n<used> / <size> tokens (<percentage>%)`；
 - provider credit 使用稳定 `unit_id`，`display_name` 只是已知单位的本地化/fallback label；
 - unknown/custom label 视为 agent 提供的显示文本，必须限制长度并清理控制字符；
-- tooltip 显示 scope、aggregation、更新时间和 reporter/source；
+- 当前主栏tooltip只显示用户可核对的精确context counts/percentage或完整cost amount/currency；
 - 不显示“精确费用”“实际账单”等无法由协议保证的措辞。
 
 ---
@@ -1344,6 +1349,8 @@ direct Web API。
 - 标准 `Tokens`、currency code 等通用单位可由 UI 本地化格式化，但不能换算数值；
 - 主Bottom Bar的货币cost统一为两位；正数sub-cent使用`<0.01`避免显示为假零，完整值保留在
   tooltip/HelpText和Rust state中；
+- context-window主栏显示整数percentage；原始`used / size`和同一percentage保留在两行
+  tooltip/HelpText中。`size == 0`使用N/A，`used > size`不clamp；
 - Bottom Bar 在窄宽度下优先保留数值和单位，详细 source/scope 放 tooltip；
 - XAML 增加 AutomationProperties.Name；终端路径需要纯文本、不能只靠颜色表达 stale/error；
 - 数字更新不要被屏幕阅读器按 token/chunk 高频朗读，只在 turn 完成或显著变化时通知。
@@ -1377,6 +1384,7 @@ direct Web API。
 11. toggle关闭时整个UsageGroup隐藏；开启时按provider实际报告显示context-window、
   monetary cost或两者。
 12. 设置变更立即从当前active tab的cache重投影，不等待下一条provider消息。
+13. context-window主栏使用`Context Window: <percentage>%`；hover/HelpText显示精确counts。
 
 Copilot 1.0.71 因没有结构化动态 usage，首版仍隐藏其 usage。这样可以先验证通用 contract，
 而不为了某一家 provider 引入不稳定文本解析或直接 billing API。

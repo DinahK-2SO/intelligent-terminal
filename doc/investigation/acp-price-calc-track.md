@@ -67,6 +67,7 @@ code it describes.
 | 40. Explicit usage-and-cost contract | Setting, controls, and text must state that both metrics are controlled | Rename to `showTokenUsageAndCost` and “Show token usage and cost” | Complete |
 | 41. Final whole-group E2E/docs | Packaged UI and final design must match the clarified whole-group behavior | Redeploy, verify Off/On cache projection, refresh screenshots, and sync docs | Complete |
 | 42. Context percentage and details | Main bar must show a compact percentage while hover/accessibility exposes exact counts | Add exact integer percentage formatting and reuse `PrimaryDisplayItem.fullText` | Complete |
+| 43. Packaged percentage E2E/docs | Deployed UI must show percentage and a detailed real hover tooltip | Update ignored injectors, redeploy, capture hover, and sync final docs | Complete |
 
 ## Completed Steps
 
@@ -75,6 +76,44 @@ code it describes.
 > two-turn investigation and team review. Step 27 supersedes Step 23's currency-shape filtering;
 > amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
 > PowerShell installation path.
+
+### Step 43 - Packaged Percentage E2E and Documentation
+
+**RED**
+
+- Updated the local ignored Usage injector to require `Context Window: 13%`, exact two-line UIA
+  HelpText, and a real mouse-hover tooltip screenshot.
+- After fixing ItE2E isolation for the new `showTokenUsageAndCost` key, the pre-percentage deployed
+  package failed because `Context Window: 13%` was absent.
+
+**GREEN**
+
+- Added `showToken*` to the existing ItE2E agent-setting cleanup so FRE/default tests do not inherit
+  a user's prior visibility choice; added a hermetic existing-framework regression for this key.
+- Updated and retained all local ignored Usage scripts (Step 7/9/10, OpenCode, toggle E2E) to assert
+  percentage text instead of the old ratio.
+- Rebuilt and deployed the packaged Debug Dev app. The same UIA flow then verified main text,
+  HelpText, settings hot reload, and the real hover tooltip.
+- Updated `acp-price-calc.md` with the percentage, rounding, N/A, over-capacity, tooltip, and
+  accessibility contracts.
+
+**Validation**
+
+- Packaged local UIA E2E: passed.
+- Main bar screenshot shows `Context Window: 13%` beside unchanged compact cost.
+- Hover screenshot visibly shows `Context Window:` and `1024 / 8192 tokens (13%)` on separate lines.
+- UIA HelpText exactly matches `Context Window:\n1024 / 8192 tokens (13%)`.
+- ItE2E focused cleanup selftests: 12 passed, 0 failed; complete Unit suite: 15 passed, 0 failed.
+- Screenshot review found no overlap, clipping, or stale ratio text:
+  - `test/e2e/artifacts/token-usage-toggle/bottom-bar-token-usage-on.png`
+  - `test/e2e/artifacts/token-usage-toggle/bottom-bar-context-tooltip.png`
+
+**Committed files**
+
+- `test/e2e/ItE2E/Public/Harness.ps1`
+- `test/e2e/selftests/ItE2E.Unit.Tests.ps1`
+- `doc/investigation/acp-price-calc.md`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 42 - Context Percentage and Detailed Hover
 
