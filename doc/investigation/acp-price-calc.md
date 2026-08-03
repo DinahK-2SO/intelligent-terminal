@@ -779,27 +779,31 @@ trait ProviderUsageAdapter: Sync {
 Provider API variant只接收由未来独立auth/network组件已经获取的response；adapter自身不得读取
 CLI凭据或发HTTP请求。unknown/custom family不匹配private adapter，仍可使用标准ACP路径。
 
-### 6.1 Copilot post-turn command probe设计
+### 6.1 Copilot local source与post-turn command设计
 
 采用helper-owned sequential probe，而不是master probe或Usage层按SessionId反向请求：
 
-1. 正常user/autofix prompt发送前，helper记录同一SessionId的Copilot `events.jsonl` byte
-  offset；prompt成功结束后只扫描offset后的新event并等待`session.usage_checkpoint`。
-2. `WtaClient`随后发送`/context`并维护短生命周期、按SessionId索引的probe capture。command
-  `agent_message_chunk`被收集并从chat事件中抑制；user turn原有streaming与end event不变。
-3. Copilot adapter通过typed session-event和command-output input解析两个独立schema，产出
+1. `usage/providers/copilot.rs`独占Copilot私有知识：`%USERPROFILE%\.copilot\session-state`
+  路径、`events.jsonl`文件名、`session.usage_checkpoint`/`totalNanoAiu` schema和`/context`
+  command声明。`protocol/acp/client.rs`不包含这些常量或路径规则。
+2. provider adapter在正常user/autofix prompt发送前返回opaque `ProviderLocalUsageCursor`，其中
+  封装同一SessionId的source与byte offset；prompt成功结束后provider层的通用JSONL reader只
+  扫描offset后的新event并交回adapter解析。
+3. adapter通过`post_turn_commands()`声明`/context`。通用ACP client只负责顺序执行adapter声明的
+  command并capture输出，不知道command名称；`agent_message_chunk`从chat事件中抑制。
+4. Copilot adapter通过typed session-event和command-output input解析两个独立schema，产出
   context gauge与`github.copilot.ai_credits` provider metric。nano-AIU只做十进制单位换算。
-4. AppEvent、TabSession merge与既有`agent_state_changed.usage` projection继续作为唯一状态/UI
+5. AppEvent、TabSession merge与既有`agent_state_changed.usage` projection继续作为唯一状态/UI
   route；不新增Copilot专属COM/IDL事件。
-5. checkpoint缺失、IO/probe error、timeout或schema drift只省略对应metric并记录无数值的结构化
+6. checkpoint缺失、IO/probe error、timeout或schema drift只省略对应metric并记录无数值的结构化
   诊断；不显示request-count fallback，不把刚完成的user turn改成失败。
-6. 每个session记录是否已收到standard ACP Usage。收到后不再发文本probe，避免未来Copilot
+7. 每个session记录是否已收到standard ACP Usage。收到后不再运行private source/command，避免未来Copilot
   实现ACP contract后双报和多余command。
 
-选择helper的原因：helper已经拥有tab single-flight、SessionId、effective family/reporter identity
-和AppEvent通道，可在一个控制流内顺序probe、抑制UI chunks、merge Usage。master只负责共享CLI
-和路由；让master解析并回传provider业务结果会建立第二套内部事件/state route。把SessionId传给
-Usage层再反向RPC则倒置依赖，并重复session ownership。
+通用orchestration仍在helper，因为它拥有tab single-flight、SessionId、effective
+family/reporter identity和AppEvent通道；但provider-specific source discovery、schema与command
+全部由adapter trait hooks拥有。master只负责共享CLI和路由；让master解析并回传provider业务结果
+会建立第二套内部事件/state route。
 
 ### 6.2 Agent ID 的唯一来源与跨语言复用
 
@@ -852,8 +856,8 @@ C++ UI 已支持但 WTA 后端静默落到 `unknown`。
 1. **Identity resolver**：复用 `AgentProfile`、生成的 family constants 和 ACP initialize
   handshake，只负责 `instance + reporter -> effective family`；
 2. **Standard normalizer**：唯一一处解析 typed ACP `UsageUpdate`，不按 provider 复制；
-3. **Extension registry**：typed registry和per-family模块已建立；Copilot verified-command
-  extractor启用，其他private extractor保持no-op；
+3. **Extension registry**：typed registry和per-family模块已建立；Copilot adapter拥有其local
+  source cursor、session-event parser与post-turn command，其他private extractor保持no-op；
 4. **Usage store/merger**：复用 `TabSession` / App state，按 metric scope 与 aggregation 合并；
 5. **Rust projection**：复用 `project_tab_state()` 和现有 `agent_state_changed`，不新建第二条
   COM/IDL/event transport；

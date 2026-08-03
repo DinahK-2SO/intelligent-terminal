@@ -1,12 +1,29 @@
 use super::{
-    PrivateUsagePolicy, ProviderContextUsage, ProviderUsageAdapter, ProviderUsageContribution,
-    ProviderUsageError, ProviderUsageInput, ProviderUsageMetric, ProviderUsageRequest,
+    PrivateUsagePolicy, ProviderContextUsage, ProviderLocalUsageCursor, ProviderUsageAdapter,
+    ProviderUsageContribution, ProviderUsageError, ProviderUsageInput, ProviderUsageMetric,
+    ProviderUsageRequest,
 };
 
 const COPILOT_REPORTER_ID: &str = "Copilot";
 const CONTEXT_SCHEMA_ID: &str = "copilot.cli.context.v1.0.77";
 const SESSION_USAGE_SCHEMA_ID: &str = "copilot.cli.session_usage_checkpoint.v1.0.77";
 const NANO_AIU_PER_AIC: u64 = 1_000_000_000;
+const POST_TURN_COMMANDS: &[&str] = &["/context"];
+
+fn session_events_path_in(home: &std::path::Path, session_id: &str) -> Option<std::path::PathBuf> {
+    let segment = std::path::Path::new(session_id);
+    if segment.file_name() != Some(std::ffi::OsStr::new(session_id))
+        || matches!(session_id, "." | "..")
+    {
+        return None;
+    }
+    Some(
+        home.join(".copilot")
+            .join("session-state")
+            .join(session_id)
+            .join("events.jsonl"),
+    )
+}
 
 fn schema_error(schema_id: &'static str, class: &'static str) -> ProviderUsageError {
     ProviderUsageError {
@@ -143,6 +160,20 @@ impl ProviderUsageAdapter for CopilotUsageAdapter {
         &[COPILOT_REPORTER_ID]
     }
 
+    fn begin_local_usage(&self, session_id: &str) -> Option<ProviderLocalUsageCursor> {
+        let home = std::env::var_os("USERPROFILE").map(std::path::PathBuf::from)?;
+        let path = session_events_path_in(&home, session_id)?;
+        Some(ProviderLocalUsageCursor::jsonl(
+            path,
+            crate::agent_registry::COPILOT_AGENT_ID,
+            SESSION_USAGE_SCHEMA_ID,
+        ))
+    }
+
+    fn post_turn_commands(&self) -> &'static [&'static str] {
+        POST_TURN_COMMANDS
+    }
+
     fn extract_private_usage(
         &self,
         request: ProviderUsageRequest<'_>,
@@ -158,7 +189,13 @@ impl ProviderUsageAdapter for CopilotUsageAdapter {
             ProviderUsageInput::ProviderCommandOutput {
                 command: "/usage", ..
             } => Ok(ProviderUsageContribution::default()),
-            ProviderUsageInput::ProviderSessionEvent(event) => parse_session_usage_event(event),
+            ProviderUsageInput::ProviderSessionEvent(event)
+                if event.get("type").and_then(serde_json::Value::as_str)
+                    == Some("session.usage_checkpoint") =>
+            {
+                parse_session_usage_event(event)
+            }
+            ProviderUsageInput::ProviderSessionEvent(_) => Ok(ProviderUsageContribution::default()),
             _ => Ok(ProviderUsageContribution::default()),
         }
     }
@@ -168,10 +205,26 @@ impl ProviderUsageAdapter for CopilotUsageAdapter {
 mod tests {
     use super::*;
     use crate::usage::providers::ProviderUsageInput;
+    use std::path::{Path, PathBuf};
 
     const CONTEXT_OUTPUT: &str =
         "Context Usage\n\nclaude-sonnet-5 · 30k/264k tokens (11%)\nSystem Prompt 18.0k (7%)";
     const USAGE_OUTPUT: &str = "Session Usage\n\nChanges: +0 -0\nRequests: 1 AI Units (19s)\nTokens: input 24.7k, output 22, cached 0, reasoning 13";
+
+    #[test]
+    fn owns_local_session_source_and_post_turn_commands() {
+        assert_eq!(ADAPTER.post_turn_commands(), &["/context"]);
+        assert_eq!(
+            session_events_path_in(Path::new(r"C:\Users\u"), "session-1"),
+            Some(PathBuf::from(
+                r"C:\Users\u\.copilot\session-state\session-1\events.jsonl"
+            ))
+        );
+        assert_eq!(
+            session_events_path_in(Path::new(r"C:\Users\u"), r"..\escape"),
+            None
+        );
+    }
 
     #[test]
     fn parses_verified_context_command_output() {

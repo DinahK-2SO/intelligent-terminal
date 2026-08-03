@@ -6,6 +6,38 @@ mod opencode;
 
 use super::UsageCost;
 
+#[derive(Debug, Clone)]
+pub struct ProviderLocalUsageCursor {
+    path: std::path::PathBuf,
+    offset: u64,
+    family_id: &'static str,
+    schema_id: &'static str,
+}
+
+impl ProviderLocalUsageCursor {
+    pub(super) fn jsonl(
+        path: std::path::PathBuf,
+        family_id: &'static str,
+        schema_id: &'static str,
+    ) -> Self {
+        let offset = std::fs::metadata(&path).map_or(0, |metadata| metadata.len());
+        Self {
+            path,
+            offset,
+            family_id,
+            schema_id,
+        }
+    }
+
+    fn error(&self, class: &'static str) -> ProviderUsageError {
+        ProviderUsageError {
+            family_id: self.family_id,
+            schema_id: self.schema_id,
+            class,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrivateUsagePolicy {
     /// Standard ACP UsageUpdate is the only enabled source for this family.
@@ -99,10 +131,78 @@ pub trait ProviderUsageAdapter: Sync {
     fn family_id(&self) -> &'static str;
     fn private_usage_policy(&self) -> PrivateUsagePolicy;
     fn trusted_reporter_ids(&self) -> &'static [&'static str];
+    fn begin_local_usage(&self, _session_id: &str) -> Option<ProviderLocalUsageCursor> {
+        None
+    }
+    fn post_turn_commands(&self) -> &'static [&'static str] {
+        &[]
+    }
     fn extract_private_usage(
         &self,
         request: ProviderUsageRequest<'_>,
     ) -> Result<ProviderUsageContribution, ProviderUsageError>;
+}
+
+async fn read_local_usage(
+    adapter: &'static dyn ProviderUsageAdapter,
+    reporter_id: Option<&str>,
+    cursor: &ProviderLocalUsageCursor,
+) -> Result<Option<ProviderUsageContribution>, ProviderUsageError> {
+    use tokio::io::{AsyncBufReadExt, AsyncSeekExt};
+
+    let mut file = match tokio::fs::File::open(&cursor.path).await {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(cursor.error("local_source_open_failed")),
+    };
+    let length = file
+        .metadata()
+        .await
+        .map_err(|_| cursor.error("local_source_metadata_failed"))?
+        .len();
+    file.seek(std::io::SeekFrom::Start(cursor.offset.min(length)))
+        .await
+        .map_err(|_| cursor.error("local_source_seek_failed"))?;
+    let mut lines = tokio::io::BufReader::new(file).lines();
+    let mut latest = None;
+    loop {
+        let line = lines
+            .next_line()
+            .await
+            .map_err(|_| cursor.error("local_source_read_failed"))?;
+        let Some(line) = line else {
+            break;
+        };
+        let event: serde_json::Value = match serde_json::from_str(&line) {
+            Ok(event) => event,
+            Err(_) => continue,
+        };
+        let contribution = adapter.extract_private_usage(ProviderUsageRequest {
+            reporter_id,
+            input: ProviderUsageInput::ProviderSessionEvent(&event),
+        })?;
+        if contribution != ProviderUsageContribution::default() {
+            latest = Some(contribution);
+        }
+    }
+    Ok(latest)
+}
+
+pub async fn wait_for_local_usage(
+    adapter: &'static dyn ProviderUsageAdapter,
+    reporter_id: Option<&str>,
+    cursor: ProviderLocalUsageCursor,
+) -> Result<Option<ProviderUsageContribution>, ProviderUsageError> {
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(3);
+    loop {
+        if let Some(contribution) = read_local_usage(adapter, reporter_id, &cursor).await? {
+            return Ok(Some(contribution));
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Ok(None);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
 }
 
 static PROVIDERS: [&dyn ProviderUsageAdapter; 5] = [

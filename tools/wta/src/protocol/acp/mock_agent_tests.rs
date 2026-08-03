@@ -13,7 +13,7 @@
 //! harness and assert on real `App` state (see the spec, "option 2").
 
 use super::{
-    probe_copilot_usage, ClientState, PromptTimingState, PromptUsageIdentity,
+    probe_private_usage, ClientState, PromptTimingState, PromptUsageIdentity,
     ProviderProbeCapture, WtaClient,
 };
 use super::{
@@ -372,7 +372,7 @@ fn connect_with(
         prompt_timing: Arc::new(PromptTimingState::default()),
         provider_probe_capture: ProviderProbeCapture::default(),
         standard_usage_sessions: Mutex::new(HashSet::new()),
-        copilot_usage_offsets: Mutex::new(HashMap::new()),
+        provider_usage_cursors: Mutex::new(HashMap::new()),
     });
     let wta = WtaClient { state };
 
@@ -628,7 +628,7 @@ fn connect_for_dispatch(behavior: MockBehavior) -> DispatchHarness {
         prompt_timing: prompt_timing.clone(),
         provider_probe_capture: ProviderProbeCapture::default(),
         standard_usage_sessions: Mutex::new(HashSet::new()),
-        copilot_usage_offsets: Mutex::new(HashMap::new()),
+        provider_usage_cursors: Mutex::new(HashMap::new()),
     });
     let wta = WtaClient { state };
 
@@ -690,7 +690,7 @@ async fn copilot_usage_probe_captures_commands_without_chat_pollution() {
                 reporter_id: Some("Copilot".to_string()),
             };
 
-            let snapshot = probe_copilot_usage(
+            let snapshot = probe_private_usage(
                 &harness.conn,
                 &harness.client,
                 &identity,
@@ -727,7 +727,7 @@ async fn copilot_usage_probe_skips_non_copilot_identity_before_wire_io() {
                 reporter_id: Some("Copilot".to_string()),
             };
 
-            let snapshot = probe_copilot_usage(
+            let snapshot = probe_private_usage(
                 &harness.conn,
                 &harness.client,
                 &identity,
@@ -755,7 +755,7 @@ async fn copilot_usage_probe_failure_releases_capture_for_later_chat() {
             let session_id = acp::schema::v1::SessionId::new("mock-session-1");
 
             assert!(
-                probe_copilot_usage(&harness.conn, &harness.client, &identity, session_id.clone())
+                probe_private_usage(&harness.conn, &harness.client, &identity, session_id.clone())
                     .await
                     .expect("optional context failure should be contained")
                     .is_none()
@@ -1939,7 +1939,7 @@ fn bare_client() -> (WtaClient, mpsc::UnboundedReceiver<AppEvent>) {
         prompt_timing: Arc::new(PromptTimingState::default()),
         provider_probe_capture: ProviderProbeCapture::default(),
         standard_usage_sessions: Mutex::new(HashSet::new()),
-        copilot_usage_offsets: Mutex::new(HashMap::new()),
+        provider_usage_cursors: Mutex::new(HashMap::new()),
     });
     (WtaClient { state }, event_rx)
 }

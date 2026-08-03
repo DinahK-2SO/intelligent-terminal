@@ -77,6 +77,7 @@ code it describes.
 | 49. Copilot packaged integration | Real Copilot must show clean chat, context detail, and AI Units in the deployed app | Build/deploy, validate same-session routing, inspect UIA and screenshots, and sync final docs | Complete |
 | 50. Correct Copilot AIC source | `/usage Requests` must not be displayed as AIC; UI must exactly match the real session ledger | Read post-turn `totalNanoAiu`, stop `/usage`, and prove exact equality with real Copilot CLI | Complete |
 | 51. Compact AIC display | AIC should match monetary cost's compact precision without losing ledger accuracy | Reuse half-up two-decimal main formatting and retain exact AIC in HelpText | Complete |
+| 52. Provider-owned local sources | Copilot path/schema/commands must not live in the common ACP client | Add adapter hooks and opaque cursors; keep client orchestration provider-neutral | Complete |
 
 ## Completed Steps
 
@@ -86,6 +87,55 @@ code it describes.
 > amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
 > PowerShell installation path. **Step 50 supersedes every AIC/AI Units conclusion in Steps 45-49**;
 > those entries remain as an audit trail of the incorrect assumption and its correction.
+
+### Step 52 - Provider-Owned Local Sources
+
+**RED**
+
+- Added a Copilot adapter ownership contract requiring `post_turn_commands()` to declare only
+  `/context` and a pure provider-local path resolver to construct/reject session paths.
+- The focused build failed because `CopilotUsageAdapter` had no command capability and
+  `session_events_path_in` did not exist; both path discovery and JSONL polling still lived in
+  common `protocol/acp/client.rs`.
+
+**GREEN**
+
+- Added opaque `ProviderLocalUsageCursor` and provider trait hooks `begin_local_usage()` and
+  `post_turn_commands()`.
+- Moved `%USERPROFILE%\.copilot\session-state\<SessionId>\events.jsonl`, safe path validation,
+  checkpoint schema recognition, `totalNanoAiu` parsing, and `/context` declaration into
+  `usage/providers/copilot.rs`.
+- Moved reusable JSONL offset/read/wait mechanics into `usage/providers/mod.rs`; the cursor hides
+  path, offset, family, and schema from callers.
+- `protocol/acp/client.rs` now stores only `provider_usage_cursors`, looks up an adapter by resolved
+  family/reporter, invokes generic local-source waiting and executes adapter-declared commands.
+  It contains no Copilot ledger path, event filename, checkpoint field, schema, or `/context`
+  command constant.
+- Standard ACP precedence, single-flight timing, command capture, AppEvent projection, failure
+  isolation, and no-value logging remain unchanged.
+
+**Validation**
+
+- Ownership RED failed with missing `post_turn_commands` and `session_events_path_in`.
+- Ownership GREEN: 1 passed, 0 failed.
+- Complete ACP mock routing suite: 37 passed, 0 failed.
+- Usage-focused suite: 32 passed, 0 failed.
+- Complete WTA suite: 1233 passed, 0 failed.
+- Explicit-target WTA and x64 Debug CascadiaPackage builds/deploy: succeeded; packaged WTA hash
+  matched Cargo output and package status was `Ok`.
+- Real authenticated Copilot CLI session `7e017cfe-5560-4cdc-a182-b225c29f9d7d` retained exact
+  behavior: checkpoint `7.53975 AIC`, Bottom Bar `7.54 AIC`, HelpText `7.53975 AIC`, context
+  `19k / 264k tokens (7%)`, and clean chat.
+- Provider rustfmt and editor diagnostics: clean.
+
+**Committed files**
+
+- `tools/wta/src/usage/providers/mod.rs`
+- `tools/wta/src/usage/providers/copilot.rs`
+- `tools/wta/src/protocol/acp/client.rs`
+- `tools/wta/src/protocol/acp/mock_agent_tests.rs`
+- `doc/investigation/acp-price-calc.md`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 51 - Compact AIC Display
 
