@@ -5,6 +5,7 @@
 
 #include <json/json.h>
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -20,6 +21,9 @@ namespace TerminalApp::AgentUsage
         std::string metricId;
         std::string valueDecimalText;
         std::optional<std::string> limitDecimalText;
+        std::optional<std::string> valueDisplayText;
+        std::optional<std::string> limitDisplayText;
+        std::optional<uint64_t> reportedPercent;
         std::string unitId;
         std::string scope;
         std::string source;

@@ -11,6 +11,7 @@ namespace
 {
     constexpr size_t MaxMetricIdLength = 64;
     constexpr size_t MaxDecimalTextLength = 64;
+    constexpr size_t MaxDisplayTextLength = 64;
     constexpr size_t MaxUnitIdLength = 16;
     constexpr size_t MaxScopeLength = 32;
     constexpr size_t MaxSourceLength = 32;
@@ -250,20 +251,24 @@ namespace
 
         std::vector<PrimaryDisplayItem> displayItems;
         displayItems.reserve(std::min(items.size(), MaxPrimaryItems));
-        for (const auto metricId : { "acp.context.window", "acp.billing.cost" })
+        const auto cost = std::ranges::find(items, "acp.billing.cost", &Item::metricId);
+        for (const auto metricId : { "acp.context.window", "acp.billing.cost", "github.copilot.ai_units" })
         {
             const auto item = std::ranges::find(items, metricId, &Item::metricId);
-            if (item == items.end() || item->stale || displayItems.size() == MaxPrimaryItems)
+            if (item == items.end() || item->stale || displayItems.size() == MaxPrimaryItems ||
+                (item->metricId == "github.copilot.ai_units" && cost != items.end() && !cost->stale))
             {
                 continue;
             }
 
             if (item->metricId == "acp.context.window" && item->limitDecimalText)
             {
-                const auto percentage = formatContextPercentage(
-                    item->valueDecimalText,
-                    *item->limitDecimalText);
-                const auto percentageText = percentage.value_or(std::wstring{ unavailableText });
+                const auto percentageText = item->reportedPercent ?
+                                                std::to_wstring(*item->reportedPercent) + L"%" :
+                                                formatContextPercentage(
+                                                    item->valueDecimalText,
+                                                    *item->limitDecimalText)
+                                                    .value_or(std::wstring{ unavailableText });
 
                 std::wstring text{ contextWindowLabel };
                 text += L": ";
@@ -271,9 +276,9 @@ namespace
 
                 std::wstring fullText{ contextWindowLabel };
                 fullText += L":\n";
-                fullText += til::u8u16(item->valueDecimalText);
+                fullText += til::u8u16(item->valueDisplayText.value_or(item->valueDecimalText));
                 fullText += L" / ";
-                fullText += til::u8u16(*item->limitDecimalText);
+                fullText += til::u8u16(item->limitDisplayText.value_or(*item->limitDecimalText));
                 fullText += L" ";
                 fullText += tokensUnit;
                 fullText += L" (";
@@ -285,7 +290,7 @@ namespace
                     .fullText = std::move(fullText),
                 });
             }
-            else
+            else if (item->metricId == "acp.billing.cost")
             {
                 auto fullText = til::u8u16(item->valueDecimalText);
                 fullText += L" ";
@@ -296,6 +301,16 @@ namespace
                 displayItems.emplace_back(PrimaryDisplayItem{
                     .text = std::move(text),
                     .fullText = std::move(fullText),
+                });
+            }
+            else
+            {
+                auto text = til::u8u16(item->valueDecimalText);
+                text += L" ";
+                text += til::u8u16(item->unitId);
+                displayItems.emplace_back(PrimaryDisplayItem{
+                    .text = text,
+                    .fullText = std::move(text),
                 });
             }
         }
@@ -345,6 +360,22 @@ namespace TerminalApp::AgentUsage
                 {
                     throw std::invalid_argument{ "usage limit_decimal_text is invalid" };
                 }
+            }
+            if (item.isMember("value_display_text"))
+            {
+                result.valueDisplayText = requiredString(item, "value_display_text", MaxDisplayTextLength);
+            }
+            if (item.isMember("limit_display_text"))
+            {
+                result.limitDisplayText = requiredString(item, "limit_display_text", MaxDisplayTextLength);
+            }
+            if (item.isMember("reported_percent"))
+            {
+                if (!item["reported_percent"].isUInt64())
+                {
+                    throw std::invalid_argument{ "usage reported_percent is invalid" };
+                }
+                result.reportedPercent = item["reported_percent"].asUInt64();
             }
             result.unitId = requiredString(item, "unit_id", MaxUnitIdLength);
             result.scope = requiredString(item, "scope", MaxScopeLength);

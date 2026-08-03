@@ -73,6 +73,7 @@ code it describes.
 | 45. Copilot command parser/domain | Verified command text must become provider-neutral Usage without confusing AI Units with currency | Add typed command input, exact identity parser, context display metadata, and provider metrics | Complete |
 | 46. Copilot command wire capture | Same-session probes must run in order without entering chat, and failures must release capture | Add helper-owned per-session capture and a bounded exact-identity probe primitive | Complete |
 | 47. Copilot automatic turn probe | Successful Copilot turns must report fallback Usage, while standard ACP Usage and probe failures stay isolated | Probe before single-flight release, remember standard-Usage sessions, and emit the existing typed event | Complete |
+| 48. Copilot provider metric display | Provider context detail and AI Units must render without currency reinterpretation | Extend the typed C++ cache and existing two-slot display selector | Complete |
 
 ## Completed Steps
 
@@ -81,6 +82,48 @@ code it describes.
 > two-turn investigation and team review. Step 27 supersedes Step 23's currency-shape filtering;
 > amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
 > PowerShell installation path.
+
+### Step 48 - Copilot Provider Metric Display
+
+**RED**
+
+- Added C++ parser contracts for `value_display_text`, `limit_display_text`, and
+  `reported_percent`; the focused build failed because `AgentUsage::Item` had no corresponding
+  typed fields.
+- Added display contracts requiring `Context Window: 11%`, detail
+  `30k / 264k tokens (11%)`, and raw `2 AI Units` from the provider projection.
+- Added precedence and precision contracts: standard monetary cost wins the bounded second slot,
+  while an AI-only `0.33 AI Credits` value remains verbatim and is never cost-formatted.
+
+**GREEN**
+
+- Extended the existing bounded C++ parser/cache with optional provider display strings and
+  reported percentage. Decimal normalized counts remain required and available as fallback.
+- Context uses provider-reported display strings and percentage when present; standard ACP context
+  still computes its observational, unclamped percentage from normalized counts.
+- Added `github.copilot.ai_units` as the third selector candidate after context and monetary cost.
+  It renders raw decimal text plus the provider unit and reuses the same Tooltip/Automation
+  HelpText route already owned by `PrimaryDisplayItem.fullText`.
+- A current monetary `acp.billing.cost` suppresses AI Units. A stale/missing monetary cost allows
+  AI Units, preserving the existing maximum of two Bottom Bar items.
+- No XAML, TerminalPage, COM, IDL, setting, or localization change was needed.
+
+**Validation**
+
+- Initial provider context/AI Units focused contract: 1 passed, 0 failed.
+- Provider metadata parser: 1 passed, 0 failed.
+- Monetary-cost precedence: 1 passed, 0 failed.
+- Fractional provider-unit preservation: 1 passed, 0 failed.
+- Complete `AgentUsageTests`: 22 passed, 0 failed, 0 skipped.
+- Terminal App unit-test project build: 0 errors; 39 pre-existing warnings.
+- Visual Studio clang-format dry run, editor diagnostics, and CRLF-aware whitespace checks: clean.
+
+**Committed files**
+
+- `src/cascadia/TerminalApp/AgentUsage.h`
+- `src/cascadia/TerminalApp/AgentUsage.cpp`
+- `src/cascadia/ut_app/AgentUsageTests.cpp`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 47 - Copilot Automatic Turn Probe
 
