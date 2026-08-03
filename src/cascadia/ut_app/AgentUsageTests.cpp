@@ -368,7 +368,7 @@ namespace TerminalAppUnitTests
         VERIFY_ARE_EQUAL(static_cast<size_t>(2), display.items.size());
         VERIFY_ARE_EQUAL(std::wstring{ L"Context Window: 11%" }, display.items[0].text);
         VERIFY_ARE_EQUAL(std::wstring{ L"Context Window:\n30k / 264k tokens (11%)" }, display.items[0].fullText);
-        VERIFY_ARE_EQUAL(std::wstring{ L"7.5539 AIC" }, display.items[1].text);
+        VERIFY_ARE_EQUAL(std::wstring{ L"7.55 AIC" }, display.items[1].text);
         VERIFY_ARE_EQUAL(std::wstring{ L"7.5539 AIC" }, display.items[1].fullText);
     }
 

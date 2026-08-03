@@ -915,7 +915,7 @@ Copilot AIC fallback顺序渲染最多两个normalized items；monetary cost存�
 
 ```text
 Context Window: 13%    <0.01 USD
-Context Window: 5%     1.957095 AIC
+Context Window: 7%     7.54 AIC
 ```
 
 第一行是synthetic typed validation；第二行来自真实Copilot packaged验收。没有可信报告值时
@@ -927,7 +927,7 @@ Context Window: 5%     1.957095 AIC
 |---|---|
 | normalized cost-only item | 只显示 `<amount> <currency>` |
 | 标准ACP tokens-only | 主栏显示 `Context Window: <percentage>%`；hover/HelpText显示精确counts与percentage |
-| Copilot context + AIC | 主栏显示provider报告percentage与精确checkpoint AIC；hover保留context的`k`展示精度 |
+| Copilot context + AIC | 主栏显示provider报告percentage与half-up两位AIC；hover/HelpText保留完整checkpoint AIC与context的`k`展示精度 |
 | context有效但optional cost无效 | 保留并显示context，只省略cost；chat保持可用 |
 | provider报告`used > size` | 显示大于100%的观察值，不clamp、不触发客户端容量策略 |
 | provider报告`size == 0` | 主栏显示`Context Window: N/A`；hover保留原始`used / 0 tokens (N/A)` |
@@ -944,8 +944,9 @@ Context Window: 5%     1.957095 AIC
 - context-window主栏percentage按最接近的整数显示，`.5`向上取整。计算使用无溢出的整数算法，
   不经过浮点数；hover tooltip与Automation HelpText显示两行明细：
   `Context Window:\n<used> / <size> tokens (<percentage>%)`；
-- Copilot AIC显示`totalNanoAiu/1e9`的精确decimal text与`AIC`，不使用cost两位格式、
-  不映射currency；
+- Copilot AIC主栏复用cost的exact-decimal half-up两位格式；正数sub-cent显示`<0.01 AIC`，
+  完整`totalNanoAiu/1e9` decimal保留在tooltip/Automation HelpText。AIC仍不是currency，不参与
+  monetary cost换算；
 - unknown/custom label 视为 agent 提供的显示文本，必须限制长度并清理控制字符；
 - 当前主栏tooltip只显示用户可核对的精确context counts/percentage或完整cost amount/currency；
 - 不显示“精确费用”“实际账单”等无法由协议保证的措辞。
@@ -1120,8 +1121,9 @@ Step 49的`1 AI Units`结论已被Step 50纠正。最新同一真实ACP SessionI
 
 - Copilot pane显示正常user reply `COPILOT_USAGE_UI_OK`；chat capture中没有`/context`、`/usage`、
   `Context Usage`、`Session Usage`、`Requests:`或累计token输出；
-- Bottom Bar显示`Context Window: 5%`与`1.957095 AIC`，不显示currency；该session最新checkpoint
-  为`totalNanoAiu=1,957,095,000`，逐位换算后与UI完全相等；
+- Step 50验证Bottom Bar完整显示`1.957095 AIC`并与checkpoint逐位相等。Step 51将主栏压缩为
+  两位，同时保留完整HelpText：真实session checkpoint为`7.5407625 AIC`，主栏显示
+  `7.54 AIC`，Automation HelpText显示`7.5407625 AIC`；
 - context Tooltip与Automation HelpText均为
   `Context Window:\n23k / 264k tokens (9%)`，保留CLI的`k`展示精度；
 - Terminal window、agent pane、reply、两个usage items和hover tooltip均经截图目视确认可见、

@@ -305,12 +305,15 @@ namespace
             }
             else
             {
-                auto text = til::u8u16(item->valueDecimalText);
+                auto fullText = til::u8u16(item->valueDecimalText);
+                fullText += L" ";
+                fullText += til::u8u16(item->unitId);
+                auto text = formatCostAmount(item->valueDecimalText);
                 text += L" ";
                 text += til::u8u16(item->unitId);
                 displayItems.emplace_back(PrimaryDisplayItem{
-                    .text = text,
-                    .fullText = std::move(text),
+                    .text = std::move(text),
+                    .fullText = std::move(fullText),
                 });
             }
         }

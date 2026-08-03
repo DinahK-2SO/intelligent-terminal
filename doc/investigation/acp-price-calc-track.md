@@ -76,6 +76,7 @@ code it describes.
 | 48. Copilot provider metric display | Provider context detail and AI Units must render without currency reinterpretation | Extend the typed C++ cache and existing two-slot display selector | Complete |
 | 49. Copilot packaged integration | Real Copilot must show clean chat, context detail, and AI Units in the deployed app | Build/deploy, validate same-session routing, inspect UIA and screenshots, and sync final docs | Complete |
 | 50. Correct Copilot AIC source | `/usage Requests` must not be displayed as AIC; UI must exactly match the real session ledger | Read post-turn `totalNanoAiu`, stop `/usage`, and prove exact equality with real Copilot CLI | Complete |
+| 51. Compact AIC display | AIC should match monetary cost's compact precision without losing ledger accuracy | Reuse half-up two-decimal main formatting and retain exact AIC in HelpText | Complete |
 
 ## Completed Steps
 
@@ -85,6 +86,44 @@ code it describes.
 > amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
 > PowerShell installation path. **Step 50 supersedes every AIC/AI Units conclusion in Steps 45-49**;
 > those entries remain as an audit trail of the incorrect assumption and its correction.
+
+### Step 51 - Compact AIC Display
+
+**RED**
+
+- Changed the focused C++ contract to require main text `7.55 AIC` while retaining
+  `7.5539 AIC` in `PrimaryDisplayItem.fullText`.
+- The focused real display policy test failed with actual main text `7.5539 AIC`, proving AIC did
+  not yet use the monetary-cost compact formatting policy.
+
+**GREEN**
+
+- Reused the existing exact-decimal `formatCostAmount` path for the AIC main item only.
+- Main text now uses half-up two decimals; positive sub-cent values remain `<0.01 AIC` and exact
+  zero remains `0.00 AIC`.
+- Full checkpoint decimal text remains unchanged in Tooltip and Automation HelpText. Rust state and
+  `totalNanoAiu` conversion retain all reported precision.
+- AIC remains a provider metric, not monetary `UsageCost`; the shared formatter is presentation
+  reuse and does not reinterpret AIC as currency.
+
+**Validation**
+
+- Focused RED: expected `7.55 AIC`, actual `7.5539 AIC`.
+- Focused GREEN: main `7.55 AIC`, fullText `7.5539 AIC`.
+- Complete `AgentUsageTests`: 22 passed, 0 failed, 0 skipped.
+- Terminal App and CascadiaPackage builds: 0 errors.
+- Real authenticated Copilot CLI 1.0.77 session `6a5a2d85-724a-49e6-b34f-9aafb95c226a`:
+  checkpoint `totalNanoAiu=7,540,762,500` -> exact `7.5407625 AIC`; Bottom Bar `7.54 AIC`;
+  Automation HelpText `7.5407625 AIC`. Both executable comparisons passed.
+- The same live test retained context `19k / 264k tokens (7%)`, clean chat, and no currency label.
+- Visual Studio clang-format and editor diagnostics: clean.
+
+**Committed files**
+
+- `src/cascadia/TerminalApp/AgentUsage.cpp`
+- `src/cascadia/ut_app/AgentUsageTests.cpp`
+- `doc/investigation/acp-price-calc.md`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 50 - Correct Copilot AIC Source
 
