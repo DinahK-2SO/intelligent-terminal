@@ -51,7 +51,11 @@ After talked with the team, 我们决定只显示这两个usage/cost相关的数
 
 
 关于GitHub Copilot:
-沃恩联系了GitHubCopilot的开发者，他们同意在未来的版本中加入符合ACP contract的 usage/cost数据。因此我们暂时不做额外处理，以便未来升级到新的Copilot ACP 包时不需要再做额外改动。但是我们能做额外处理的接口应保留。
+我们联系了GitHubCopilot的开发者，他们同意在未来的版本中加入符合ACP contract的 usage/cost数据。
+
+对此，我们的manager对我们提出要求：
+
+我们不能等GitHub Copilot CIL 去implement usage/cost in ACP之后再显示这个。既然我们有了能对每个provider做特殊处理的框架，让我们为GitHubCopilot CLI做一个特殊处理：通过 发送 "/usage" command来拿到usage，将context window usage和 AIC(现在usage command返回的单位是 AI Credit 而不是 货币符号) cost 显示出来。我们这样做的前提是："/usage" 这个command 不消耗 用户的tokens。
 
 
 关于Gemini：
