@@ -1527,6 +1527,7 @@ struct ClientState {
     shell_mgr: Arc<ShellManager>,
     prompt_timing: Arc<PromptTimingState>,
     provider_probe_capture: ProviderProbeCapture,
+    standard_usage_sessions: Mutex<HashSet<String>>,
 }
 
 #[derive(Default)]
@@ -1790,6 +1791,11 @@ impl WtaClient {
                 });
             }
             acp::schema::v1::SessionUpdate::UsageUpdate(update) => {
+                self.state
+                    .standard_usage_sessions
+                    .lock()
+                    .unwrap()
+                    .insert(sid.clone());
                 let snapshot = crate::usage::normalize_standard_usage(&update);
                 let _ = self.state.event_tx.send(AppEvent::UsageReported {
                     session_id: sid,
@@ -1997,6 +2003,15 @@ async fn probe_copilot_usage(
     session_id: acp::schema::v1::SessionId,
 ) -> Result<Option<crate::usage::UsageSnapshot>> {
     if identity.family_id.as_deref() != Some(crate::agent_registry::COPILOT_AGENT_ID) {
+        return Ok(None);
+    }
+    if client
+        .state
+        .standard_usage_sessions
+        .lock()
+        .unwrap()
+        .contains(&session_id.to_string())
+    {
         return Ok(None);
     }
     let Some(reporter_id) = identity.reporter_id.as_deref() else {
@@ -2394,6 +2409,7 @@ pub async fn run_acp_client_over_pipe(
         shell_mgr: shell_mgr.clone(),
         prompt_timing: prompt_timing.clone(),
         provider_probe_capture: ProviderProbeCapture::default(),
+        standard_usage_sessions: Mutex::new(HashSet::new()),
     });
 
     let client = WtaClient {
@@ -3013,6 +3029,8 @@ pub async fn run_acp_client_over_pipe(
                     &event_tx,
                     &shell_mgr,
                     &prompt_timing,
+                    &client,
+                    &prompt_usage_identity,
                     wt_connected,
                     is_agent_pane,
                 );
@@ -3676,6 +3694,8 @@ fn dispatch_prompt(
     event_tx: &mpsc::UnboundedSender<AppEvent>,
     shell_mgr: &Arc<ShellManager>,
     prompt_timing: &Arc<PromptTimingState>,
+    client: &WtaClient,
+    prompt_usage_identity: &PromptUsageIdentity,
     wt_connected: bool,
     is_agent_pane: bool,
 ) {
@@ -3703,6 +3723,8 @@ fn dispatch_prompt(
     let event_tx_task = event_tx.clone();
     let shell_mgr_task = Arc::clone(shell_mgr);
     let prompt_timing_task = Arc::clone(prompt_timing);
+    let client_task = client.clone();
+    let prompt_usage_identity_task = prompt_usage_identity.clone();
     let tab_key_task = tab_key.clone();
 
     tokio::task::spawn_local(dispatch_prompt_body(
@@ -3715,6 +3737,8 @@ fn dispatch_prompt(
         event_tx_task,
         shell_mgr_task,
         prompt_timing_task,
+        client_task,
+        prompt_usage_identity_task,
         tab_key_task,
         wt_connected,
         is_agent_pane,
@@ -3735,6 +3759,8 @@ async fn dispatch_prompt_body(
     event_tx_task: mpsc::UnboundedSender<AppEvent>,
     shell_mgr_task: Arc<ShellManager>,
     prompt_timing_task: Arc<PromptTimingState>,
+    client_task: WtaClient,
+    prompt_usage_identity_task: PromptUsageIdentity,
     tab_key_task: String,
     wt_connected: bool,
     is_agent_pane: bool,
@@ -3887,7 +3913,7 @@ async fn dispatch_prompt_body(
     ));
     tokio::pin!(prompt_fut);
 
-    let cancelled = tokio::select! {
+    let completed_successfully = tokio::select! {
         result = &mut prompt_fut => {
             // Peek the successful turn's stop_reason (the response is consumed
             // by `complete_prompt_request`). A soft stop is not an error; the
@@ -3896,6 +3922,7 @@ async fn dispatch_prompt_body(
                 .as_ref()
                 .ok()
                 .and_then(|resp| SoftStopReason::from_stop_reason(resp.stop_reason));
+            let successful = result.is_ok();
             complete_prompt_request(
                 result,
                 soft_stop,
@@ -3904,7 +3931,7 @@ async fn dispatch_prompt_body(
                 prompt_session_id_str.clone(),
             )
             .await;
-            false
+            successful
         }
         _ = cancel_rx => {
             // The user cancelled. Synthesize an AgentMessageEnd
@@ -3919,13 +3946,39 @@ async fn dispatch_prompt_body(
             let _ = event_tx_task.send(AppEvent::AgentMessageEnd {
                 session_id: prompt_session_id_str.clone(),
             });
-            true
+            false
         }
     };
     // Drop the in-flight prompt future eagerly when cancelled to
     // release the connection slot for the next prompt on this tab.
     drop(prompt_fut);
-    let _ = cancelled;
+
+    if completed_successfully {
+        match probe_copilot_usage(
+            &conn_task,
+            &client_task,
+            &prompt_usage_identity_task,
+            prompt_session_id.clone(),
+        )
+        .await
+        {
+            Ok(Some(snapshot)) => {
+                let _ = event_tx_task.send(AppEvent::UsageReported {
+                    session_id: prompt_session_id_str.clone(),
+                    snapshot,
+                });
+            }
+            Ok(None) => {}
+            Err(error) => {
+                tracing::warn!(
+                    target: "usage",
+                    session_id = %prompt_session_id_str,
+                    error = %error,
+                    "optional provider usage probe failed"
+                );
+            }
+        }
+    }
 
     cancel_signals_task
         .lock()
@@ -4841,6 +4894,7 @@ mod tests {
                 shell_mgr: Arc::new(ShellManager::new()),
                 prompt_timing: Arc::new(super::super::PromptTimingState::default()),
                 provider_probe_capture: super::super::ProviderProbeCapture::default(),
+                standard_usage_sessions: std::sync::Mutex::new(std::collections::HashSet::new()),
             });
             (WtaClient { state }, rx)
         }

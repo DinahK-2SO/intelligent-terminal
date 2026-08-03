@@ -51,6 +51,12 @@ enum MockBehavior {
     StreamTwoChunks,
     /// Return verified Copilot CLI text for `/context` and `/usage`.
     CopilotUsageProbe,
+    /// Complete a normal turn, then serve the two verified Copilot usage commands.
+    CopilotTurnAndUsageProbe,
+    /// Complete a normal Copilot turn with a standard ACP UsageUpdate.
+    CopilotTurnWithStandardUsage,
+    /// Complete a normal turn, then reject the first Copilot usage command.
+    CopilotTurnUsageProbeFails,
     /// Reject the first Copilot usage command to exercise capture cleanup.
     CopilotUsageProbeFails,
 }
@@ -125,7 +131,10 @@ impl MockAgent {
     async fn prompt(&self, args: acp::schema::v1::PromptRequest) -> acp::Result<acp::schema::v1::PromptResponse> {
         let text = first_text(&args.prompt);
         self.seen_prompts.lock().unwrap().push(text.clone());
-        if matches!(self.behavior, MockBehavior::CopilotUsageProbeFails) {
+        if matches!(self.behavior, MockBehavior::CopilotUsageProbeFails)
+            || (matches!(self.behavior, MockBehavior::CopilotTurnUsageProbeFails)
+                && text == "/context")
+        {
             return Err(acp::Error::internal_error().data("mock Copilot probe failure".to_string()));
         }
         let images: Vec<(String, String)> = args
@@ -266,11 +275,11 @@ impl MockAgent {
                         }
                     });
                 }
-                MockBehavior::CopilotUsageProbe => {
+                MockBehavior::CopilotUsageProbe | MockBehavior::CopilotTurnAndUsageProbe => {
                     let reply = match text.as_str() {
                         "/context" => "Context Usage\n\nclaude-sonnet-5 · 30k/264k tokens (11%)",
                         "/usage" => "Session Usage\n\nRequests: 2 AI Units (53s)\nTokens: input 79.7k, output 16, cached 39.8k",
-                        _ => "UNEXPECTED_PROBE_COMMAND",
+                        _ => "MOCK_OK:user turn",
                     };
                     tokio::task::spawn_local(async move {
                         let _ = conn
@@ -278,6 +287,38 @@ impl MockAgent {
                                 sid,
                                 acp::schema::v1::SessionUpdate::AgentMessageChunk(
                                     acp::schema::v1::ContentChunk::new(reply.into()),
+                                ),
+                            ))
+                            .await;
+                    });
+                }
+                MockBehavior::CopilotTurnWithStandardUsage => {
+                    tokio::task::spawn_local(async move {
+                        let _ = conn
+                            .session_notification(acp::schema::v1::SessionNotification::new(
+                                sid.clone(),
+                                acp::schema::v1::SessionUpdate::AgentMessageChunk(
+                                    acp::schema::v1::ContentChunk::new("MOCK_OK:user turn".into()),
+                                ),
+                            ))
+                            .await;
+                        let _ = conn
+                            .session_notification(acp::schema::v1::SessionNotification::new(
+                                sid,
+                                acp::schema::v1::SessionUpdate::UsageUpdate(
+                                    acp::schema::v1::UsageUpdate::new(40, 100),
+                                ),
+                            ))
+                            .await;
+                    });
+                }
+                MockBehavior::CopilotTurnUsageProbeFails => {
+                    tokio::task::spawn_local(async move {
+                        let _ = conn
+                            .session_notification(acp::schema::v1::SessionNotification::new(
+                                sid,
+                                acp::schema::v1::SessionUpdate::AgentMessageChunk(
+                                    acp::schema::v1::ContentChunk::new("MOCK_OK:user turn".into()),
                                 ),
                             ))
                             .await;
@@ -331,6 +372,7 @@ fn connect_with(
         shell_mgr: Arc::new(ShellManager::new()),
         prompt_timing: Arc::new(PromptTimingState::default()),
         provider_probe_capture: ProviderProbeCapture::default(),
+        standard_usage_sessions: Mutex::new(HashSet::new()),
     });
     let wta = WtaClient { state };
 
@@ -585,6 +627,7 @@ fn connect_for_dispatch(behavior: MockBehavior) -> DispatchHarness {
         shell_mgr: shell_mgr.clone(),
         prompt_timing: prompt_timing.clone(),
         provider_probe_capture: ProviderProbeCapture::default(),
+        standard_usage_sessions: Mutex::new(HashSet::new()),
     });
     let wta = WtaClient { state };
 
@@ -733,6 +776,197 @@ async fn copilot_usage_probe_failure_releases_capture_for_later_chat() {
         .await;
 }
 
+#[tokio::test]
+async fn successful_copilot_turn_automatically_reports_probed_usage_without_chat_pollution() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let harness = connect_for_dispatch(MockBehavior::CopilotTurnAndUsageProbe);
+            harness
+                .conn
+                .initialize(acp::schema::v1::InitializeRequest::new(
+                    acp::schema::ProtocolVersion::LATEST,
+                ))
+                .await
+                .expect("initialize failed");
+            let (tab_to_session, in_flight, cancel_signals, memo) = fresh_dispatch_state();
+            let identity = PromptUsageIdentity {
+                family_id: Some(crate::agent_registry::COPILOT_AGENT_ID.to_string()),
+                reporter_id: Some("Copilot".to_string()),
+            };
+            let mut event_rx = harness.event_rx;
+
+            dispatch_prompt(
+                test_prompt(1, "hello", false),
+                &harness.conn,
+                &tab_to_session,
+                &memo,
+                &in_flight,
+                &cancel_signals,
+                &harness.event_tx,
+                &harness.shell_mgr,
+                &harness.prompt_timing,
+                &harness.client,
+                &identity,
+                false,
+                false,
+            );
+
+            let mut usage = None;
+            let mut saw_turn_end = false;
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                while usage.is_none() || !saw_turn_end {
+                    match event_rx.recv().await {
+                        Some(AppEvent::AgentMessageChunk { text, .. }) => {
+                            assert_eq!(text, "MOCK_OK:user turn");
+                        }
+                        Some(AppEvent::AgentMessageEnd { .. }) => saw_turn_end = true,
+                        Some(AppEvent::UsageReported { snapshot, .. }) => usage = Some(snapshot),
+                        Some(AppEvent::AgentError { message, .. }) => {
+                            panic!("successful turn must not fail: {message}")
+                        }
+                        Some(_) => {}
+                        None => panic!("event channel closed before usage report"),
+                    }
+                }
+            })
+            .await
+            .expect("timed out waiting for automatic Copilot usage");
+
+            let snapshot = usage.expect("usage snapshot");
+            assert_eq!(snapshot.context.expect("context").used, 30_000);
+            assert_eq!(snapshot.provider_metrics[0].unit_id, "AI Units");
+            let seen = harness.seen_prompts.lock().unwrap();
+            assert_eq!(seen.len(), 3);
+            assert!(seen[0].contains("hello"));
+            assert_eq!(&seen[1..], &["/context", "/usage"]);
+            assert!(in_flight.lock().unwrap().is_empty());
+        })
+        .await;
+}
+
+#[tokio::test]
+async fn standard_acp_usage_disables_copilot_fallback_for_the_session() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let harness = connect_for_dispatch(MockBehavior::CopilotTurnWithStandardUsage);
+            harness
+                .conn
+                .initialize(acp::schema::v1::InitializeRequest::new(
+                    acp::schema::ProtocolVersion::LATEST,
+                ))
+                .await
+                .expect("initialize failed");
+            let (tab_to_session, in_flight, cancel_signals, memo) = fresh_dispatch_state();
+            let identity = PromptUsageIdentity {
+                family_id: Some(crate::agent_registry::COPILOT_AGENT_ID.to_string()),
+                reporter_id: Some("Copilot".to_string()),
+            };
+            let mut event_rx = harness.event_rx;
+
+            dispatch_prompt(
+                test_prompt(1, "hello", false),
+                &harness.conn,
+                &tab_to_session,
+                &memo,
+                &in_flight,
+                &cancel_signals,
+                &harness.event_tx,
+                &harness.shell_mgr,
+                &harness.prompt_timing,
+                &harness.client,
+                &identity,
+                false,
+                false,
+            );
+
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                while !in_flight.lock().unwrap().is_empty() {
+                    while event_rx.try_recv().is_ok() {}
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .expect("turn did not complete");
+
+            let seen = harness.seen_prompts.lock().unwrap();
+            assert_eq!(seen.len(), 1, "standard ACP Usage must suppress fallback commands");
+            assert!(seen[0].contains("hello"));
+        })
+        .await;
+}
+
+#[tokio::test]
+async fn automatic_copilot_probe_failure_preserves_successful_user_turn() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let harness = connect_for_dispatch(MockBehavior::CopilotTurnUsageProbeFails);
+            harness
+                .conn
+                .initialize(acp::schema::v1::InitializeRequest::new(
+                    acp::schema::ProtocolVersion::LATEST,
+                ))
+                .await
+                .expect("initialize failed");
+            let (tab_to_session, in_flight, cancel_signals, memo) = fresh_dispatch_state();
+            let identity = PromptUsageIdentity {
+                family_id: Some(crate::agent_registry::COPILOT_AGENT_ID.to_string()),
+                reporter_id: Some("Copilot".to_string()),
+            };
+            let mut event_rx = harness.event_rx;
+
+            dispatch_prompt(
+                test_prompt(1, "hello", false),
+                &harness.conn,
+                &tab_to_session,
+                &memo,
+                &in_flight,
+                &cancel_signals,
+                &harness.event_tx,
+                &harness.shell_mgr,
+                &harness.prompt_timing,
+                &harness.client,
+                &identity,
+                false,
+                false,
+            );
+
+            let mut saw_reply = false;
+            let mut saw_end = false;
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                while !in_flight.lock().unwrap().is_empty() || !saw_end {
+                    match event_rx.try_recv() {
+                        Ok(AppEvent::AgentMessageChunk { text, .. }) => {
+                            assert_eq!(text, "MOCK_OK:user turn");
+                            saw_reply = true;
+                        }
+                        Ok(AppEvent::AgentMessageEnd { .. }) => saw_end = true,
+                        Ok(AppEvent::AgentError { message, .. }) => {
+                            panic!("optional probe must not fail the turn: {message}")
+                        }
+                        Ok(_) | Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {
+                            tokio::task::yield_now().await;
+                        }
+                        Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                            panic!("event channel closed")
+                        }
+                    }
+                }
+            })
+            .await
+            .expect("turn did not complete after probe failure");
+
+            assert!(saw_reply && saw_end);
+            let seen = harness.seen_prompts.lock().unwrap();
+            assert_eq!(seen.len(), 2);
+            assert!(seen[0].contains("hello"));
+            assert_eq!(seen[1], "/context");
+        })
+        .await;
+}
+
 /// Fresh, empty per-tab dispatcher state (session map, single-flight set,
 /// cancel registry, template memo) for one `dispatch_prompt` invocation.
 #[allow(clippy::type_complexity)]
@@ -785,6 +1019,8 @@ async fn dispatch_prompt_busy_tab_emits_agent_busy_and_drops() {
                 &h.event_tx,
                 &h.shell_mgr,
                 &h.prompt_timing,
+                &h.client,
+                &PromptUsageIdentity::default(),
                 false, // wt_connected
                 false, // is_agent_pane
             );
@@ -834,6 +1070,8 @@ async fn dispatch_prompt_round_trips_through_agent() {
                 &h.event_tx,
                 &h.shell_mgr,
                 &h.prompt_timing,
+                &h.client,
+                &PromptUsageIdentity::default(),
                 false,
                 false,
             );
@@ -945,6 +1183,8 @@ async fn dispatch_prompt_sends_clipboard_image_to_agent() {
                 &h.event_tx,
                 &h.shell_mgr,
                 &h.prompt_timing,
+                &h.client,
+                &PromptUsageIdentity::default(),
                 false, // wt_connected
                 true,  // is_agent_pane
             );
@@ -1007,6 +1247,8 @@ async fn dispatch_prompt_new_session_failure_emits_error_and_releases_slot() {
                 &h.event_tx,
                 &h.shell_mgr,
                 &h.prompt_timing,
+                &h.client,
+                &PromptUsageIdentity::default(),
                 false,
                 false,
             );
@@ -1060,6 +1302,8 @@ async fn dispatch_prompt_autofix_uses_autofix_template() {
                 &h.event_tx,
                 &h.shell_mgr,
                 &h.prompt_timing,
+                &h.client,
+                &PromptUsageIdentity::default(),
                 false,
                 false,
             );
@@ -1692,6 +1936,7 @@ fn bare_client() -> (WtaClient, mpsc::UnboundedReceiver<AppEvent>) {
         shell_mgr: Arc::new(ShellManager::new()),
         prompt_timing: Arc::new(PromptTimingState::default()),
         provider_probe_capture: ProviderProbeCapture::default(),
+        standard_usage_sessions: Mutex::new(HashSet::new()),
     });
     (WtaClient { state }, event_rx)
 }

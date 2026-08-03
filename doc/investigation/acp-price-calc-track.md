@@ -72,6 +72,7 @@ code it describes.
 | 44. Copilot command prerequisite/design | Prove local usage commands are non-consuming before special handling | Capture 31 responses, preserve hashes, separate command semantics, and choose helper-owned probes | Complete |
 | 45. Copilot command parser/domain | Verified command text must become provider-neutral Usage without confusing AI Units with currency | Add typed command input, exact identity parser, context display metadata, and provider metrics | Complete |
 | 46. Copilot command wire capture | Same-session probes must run in order without entering chat, and failures must release capture | Add helper-owned per-session capture and a bounded exact-identity probe primitive | Complete |
+| 47. Copilot automatic turn probe | Successful Copilot turns must report fallback Usage, while standard ACP Usage and probe failures stay isolated | Probe before single-flight release, remember standard-Usage sessions, and emit the existing typed event | Complete |
 
 ## Completed Steps
 
@@ -80,6 +81,50 @@ code it describes.
 > two-turn investigation and team review. Step 27 supersedes Step 23's currency-shape filtering;
 > amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
 > PowerShell installation path.
+
+### Step 47 - Copilot Automatic Turn Probe
+
+**RED**
+
+- Added a full dispatcher contract requiring a successful Copilot user turn to send the assembled
+  prompt followed by `/context` and `/usage`, emit one normalized `UsageReported`, and keep both
+  command responses out of chat. Compilation failed because `dispatch_prompt` did not own the
+  `WtaClient` capture path or verified prompt identity.
+- Added a standard-precedence contract. It failed with three prompts instead of one, proving that
+  a session which had already emitted standard ACP `UsageUpdate` still ran both fallback commands.
+- Added a probe-failure contract requiring the normal reply and `AgentMessageEnd` to survive with
+  no `AgentError` when `/context` fails.
+
+**GREEN**
+
+- Passed the existing `WtaClient` and initialize-derived `PromptUsageIdentity` through the
+  dispatcher into its spawned prompt body; no global provider state or master-side parser was
+  introduced.
+- A successful user or autofix turn runs the Step 46 probe after normal turn completion and before
+  cancel-map cleanup and per-tab single-flight release. A parsed snapshot emits the existing
+  `AppEvent::UsageReported` route.
+- Cancelled and failed user turns do not probe. Probe errors emit only a schema-level warning and
+  cannot produce `AgentError` or replace the completed user response.
+- `WtaClient` records SessionIds that emit standard ACP `UsageUpdate`. Exact Copilot fallback checks
+  this set before wire I/O and returns no private snapshot, so the standard contract permanently
+  wins for that session.
+- Existing non-Copilot dispatcher tests pass an empty identity and continue to send exactly one
+  user prompt, proving the family/reporter gate remains before wire I/O.
+
+**Validation**
+
+- Automatic post-turn focused contract: 1 passed, 0 failed.
+- Standard ACP precedence focused contract: 1 passed, 0 failed.
+- Optional probe failure isolation contract: 1 passed, 0 failed.
+- Complete mock ACP harness: 37 passed, 0 failed.
+- Complete usage-focused Rust suite: 31 passed, 0 failed.
+- Editor diagnostics: clean. Builds retained 33 pre-existing warnings.
+
+**Committed files**
+
+- `tools/wta/src/protocol/acp/client.rs`
+- `tools/wta/src/protocol/acp/mock_agent_tests.rs`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 46 - Copilot Command Wire Capture
 
