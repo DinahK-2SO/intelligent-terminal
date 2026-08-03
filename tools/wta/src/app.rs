@@ -52,6 +52,7 @@ fn agent_command_on_enter(
 }
 
 mod autofix;
+mod attachments;
 mod input_edit;
 mod tab_state;
 mod turn_state;
@@ -3884,13 +3885,8 @@ impl App {
         }
         match crate::clipboard_image::read_clipboard_image() {
             Some(image) => {
-                let label = image.label.clone();
                 let tab = self.current_tab_mut();
-                tab.pending_images.push(image);
-                tab.messages.push(ChatMessage::System(
-                    t!("system.image_pasted", label = label).into_owned(),
-                ));
-                tab.scroll_to_bottom();
+                tab.insert_image_attachment(image);
             }
             None => {
                 let tab = self.current_tab_mut();
@@ -4520,10 +4516,7 @@ impl App {
     /// invalid input reopens the position completion popup.
     fn cmd_move(&mut self, position: String) {
         let Some(position) = commands::lookup_move_position(&position) else {
-            let tab = self.current_tab_mut();
-            tab.input = "/move ".to_string();
-            tab.cursor_pos = tab.input.len();
-            tab.refresh_command_popup();
+            self.current_tab_mut().replace_input("/move ".to_string());
             return;
         };
 
