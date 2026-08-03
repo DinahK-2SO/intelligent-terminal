@@ -5,8 +5,9 @@ use super::{
 };
 
 const COPILOT_REPORTER_ID: &str = "Copilot";
-const CONTEXT_SCHEMA_ID: &str = "copilot.cli.context.v1.0.77";
-const SESSION_USAGE_SCHEMA_ID: &str = "copilot.cli.session_usage_checkpoint.v1.0.77";
+// Internal shape version, not a Copilot CLI release number. Compatible CLI
+// releases continue to work; missing fields simply produce no contribution.
+const SESSION_USAGE_SCHEMA_ID: &str = "copilot.cli.session_usage_checkpoint.v1";
 const NANO_AIU_PER_AIC: u64 = 1_000_000_000;
 const POST_TURN_COMMANDS: &[&str] = &["/context"];
 
@@ -23,14 +24,6 @@ fn session_events_path_in(home: &std::path::Path, session_id: &str) -> Option<st
             .join(session_id)
             .join("events.jsonl"),
     )
-}
-
-fn schema_error(schema_id: &'static str, class: &'static str) -> ProviderUsageError {
-    ProviderUsageError {
-        family_id: crate::agent_registry::COPILOT_AGENT_ID,
-        schema_id,
-        class,
-    }
 }
 
 fn parse_decimal_text(text: &str) -> Option<(&str, u128, u128)> {
@@ -72,33 +65,19 @@ fn parse_abbreviated_count(text: &str) -> Option<u64> {
     u64::try_from(scaled / denominator).ok()
 }
 
-fn parse_context_output(text: &str) -> Result<ProviderUsageContribution, ProviderUsageError> {
+fn try_parse_context_output(text: &str) -> Option<ProviderUsageContribution> {
     let line = text
         .lines()
-        .find(|line| line.contains(" tokens (") && line.contains('/'))
-        .ok_or_else(|| schema_error(CONTEXT_SCHEMA_ID, "schema_mismatch"))?;
-    let (before_tokens, after_tokens) = line
-        .split_once(" tokens (")
-        .ok_or_else(|| schema_error(CONTEXT_SCHEMA_ID, "schema_mismatch"))?;
-    let ratio = before_tokens
-        .split_whitespace()
-        .last()
-        .ok_or_else(|| schema_error(CONTEXT_SCHEMA_ID, "schema_mismatch"))?;
-    let (used_text, size_text) = ratio
-        .split_once('/')
-        .ok_or_else(|| schema_error(CONTEXT_SCHEMA_ID, "schema_mismatch"))?;
-    let percent_text = after_tokens
-        .strip_suffix("%)")
-        .ok_or_else(|| schema_error(CONTEXT_SCHEMA_ID, "schema_mismatch"))?;
-    let used = parse_abbreviated_count(used_text)
-        .ok_or_else(|| schema_error(CONTEXT_SCHEMA_ID, "invalid_count"))?;
-    let size = parse_abbreviated_count(size_text)
-        .ok_or_else(|| schema_error(CONTEXT_SCHEMA_ID, "invalid_count"))?;
-    let reported_percent = percent_text
-        .parse::<u64>()
-        .map_err(|_| schema_error(CONTEXT_SCHEMA_ID, "invalid_percent"))?;
+        .find(|line| line.contains(" tokens (") && line.contains('/'))?;
+    let (before_tokens, after_tokens) = line.split_once(" tokens (")?;
+    let ratio = before_tokens.split_whitespace().last()?;
+    let (used_text, size_text) = ratio.split_once('/')?;
+    let percent_text = after_tokens.strip_suffix("%)")?;
+    let used = parse_abbreviated_count(used_text)?;
+    let size = parse_abbreviated_count(size_text)?;
+    let reported_percent = percent_text.parse::<u64>().ok()?;
 
-    Ok(ProviderUsageContribution {
+    Some(ProviderUsageContribution {
         context: Some(ProviderContextUsage {
             used,
             size,
@@ -120,19 +99,16 @@ fn nano_aiu_decimal_text(total_nano_aiu: u64) -> String {
     format!("{whole}.{fraction}")
 }
 
-fn parse_session_usage_event(
-    event: &serde_json::Value,
-) -> Result<ProviderUsageContribution, ProviderUsageError> {
+fn try_parse_session_usage_event(event: &serde_json::Value) -> Option<ProviderUsageContribution> {
     if event.get("type").and_then(serde_json::Value::as_str) != Some("session.usage_checkpoint") {
-        return Err(schema_error(SESSION_USAGE_SCHEMA_ID, "schema_mismatch"));
+        return None;
     }
     let total_nano_aiu = event
         .get("data")
         .and_then(|data| data.get("totalNanoAiu"))
-        .and_then(serde_json::Value::as_u64)
-        .ok_or_else(|| schema_error(SESSION_USAGE_SCHEMA_ID, "invalid_total_nano_aiu"))?;
+        .and_then(serde_json::Value::as_u64)?;
 
-    Ok(ProviderUsageContribution {
+    Some(ProviderUsageContribution {
         metrics: vec![ProviderUsageMetric {
             metric_id: "github.copilot.ai_credits".to_string(),
             value_decimal_text: nano_aiu_decimal_text(total_nano_aiu),
@@ -185,17 +161,13 @@ impl ProviderUsageAdapter for CopilotUsageAdapter {
             ProviderUsageInput::ProviderCommandOutput {
                 command: "/context",
                 text,
-            } => parse_context_output(text),
+            } => Ok(try_parse_context_output(text).unwrap_or_default()),
             ProviderUsageInput::ProviderCommandOutput {
                 command: "/usage", ..
             } => Ok(ProviderUsageContribution::default()),
-            ProviderUsageInput::ProviderSessionEvent(event)
-                if event.get("type").and_then(serde_json::Value::as_str)
-                    == Some("session.usage_checkpoint") =>
-            {
-                parse_session_usage_event(event)
+            ProviderUsageInput::ProviderSessionEvent(event) => {
+                Ok(try_parse_session_usage_event(event).unwrap_or_default())
             }
-            ProviderUsageInput::ProviderSessionEvent(_) => Ok(ProviderUsageContribution::default()),
             _ => Ok(ProviderUsageContribution::default()),
         }
     }
@@ -213,6 +185,10 @@ mod tests {
 
     #[test]
     fn owns_local_session_source_and_post_turn_commands() {
+        assert_eq!(
+            SESSION_USAGE_SCHEMA_ID,
+            "copilot.cli.session_usage_checkpoint.v1"
+        );
         assert_eq!(ADAPTER.post_turn_commands(), &["/context"]);
         assert_eq!(
             session_events_path_in(Path::new(r"C:\Users\u"), "session-1"),
@@ -245,6 +221,17 @@ mod tests {
         assert_eq!(context.size_display_text, "264k");
         assert_eq!(context.reported_percent, 11);
         assert!(contribution.metrics.is_empty());
+
+        let future_compatible = ADAPTER
+            .extract_private_usage(ProviderUsageRequest {
+                reporter_id: Some("Copilot"),
+                input: ProviderUsageInput::ProviderCommandOutput {
+                    command: "/context",
+                    text: "Context Usage\n\nfuture-model · 25k/400k tokens (6%)\nNew Section 1k (<1%)",
+                },
+            })
+            .expect("compatible future context shape should still parse");
+        assert_eq!(future_compatible.context.expect("context").size, 400_000);
     }
 
     #[test]
@@ -287,7 +274,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_lookalike_reporters_and_schema_drift() {
+    fn ignores_lookalike_reporters_and_missing_future_fields() {
         for reporter_id in [None, Some("copilot"), Some("GitHub Copilot")] {
             let contribution = ADAPTER
                 .extract_private_usage(ProviderUsageRequest {
@@ -301,7 +288,7 @@ mod tests {
             assert_eq!(contribution, ProviderUsageContribution::default());
         }
 
-        let error = ADAPTER
+        let missing_checkpoint_field = ADAPTER
             .extract_private_usage(ProviderUsageRequest {
                 reporter_id: Some("Copilot"),
                 input: ProviderUsageInput::ProviderSessionEvent(&serde_json::json!({
@@ -309,8 +296,21 @@ mod tests {
                     "data": { "totalNanoAiu": "not-a-number" }
                 })),
             })
-            .expect_err("trusted reporter schema drift must fail closed");
-        assert_eq!(error.family_id, crate::agent_registry::COPILOT_AGENT_ID);
-        assert_eq!(error.class, "invalid_total_nano_aiu");
+            .expect("missing future field should be omitted");
+        assert_eq!(
+            missing_checkpoint_field,
+            ProviderUsageContribution::default()
+        );
+
+        let missing_context_shape = ADAPTER
+            .extract_private_usage(ProviderUsageRequest {
+                reporter_id: Some("Copilot"),
+                input: ProviderUsageInput::ProviderCommandOutput {
+                    command: "/context",
+                    text: "A future context format without the current ratio line",
+                },
+            })
+            .expect("missing future context shape should be omitted");
+        assert_eq!(missing_context_shape, ProviderUsageContribution::default());
     }
 }

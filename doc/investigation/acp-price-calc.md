@@ -765,12 +765,13 @@ trait ProviderUsageAdapter: Sync {
 ```
 
 `ProviderUsageContribution`的context、cost和provider metrics相互独立，因此
-可信extension可以只报告其中一部分。未验证adapter仍返回empty contribution；已启用schema
-若字段缺失、类型错误或数值非法必须返回`Err`，不能静默降级为no usage。
+可信extension可以只报告其中一部分。未验证adapter仍返回empty contribution。Copilot private
+source采用version-neutral try-get：字段存在且shape兼容时产生metric；缺失、改名或类型变化时只
+返回empty contribution并隐藏该metric，不绑定CLI release version，也不影响其他有效metric。
 
 | Family module | 当前private policy | 当前行为 |
 |---|---|---|
-| `copilot` | `VerifiedLocalSources` | 已启用内置family + reporter `Copilot` allowlist；解析CLI 1.0.77的`session.usage_checkpoint.totalNanoAiu`与`/context`，忽略`/usage Requests`、倍率和累计token totals |
+| `copilot` | `VerifiedLocalSources` | 已启用内置family + reporter `Copilot` allowlist；try-get `session.usage_checkpoint.totalNanoAiu`与`/context`兼容shape，忽略`/usage Requests`、倍率和累计token totals；字段消失则省略对应metric |
 | `claude` | `StandardAcpOnly` | 仅消费adapter发送的标准`UsageUpdate` |
 | `codex` | `StandardAcpOnly` | 仅消费adapter发送的标准`UsageUpdate` |
 | `gemini` | `StandardAcpOnly` | private quota no-op；未来标准UsageUpdate自动支持 |

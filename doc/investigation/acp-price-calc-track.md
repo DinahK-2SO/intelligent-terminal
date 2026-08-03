@@ -78,6 +78,7 @@ code it describes.
 | 50. Correct Copilot AIC source | `/usage Requests` must not be displayed as AIC; UI must exactly match the real session ledger | Read post-turn `totalNanoAiu`, stop `/usage`, and prove exact equality with real Copilot CLI | Complete |
 | 51. Compact AIC display | AIC should match monetary cost's compact precision without losing ledger accuracy | Reuse half-up two-decimal main formatting and retain exact AIC in HelpText | Complete |
 | 52. Provider-owned local sources | Copilot path/schema/commands must not live in the common ACP client | Add adapter hooks and opaque cursors; keep client orchestration provider-neutral | Complete |
+| 53. Version-neutral Copilot try-get | Compatible future CLI shapes should keep working; missing fields should hide only that metric | Remove CLI-version binding and return empty contributions for absent shapes | Complete |
 
 ## Completed Steps
 
@@ -87,6 +88,33 @@ code it describes.
 > amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
 > PowerShell installation path. **Step 50 supersedes every AIC/AI Units conclusion in Steps 45-49**;
 > those entries remain as an audit trail of the incorrect assumption and its correction.
+
+### Step 53 - Version-Neutral Copilot Try-Get
+
+**Behavior**
+
+- Removed Copilot CLI release `1.0.77` from runtime schema identifiers. The remaining
+  `session_usage_checkpoint.v1` names the observed field shape, not an executable version gate.
+- Changed context and checkpoint extraction to `try_parse_* -> Option`. Compatible future CLI
+  releases continue to work when the same fields remain available.
+- Missing, renamed, or type-changed private fields produce an empty contribution, so the affected
+  metric is omitted instead of failing the completed user turn or discarding another valid metric.
+- Exact family/reporter allowlisting, safe path handling, standard ACP precedence, and real
+  `totalNanoAiu` arithmetic remain unchanged.
+
+**Validation**
+
+- Copilot provider tests: 4 passed, 0 failed, including compatible future context shape and missing
+  future fields.
+- Usage-focused suite: 32 passed, 0 failed.
+- Complete WTA suite: 1233 passed, 0 failed.
+- Rustfmt and editor diagnostics: clean.
+
+**Committed files**
+
+- `tools/wta/src/usage/providers/copilot.rs`
+- `doc/investigation/acp-price-calc.md`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 52 - Provider-Owned Local Sources
 
