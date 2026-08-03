@@ -252,11 +252,11 @@ namespace
         std::vector<PrimaryDisplayItem> displayItems;
         displayItems.reserve(std::min(items.size(), MaxPrimaryItems));
         const auto cost = std::ranges::find(items, "acp.billing.cost", &Item::metricId);
-        for (const auto metricId : { "acp.context.window", "acp.billing.cost", "github.copilot.ai_units" })
+        for (const auto metricId : { "acp.context.window", "acp.billing.cost", "github.copilot.ai_credits" })
         {
             const auto item = std::ranges::find(items, metricId, &Item::metricId);
             if (item == items.end() || item->stale || displayItems.size() == MaxPrimaryItems ||
-                (item->metricId == "github.copilot.ai_units" && cost != items.end() && !cost->stale))
+                (item->metricId == "github.copilot.ai_credits" && cost != items.end() && !cost->stale))
             {
                 continue;
             }

@@ -5,7 +5,8 @@ use super::{
 
 const COPILOT_REPORTER_ID: &str = "Copilot";
 const CONTEXT_SCHEMA_ID: &str = "copilot.cli.context.v1.0.77";
-const USAGE_SCHEMA_ID: &str = "copilot.cli.usage.v1.0.77";
+const SESSION_USAGE_SCHEMA_ID: &str = "copilot.cli.session_usage_checkpoint.v1.0.77";
+const NANO_AIU_PER_AIC: u64 = 1_000_000_000;
 
 fn schema_error(schema_id: &'static str, class: &'static str) -> ProviderUsageError {
     ProviderUsageError {
@@ -92,30 +93,34 @@ fn parse_context_output(text: &str) -> Result<ProviderUsageContribution, Provide
     })
 }
 
-fn parse_usage_output(text: &str) -> Result<ProviderUsageContribution, ProviderUsageError> {
-    let requests = text
-        .lines()
-        .find_map(|line| line.trim().strip_prefix("Requests: "))
-        .ok_or_else(|| schema_error(USAGE_SCHEMA_ID, "schema_mismatch"))?;
-    let (amount_text, remainder) = requests
-        .split_once(' ')
-        .ok_or_else(|| schema_error(USAGE_SCHEMA_ID, "schema_mismatch"))?;
-    let _ = parse_decimal_text(amount_text)
-        .ok_or_else(|| schema_error(USAGE_SCHEMA_ID, "invalid_amount"))?;
-    let unit_id = remainder
-        .rsplit_once(" (")
-        .map(|(unit, _)| unit)
-        .ok_or_else(|| schema_error(USAGE_SCHEMA_ID, "schema_mismatch"))?;
-    if !matches!(unit_id, "AI Unit" | "AI Units" | "AI Credit" | "AI Credits") {
-        return Err(schema_error(USAGE_SCHEMA_ID, "untrusted_unit"));
+fn nano_aiu_decimal_text(total_nano_aiu: u64) -> String {
+    let whole = total_nano_aiu / NANO_AIU_PER_AIC;
+    let remainder = total_nano_aiu % NANO_AIU_PER_AIC;
+    if remainder == 0 {
+        return whole.to_string();
     }
+    let fraction = format!("{remainder:09}").trim_end_matches('0').to_string();
+    format!("{whole}.{fraction}")
+}
+
+fn parse_session_usage_event(
+    event: &serde_json::Value,
+) -> Result<ProviderUsageContribution, ProviderUsageError> {
+    if event.get("type").and_then(serde_json::Value::as_str) != Some("session.usage_checkpoint") {
+        return Err(schema_error(SESSION_USAGE_SCHEMA_ID, "schema_mismatch"));
+    }
+    let total_nano_aiu = event
+        .get("data")
+        .and_then(|data| data.get("totalNanoAiu"))
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| schema_error(SESSION_USAGE_SCHEMA_ID, "invalid_total_nano_aiu"))?;
 
     Ok(ProviderUsageContribution {
         metrics: vec![ProviderUsageMetric {
-            metric_id: "github.copilot.ai_units".to_string(),
-            value_decimal_text: amount_text.to_string(),
+            metric_id: "github.copilot.ai_credits".to_string(),
+            value_decimal_text: nano_aiu_decimal_text(total_nano_aiu),
             limit_decimal_text: None,
-            unit_id: unit_id.to_string(),
+            unit_id: "AIC".to_string(),
         }],
         ..Default::default()
     })
@@ -131,7 +136,7 @@ impl ProviderUsageAdapter for CopilotUsageAdapter {
     }
 
     fn private_usage_policy(&self) -> PrivateUsagePolicy {
-        PrivateUsagePolicy::VerifiedCommandProbe
+        PrivateUsagePolicy::VerifiedLocalSources
     }
 
     fn trusted_reporter_ids(&self) -> &'static [&'static str] {
@@ -151,9 +156,9 @@ impl ProviderUsageAdapter for CopilotUsageAdapter {
                 text,
             } => parse_context_output(text),
             ProviderUsageInput::ProviderCommandOutput {
-                command: "/usage",
-                text,
-            } => parse_usage_output(text),
+                command: "/usage", ..
+            } => Ok(ProviderUsageContribution::default()),
+            ProviderUsageInput::ProviderSessionEvent(event) => parse_session_usage_event(event),
             _ => Ok(ProviderUsageContribution::default()),
         }
     }
@@ -166,7 +171,7 @@ mod tests {
 
     const CONTEXT_OUTPUT: &str =
         "Context Usage\n\nclaude-sonnet-5 · 30k/264k tokens (11%)\nSystem Prompt 18.0k (7%)";
-    const USAGE_OUTPUT: &str = "Session Usage\n\nChanges: +0 -0\nRequests: 2 AI Units (53s)\nTokens: input 79.7k, output 16, cached 39.8k";
+    const USAGE_OUTPUT: &str = "Session Usage\n\nChanges: +0 -0\nRequests: 1 AI Units (19s)\nTokens: input 24.7k, output 22, cached 0, reasoning 13";
 
     #[test]
     fn parses_verified_context_command_output() {
@@ -190,7 +195,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_verified_usage_command_ai_units_only() {
+    fn parses_real_session_checkpoint_aic_and_ignores_usage_request_count() {
         let contribution = ADAPTER
             .extract_private_usage(ProviderUsageRequest {
                 reporter_id: Some("Copilot"),
@@ -199,26 +204,33 @@ mod tests {
                     text: USAGE_OUTPUT,
                 },
             })
-            .expect("verified Copilot usage output should parse");
+            .expect("Copilot /usage output should be ignored");
 
         assert!(contribution.context.is_none());
         assert!(contribution.cost.is_none());
-        assert_eq!(contribution.metrics.len(), 1);
-        assert_eq!(contribution.metrics[0].metric_id, "github.copilot.ai_units");
-        assert_eq!(contribution.metrics[0].value_decimal_text, "2");
-        assert_eq!(contribution.metrics[0].unit_id, "AI Units");
+        assert!(contribution.metrics.is_empty());
 
-        let fractional = ADAPTER
+        // Real Copilot CLI 1.0.77 checkpoint from session
+        // 6106fe85-60d4-41d2-9154-091ab673c428 after "Bonjour".
+        let checkpoint = serde_json::json!({
+            "type": "session.usage_checkpoint",
+            "data": {
+                "totalNanoAiu": 7_553_900_000u64,
+                "totalPremiumRequests": 1
+            }
+        });
+        let contribution = ADAPTER
             .extract_private_usage(ProviderUsageRequest {
                 reporter_id: Some("Copilot"),
-                input: ProviderUsageInput::ProviderCommandOutput {
-                    command: "/usage",
-                    text: "Session Usage\nRequests: 0.33 AI Credits (1s)\nTokens: input 1, output 1, cached 0",
-                },
+                input: ProviderUsageInput::ProviderSessionEvent(&checkpoint),
             })
-            .expect("fractional Copilot usage should preserve provider precision");
-        assert_eq!(fractional.metrics[0].value_decimal_text, "0.33");
-        assert_eq!(fractional.metrics[0].unit_id, "AI Credits");
+            .expect("real Copilot checkpoint should parse");
+        assert_eq!(
+            contribution.metrics[0].metric_id,
+            "github.copilot.ai_credits"
+        );
+        assert_eq!(contribution.metrics[0].value_decimal_text, "7.5539");
+        assert_eq!(contribution.metrics[0].unit_id, "AIC");
     }
 
     #[test]
@@ -239,24 +251,13 @@ mod tests {
         let error = ADAPTER
             .extract_private_usage(ProviderUsageRequest {
                 reporter_id: Some("Copilot"),
-                input: ProviderUsageInput::ProviderCommandOutput {
-                    command: "/usage",
-                    text: "Session Usage\nRequests changed format",
-                },
+                input: ProviderUsageInput::ProviderSessionEvent(&serde_json::json!({
+                    "type": "session.usage_checkpoint",
+                    "data": { "totalNanoAiu": "not-a-number" }
+                })),
             })
             .expect_err("trusted reporter schema drift must fail closed");
         assert_eq!(error.family_id, crate::agent_registry::COPILOT_AGENT_ID);
-        assert_eq!(error.class, "schema_mismatch");
-
-        let malformed_amount = ADAPTER
-            .extract_private_usage(ProviderUsageRequest {
-                reporter_id: Some("Copilot"),
-                input: ProviderUsageInput::ProviderCommandOutput {
-                    command: "/usage",
-                    text: "Session Usage\nRequests: 2. AI Units (1s)",
-                },
-            })
-            .expect_err("malformed amount must fail closed");
-        assert_eq!(malformed_amount.class, "invalid_amount");
+        assert_eq!(error.class, "invalid_total_nano_aiu");
     }
 }

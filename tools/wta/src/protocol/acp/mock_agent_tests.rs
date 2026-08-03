@@ -49,9 +49,9 @@ enum MockBehavior {
     /// Stream the reply in two `AgentMessageChunk`s (`MOCK_` + `OK`), then end
     /// the turn — exercises streaming coalescing.
     StreamTwoChunks,
-    /// Return verified Copilot CLI text for `/context` and `/usage`.
+    /// Return verified Copilot CLI text for `/context`.
     CopilotUsageProbe,
-    /// Complete a normal turn, then serve the two verified Copilot usage commands.
+    /// Complete a normal turn, then serve the verified Copilot context command.
     CopilotTurnAndUsageProbe,
     /// Complete a normal Copilot turn with a standard ACP UsageUpdate.
     CopilotTurnWithStandardUsage,
@@ -278,7 +278,6 @@ impl MockAgent {
                 MockBehavior::CopilotUsageProbe | MockBehavior::CopilotTurnAndUsageProbe => {
                     let reply = match text.as_str() {
                         "/context" => "Context Usage\n\nclaude-sonnet-5 · 30k/264k tokens (11%)",
-                        "/usage" => "Session Usage\n\nRequests: 2 AI Units (53s)\nTokens: input 79.7k, output 16, cached 39.8k",
                         _ => "MOCK_OK:user turn",
                     };
                     tokio::task::spawn_local(async move {
@@ -373,6 +372,7 @@ fn connect_with(
         prompt_timing: Arc::new(PromptTimingState::default()),
         provider_probe_capture: ProviderProbeCapture::default(),
         standard_usage_sessions: Mutex::new(HashSet::new()),
+        copilot_usage_offsets: Mutex::new(HashMap::new()),
     });
     let wta = WtaClient { state };
 
@@ -628,6 +628,7 @@ fn connect_for_dispatch(behavior: MockBehavior) -> DispatchHarness {
         prompt_timing: prompt_timing.clone(),
         provider_probe_capture: ProviderProbeCapture::default(),
         standard_usage_sessions: Mutex::new(HashSet::new()),
+        copilot_usage_offsets: Mutex::new(HashMap::new()),
     });
     let wta = WtaClient { state };
 
@@ -701,10 +702,10 @@ async fn copilot_usage_probe_captures_commands_without_chat_pollution() {
 
             assert_eq!(
                 harness.seen_prompts.lock().unwrap().as_slice(),
-                &["/context".to_string(), "/usage".to_string()]
+                &["/context".to_string()]
             );
             assert_eq!(snapshot.context.expect("context").used, 30_000);
-            assert_eq!(snapshot.provider_metrics[0].unit_id, "AI Units");
+            assert!(snapshot.provider_metrics.is_empty());
             while let Ok(event) = harness.event_rx.try_recv() {
                 assert!(
                     !matches!(event, AppEvent::AgentMessageChunk { .. }),
@@ -756,7 +757,8 @@ async fn copilot_usage_probe_failure_releases_capture_for_later_chat() {
             assert!(
                 probe_copilot_usage(&harness.conn, &harness.client, &identity, session_id.clone())
                     .await
-                    .is_err()
+                    .expect("optional context failure should be contained")
+                    .is_none()
             );
             harness
                 .client
@@ -835,11 +837,11 @@ async fn successful_copilot_turn_automatically_reports_probed_usage_without_chat
 
             let snapshot = usage.expect("usage snapshot");
             assert_eq!(snapshot.context.expect("context").used, 30_000);
-            assert_eq!(snapshot.provider_metrics[0].unit_id, "AI Units");
+            assert!(snapshot.provider_metrics.is_empty());
             let seen = harness.seen_prompts.lock().unwrap();
-            assert_eq!(seen.len(), 3);
+            assert_eq!(seen.len(), 2);
             assert!(seen[0].contains("hello"));
-            assert_eq!(&seen[1..], &["/context", "/usage"]);
+            assert_eq!(&seen[1..], &["/context"]);
             assert!(in_flight.lock().unwrap().is_empty());
         })
         .await;
@@ -1937,6 +1939,7 @@ fn bare_client() -> (WtaClient, mpsc::UnboundedReceiver<AppEvent>) {
         prompt_timing: Arc::new(PromptTimingState::default()),
         provider_probe_capture: ProviderProbeCapture::default(),
         standard_usage_sessions: Mutex::new(HashSet::new()),
+        copilot_usage_offsets: Mutex::new(HashMap::new()),
     });
     (WtaClient { state }, event_rx)
 }

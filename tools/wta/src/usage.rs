@@ -308,7 +308,7 @@ mod tests {
     }
 
     #[test]
-    fn normalizes_and_projects_provider_context_and_ai_units() {
+    fn normalizes_and_projects_provider_context_and_aic() {
         let snapshot = normalize_provider_contribution(providers::ProviderUsageContribution {
             context: Some(providers::ProviderContextUsage {
                 used: 30_000,
@@ -318,15 +318,15 @@ mod tests {
                 reported_percent: 11,
             }),
             metrics: vec![providers::ProviderUsageMetric {
-                metric_id: "github.copilot.ai_units".to_string(),
-                value_decimal_text: "2".to_string(),
+                metric_id: "github.copilot.ai_credits".to_string(),
+                value_decimal_text: "7.5539".to_string(),
                 limit_decimal_text: None,
-                unit_id: "AI Units".to_string(),
+                unit_id: "AIC".to_string(),
             }],
             ..Default::default()
         });
 
-        assert!(snapshot.cost.is_none(), "AI Units are not monetary cost");
+        assert!(snapshot.cost.is_none(), "AIC is not monetary cost");
         let projection = UsageProjection::from(&snapshot);
         assert_eq!(projection.items.len(), 2);
         assert_eq!(projection.items[0].metric_id, "acp.context.window");
@@ -334,8 +334,9 @@ mod tests {
         assert_eq!(projection.items[0].limit_display_text.as_deref(), Some("264k"));
         assert_eq!(projection.items[0].reported_percent, Some(11));
         assert_eq!(projection.items[0].source, "provider_reported");
-        assert_eq!(projection.items[1].metric_id, "github.copilot.ai_units");
-        assert_eq!(projection.items[1].unit_id, "AI Units");
+        assert_eq!(projection.items[1].metric_id, "github.copilot.ai_credits");
+        assert_eq!(projection.items[1].value_decimal_text, "7.5539");
+        assert_eq!(projection.items[1].unit_id, "AIC");
         assert_eq!(projection.items[1].source, "provider_reported");
     }
 
@@ -401,7 +402,7 @@ mod tests {
 
         assert_eq!(
             providers::lookup("copilot").unwrap().private_usage_policy(),
-            PrivateUsagePolicy::VerifiedCommandProbe
+            PrivateUsagePolicy::VerifiedLocalSources
         );
         assert_eq!(
             providers::lookup("claude").unwrap().private_usage_policy(),
@@ -441,7 +442,7 @@ mod tests {
         ];
 
         for provider in providers::all().iter().copied() {
-            if provider.private_usage_policy() == providers::PrivateUsagePolicy::VerifiedCommandProbe {
+            if provider.private_usage_policy() == providers::PrivateUsagePolicy::VerifiedLocalSources {
                 continue;
             }
             assert!(

@@ -49,8 +49,8 @@ namespace TerminalAppUnitTests
         TEST_METHOD(BuildPrimaryDisplayRoundsCostAndPreservesFullText);
         TEST_METHOD(BuildPrimaryDisplayShowsTokensWithoutCost);
         TEST_METHOD(BuildPrimaryDisplayRoundsContextPercentageAndHandlesInvalidCapacity);
-        TEST_METHOD(BuildPrimaryDisplayShowsProviderContextAndAiUnits);
-        TEST_METHOD(BuildPrimaryDisplayPrefersMonetaryCostOverAiUnits);
+        TEST_METHOD(BuildPrimaryDisplayShowsProviderContextAndAic);
+        TEST_METHOD(BuildPrimaryDisplayPrefersMonetaryCostOverAic);
         TEST_METHOD(BuildPrimaryDisplayHidesStaleMetrics);
         TEST_METHOD(BuildPrimaryDisplayHidesInputOutputOnly);
         TEST_METHOD(BuildPrimaryDisplayHidesAfterContainedError);
@@ -346,7 +346,7 @@ namespace TerminalAppUnitTests
         VERIFY_ARE_EQUAL(std::wstring{ L"Context Window:\n1 / 0 tokens (N/A)" }, unavailable.items[0].fullText);
     }
 
-    void AgentUsageTests::BuildPrimaryDisplayShowsProviderContextAndAiUnits()
+    void AgentUsageTests::BuildPrimaryDisplayShowsProviderContextAndAic()
     {
         Json::Value usage{ Json::objectValue };
         usage["items"] = Json::Value{ Json::arrayValue };
@@ -356,9 +356,9 @@ namespace TerminalAppUnitTests
         context["limit_display_text"] = "264k";
         context["reported_percent"] = Json::UInt64{ 11 };
         usage["items"].append(std::move(context));
-        auto aiUnits = makeUsageItem("github.copilot.ai_units", "2", "AI Units");
-        aiUnits["source"] = "provider_reported";
-        usage["items"].append(std::move(aiUnits));
+        auto aiCredits = makeUsageItem("github.copilot.ai_credits", "7.5539", "AIC");
+        aiCredits["source"] = "provider_reported";
+        usage["items"].append(std::move(aiCredits));
 
         const auto display = TerminalApp::AgentUsage::BuildPrimaryDisplay(
             TerminalApp::AgentUsage::Parse(usage),
@@ -368,19 +368,11 @@ namespace TerminalAppUnitTests
         VERIFY_ARE_EQUAL(static_cast<size_t>(2), display.items.size());
         VERIFY_ARE_EQUAL(std::wstring{ L"Context Window: 11%" }, display.items[0].text);
         VERIFY_ARE_EQUAL(std::wstring{ L"Context Window:\n30k / 264k tokens (11%)" }, display.items[0].fullText);
-        VERIFY_ARE_EQUAL(std::wstring{ L"2 AI Units" }, display.items[1].text);
-        VERIFY_ARE_EQUAL(std::wstring{ L"2 AI Units" }, display.items[1].fullText);
-
-        auto fractional = usage;
-        fractional["items"][1]["value_decimal_text"] = "0.33";
-        fractional["items"][1]["unit_id"] = "AI Credits";
-        const auto fractionalDisplay = TerminalApp::AgentUsage::BuildPrimaryDisplay(
-            TerminalApp::AgentUsage::Parse(fractional),
-            L"tokens");
-        VERIFY_ARE_EQUAL(std::wstring{ L"0.33 AI Credits" }, fractionalDisplay.items[1].text);
+        VERIFY_ARE_EQUAL(std::wstring{ L"7.5539 AIC" }, display.items[1].text);
+        VERIFY_ARE_EQUAL(std::wstring{ L"7.5539 AIC" }, display.items[1].fullText);
     }
 
-    void AgentUsageTests::BuildPrimaryDisplayPrefersMonetaryCostOverAiUnits()
+    void AgentUsageTests::BuildPrimaryDisplayPrefersMonetaryCostOverAic()
     {
         const std::vector<TerminalApp::AgentUsage::Item> items{
             TerminalApp::AgentUsage::Item{
@@ -391,9 +383,9 @@ namespace TerminalAppUnitTests
                 .source = "acp_standard",
             },
             TerminalApp::AgentUsage::Item{
-                .metricId = "github.copilot.ai_units",
-                .valueDecimalText = "0.33",
-                .unitId = "AI Credits",
+                .metricId = "github.copilot.ai_credits",
+                .valueDecimalText = "7.5539",
+                .unitId = "AIC",
                 .scope = "session",
                 .source = "provider_reported",
             },

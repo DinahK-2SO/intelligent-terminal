@@ -1,5 +1,15 @@
 # GitHub Copilot CLI 1.0.77 local usage commands
 
+> **Correction (2026-08-03, Step 50):** this experiment proved that `/usage` and `/context`
+> commands do not consume model usage, but its original conclusion incorrectly treated
+> `/usage`'s `Requests: N AI Units` as actual AI credits. Real session checkpoints prove that N is
+> a request/premium count. Authoritative session AI credits are
+> `session.usage_checkpoint.data.totalNanoAiu / 1_000_000_000`.
+>
+> Real counterexample: an authenticated ACP session reported `Requests: 0 AI Units` while its
+> same-session checkpoint was `4,416,205,500 nano-AIU = 4.4162055 AIC`. A real Bonjour session
+> had one premium request and `7,553,900,000 nano-AIU = 7.5539 AIC`.
+
 Captured: 2026-08-03 using `copilot --acp --stdio`, protocol version 1.
 
 ## Question
@@ -65,13 +75,15 @@ Across five `/context` calls, the context values were unchanged. The `/usage` ba
 
 ## Conclusion
 
-For GitHub Copilot CLI 1.0.77 in these authenticated ACP sessions, `/usage` and `/context` did not consume AI Units, input tokens, output tokens, or cached tokens. This satisfies the prerequisite for automatic post-turn probes.
+For GitHub Copilot CLI 1.0.77 in these authenticated ACP sessions, `/usage` and `/context` did not consume model usage. Only `/context` remains an automatic post-turn command; `/usage` is no longer sent because its Requests field is not AIC.
 
 The two commands expose different data and must not be conflated:
 
 - `/context` is the source for context occupancy/capacity and percentage.
-- `/usage` is the source for session AI Units.
+- `/usage` is not a valid source for session AIC; its Requests field is ignored.
+- `session.usage_checkpoint.data.totalNanoAiu` is the verified source for session AIC.
 - `/usage` input/output/cached totals are not context-window occupancy and are not displayed.
-- The observed unit is `AI Units`, not `AI Credits`; Intelligent Terminal must preserve the current CLI-reported unit instead of renaming it.
+- Intelligent Terminal displays exact `totalNanoAiu / 1e9` with unit `AIC`, matching the CLI's
+	native `ai-used` accounting rather than the ACP `/usage` Requests label.
 
 These outputs are a versioned human-readable CLI schema, not an ACP standard. Parsing must be allowlisted to the built-in Copilot family and exact reporter identity, fail closed on format drift, avoid logging values, and automatically defer to standard ACP Usage when Copilot adds it.

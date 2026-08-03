@@ -75,6 +75,7 @@ code it describes.
 | 47. Copilot automatic turn probe | Successful Copilot turns must report fallback Usage, while standard ACP Usage and probe failures stay isolated | Probe before single-flight release, remember standard-Usage sessions, and emit the existing typed event | Complete |
 | 48. Copilot provider metric display | Provider context detail and AI Units must render without currency reinterpretation | Extend the typed C++ cache and existing two-slot display selector | Complete |
 | 49. Copilot packaged integration | Real Copilot must show clean chat, context detail, and AI Units in the deployed app | Build/deploy, validate same-session routing, inspect UIA and screenshots, and sync final docs | Complete |
+| 50. Correct Copilot AIC source | `/usage Requests` must not be displayed as AIC; UI must exactly match the real session ledger | Read post-turn `totalNanoAiu`, stop `/usage`, and prove exact equality with real Copilot CLI | Complete |
 
 ## Completed Steps
 
@@ -82,7 +83,88 @@ code it describes.
 > Gemini private quota. Step 19-20 supersede that product behavior after the five-provider,
 > two-turn investigation and team review. Step 27 supersedes Step 23's currency-shape filtering;
 > amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
-> PowerShell installation path.
+> PowerShell installation path. **Step 50 supersedes every AIC/AI Units conclusion in Steps 45-49**;
+> those entries remain as an audit trail of the incorrect assumption and its correction.
+
+### Step 50 - Correct Copilot AIC Source
+
+**Root cause and real RED**
+
+- The implementation parsed ACP `/usage` text `Requests: N AI Units` and displayed N as session
+  AI credits. This was incorrect: N is a request/premium count, not token-priced AIC.
+- The user's real Bonjour session proved the mismatch: one premium request had
+  `totalNanoAiu=7,553,900,000`, or `7.5539 AIC`, matching the native CLI's approximately
+  `7.56 AIC used` display rather than `1`.
+- A new authenticated real-CLI RED used session `35c17617-57d2-49b2-9136-9365b1147825`.
+  `/usage` reported `Requests: 0 AI Units`, while the same session's real checkpoint reported
+  `totalNanoAiu=4,416,205,500`, or `4.4162055 AIC`. The executable equality assertion failed as
+  required. No mock supplied either value.
+
+**GREEN**
+
+- Added typed `ProviderSessionEvent` input and versioned parsing for exact event type
+  `session.usage_checkpoint` plus unsigned `data.totalNanoAiu`.
+- Converts nano-AIU to exact decimal AIC using integer division and zero-trimmed nine-digit
+  fractional text. No floating-point conversion, request multiplier, token pricing, or estimate is
+  used.
+- Before each trusted Copilot user/autofix prompt, helper records the same SessionId's
+  `%USERPROFILE%\.copilot\session-state\<SessionId>\events.jsonl` byte offset. After the turn it
+  waits only for a newly appended checkpoint, preventing stale-session values.
+- SessionId is constrained to one safe path segment. Missing/invalid checkpoint, IO failure, or
+  schema drift omits AIC instead of falling back to `/usage Requests`.
+- `/usage` is no longer sent. `/context` remains the only post-turn command, and its output remains
+  suppressed from chat. Standard ACP Usage still disables all Copilot private fallback work.
+- Provider metric is now `github.copilot.ai_credits` with exact decimal value and unit `AIC`.
+  It remains distinct from monetary `UsageCost`.
+
+**Real Copilot GREEN**
+
+- Rebuilt and deployed the x64 Debug package, with 0 build errors and matching packaged/Cargo WTA
+  hashes.
+- Authenticated Copilot CLI 1.0.77 session `b3f9329e-c65d-4153-900f-8eeb057839fa` returned a real
+  LLM reply whose complete marker was absent from the prompt.
+- Same-session checkpoint: `totalNanoAiu=1,957,095,000` -> `1.957095 AIC`.
+- Bottom Bar UIA: `1.957095 AIC`. The executable test compared decimals and reported
+  `aic_exact_match=true`; no rounding or estimate was involved.
+- The same session showed `Context Window: 5%` with HelpText
+  `20k / 400k tokens (5%)`; chat contained no probe output.
+- Master/helper logs contained exactly two prompt routes (user + `/context`) and zero checkpoint,
+  context-probe, or connection errors. There was no `/usage` route.
+- Accuracy validation used only the installed, authenticated real Copilot CLI and its own
+  `events.jsonl`. Existing deterministic tests remain for parser/routing regressions but were not
+  the AIC correctness oracle.
+
+**Validation**
+
+- Real CLI RED: failed with `/usage=0` versus `4.4162055 AIC` checkpoint.
+- Real packaged CLI GREEN: exact `1.957095 == 1.957095 AIC` match.
+- Copilot provider tests: 3 passed, 0 failed.
+- Usage-focused Rust suite: 31 passed, 0 failed.
+- Complete WTA Rust suite: 1232 passed, 0 failed.
+- Complete `AgentUsageTests`: 22 passed, 0 failed, 0 skipped.
+- Terminal App and CascadiaPackage builds: 0 errors.
+- Visual Studio clang-format and editor diagnostics: clean.
+
+**Local-only evidence**
+
+- Real RED captures remain under ignored `test/e2e/artifacts/copilot-aic-accuracy-red/`.
+- Real packaged exact-match script/result remain under ignored
+  `test/e2e/artifacts/real-copilot-usage-ui/`.
+- No credentials, mock AIC data, local harness code, raw session files, logs, or screenshots are
+  committed.
+
+**Committed files**
+
+- `tools/wta/src/usage/providers/mod.rs`
+- `tools/wta/src/usage/providers/copilot.rs`
+- `tools/wta/src/usage.rs`
+- `tools/wta/src/protocol/acp/client.rs`
+- `tools/wta/src/protocol/acp/mock_agent_tests.rs`
+- `src/cascadia/TerminalApp/AgentUsage.cpp`
+- `src/cascadia/ut_app/AgentUsageTests.cpp`
+- `doc/investigation/acp-price-calc.md`
+- `doc/investigation/acp-price-calc-track.md`
+- `doc/investigation/per-provider-investigation/result/copilot-local-usage-commands-1.0.77.md`
 
 ### Step 49 - Copilot Packaged Integration
 

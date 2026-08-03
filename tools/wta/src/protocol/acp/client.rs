@@ -1528,6 +1528,7 @@ struct ClientState {
     prompt_timing: Arc<PromptTimingState>,
     provider_probe_capture: ProviderProbeCapture,
     standard_usage_sessions: Mutex<HashSet<String>>,
+    copilot_usage_offsets: Mutex<HashMap<String, u64>>,
 }
 
 #[derive(Default)]
@@ -2005,13 +2006,20 @@ async fn probe_copilot_usage(
     if identity.family_id.as_deref() != Some(crate::agent_registry::COPILOT_AGENT_ID) {
         return Ok(None);
     }
+    let session_id_text = session_id.to_string();
     if client
         .state
         .standard_usage_sessions
         .lock()
         .unwrap()
-        .contains(&session_id.to_string())
+        .contains(&session_id_text)
     {
+        client
+            .state
+            .copilot_usage_offsets
+            .lock()
+            .unwrap()
+            .remove(&session_id_text);
         return Ok(None);
     }
     let Some(reporter_id) = identity.reporter_id.as_deref() else {
@@ -2022,31 +2030,170 @@ async fn probe_copilot_usage(
         return Ok(None);
     };
     if adapter.private_usage_policy()
-        != crate::usage::providers::PrivateUsagePolicy::VerifiedCommandProbe
+        != crate::usage::providers::PrivateUsagePolicy::VerifiedLocalSources
         || !adapter.trusted_reporter_ids().contains(&reporter_id)
     {
         return Ok(None);
     }
 
-    let context_output = capture_provider_command(conn, client, &session_id, "/context").await?;
-    let usage_output = capture_provider_command(conn, client, &session_id, "/usage").await?;
-    let context = adapter.extract_private_usage(crate::usage::providers::ProviderUsageRequest {
-        reporter_id: Some(reporter_id),
-        input: crate::usage::providers::ProviderUsageInput::ProviderCommandOutput {
-            command: "/context",
-            text: &context_output,
-        },
-    })?;
-    let usage = adapter.extract_private_usage(crate::usage::providers::ProviderUsageRequest {
-        reporter_id: Some(reporter_id),
-        input: crate::usage::providers::ProviderUsageInput::ProviderCommandOutput {
-            command: "/usage",
-            text: &usage_output,
-        },
-    })?;
-    let mut snapshot = crate::usage::normalize_provider_contribution(context);
-    snapshot.merge(crate::usage::normalize_provider_contribution(usage));
+    let offset = client
+        .state
+        .copilot_usage_offsets
+        .lock()
+        .unwrap()
+        .remove(&session_id_text)
+        .unwrap_or(0);
+    let mut snapshot = crate::usage::normalize_provider_contribution(Default::default());
+
+    match wait_for_copilot_usage_checkpoint(&session_id_text, offset).await {
+        Ok(Some(event)) => {
+            let contribution = adapter.extract_private_usage(
+                crate::usage::providers::ProviderUsageRequest {
+                    reporter_id: Some(reporter_id),
+                    input: crate::usage::providers::ProviderUsageInput::ProviderSessionEvent(
+                        &event,
+                    ),
+                },
+            )?;
+            snapshot.merge(crate::usage::normalize_provider_contribution(contribution));
+        }
+        Ok(None) => {
+            tracing::warn!(
+                target: "usage",
+                session_id = %session_id_text,
+                schema = "copilot.cli.session_usage_checkpoint.v1.0.77",
+                "Copilot usage checkpoint was not available; omitting AIC"
+            );
+        }
+        Err(error) => {
+            tracing::warn!(
+                target: "usage",
+                session_id = %session_id_text,
+                error = %error,
+                "could not read Copilot usage checkpoint; omitting AIC"
+            );
+        }
+    }
+
+    match capture_provider_command(conn, client, &session_id, "/context").await {
+        Ok(context_output) => {
+            let context = adapter.extract_private_usage(
+                crate::usage::providers::ProviderUsageRequest {
+                    reporter_id: Some(reporter_id),
+                    input: crate::usage::providers::ProviderUsageInput::ProviderCommandOutput {
+                        command: "/context",
+                        text: &context_output,
+                    },
+                },
+            )?;
+            snapshot.merge(crate::usage::normalize_provider_contribution(context));
+        }
+        Err(error) => {
+            tracing::warn!(
+                target: "usage",
+                session_id = %session_id_text,
+                error = %error,
+                "optional Copilot context probe failed"
+            );
+        }
+    }
+
+    if snapshot.context.is_none()
+        && snapshot.cost.is_none()
+        && snapshot.provider_metrics.is_empty()
+    {
+        return Ok(None);
+    }
     Ok(Some(snapshot))
+}
+
+fn copilot_session_events_path(session_id: &str) -> Option<std::path::PathBuf> {
+    let segment = std::path::Path::new(session_id);
+    if segment.file_name() != Some(std::ffi::OsStr::new(session_id))
+        || matches!(session_id, "." | "..")
+    {
+        return None;
+    }
+    std::env::var_os("USERPROFILE").map(|home| {
+        std::path::PathBuf::from(home)
+            .join(".copilot")
+            .join("session-state")
+            .join(session_id)
+            .join("events.jsonl")
+    })
+}
+
+fn record_copilot_usage_offset(
+    client: &WtaClient,
+    identity: &PromptUsageIdentity,
+    session_id: &acp::schema::v1::SessionId,
+) {
+    if identity.family_id.as_deref() != Some(crate::agent_registry::COPILOT_AGENT_ID)
+        || identity.reporter_id.as_deref() != Some("Copilot")
+    {
+        return;
+    }
+    let session_id = session_id.to_string();
+    let offset = copilot_session_events_path(&session_id)
+        .and_then(|path| std::fs::metadata(path).ok())
+        .map_or(0, |metadata| metadata.len());
+    client
+        .state
+        .copilot_usage_offsets
+        .lock()
+        .unwrap()
+        .insert(session_id, offset);
+}
+
+async fn read_copilot_usage_checkpoint_after(
+    session_id: &str,
+    offset: u64,
+) -> Result<Option<serde_json::Value>> {
+    use tokio::io::{AsyncBufReadExt, AsyncSeekExt};
+
+    let Some(path) = copilot_session_events_path(session_id) else {
+        return Ok(None);
+    };
+    let mut file = match tokio::fs::File::open(path).await {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    let length = file.metadata().await?.len();
+    file.seek(std::io::SeekFrom::Start(offset.min(length))).await?;
+    let mut lines = tokio::io::BufReader::new(file).lines();
+    let mut latest = None;
+    while let Some(line) = lines.next_line().await? {
+        if !line.contains("\"session.usage_checkpoint\"") {
+            continue;
+        }
+        let event: serde_json::Value = match serde_json::from_str(&line) {
+            Ok(event) => event,
+            Err(_) => continue,
+        };
+        if event.get("type").and_then(serde_json::Value::as_str)
+            == Some("session.usage_checkpoint")
+        {
+            latest = Some(event);
+        }
+    }
+    Ok(latest)
+}
+
+async fn wait_for_copilot_usage_checkpoint(
+    session_id: &str,
+    offset: u64,
+) -> Result<Option<serde_json::Value>> {
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(3);
+    loop {
+        if let Some(event) = read_copilot_usage_checkpoint_after(session_id, offset).await? {
+            return Ok(Some(event));
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Ok(None);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
 }
 
 /// The helper-mode ACP client loop. Instead of spawning the agent CLI
@@ -2410,6 +2557,7 @@ pub async fn run_acp_client_over_pipe(
         prompt_timing: prompt_timing.clone(),
         provider_probe_capture: ProviderProbeCapture::default(),
         standard_usage_sessions: Mutex::new(HashSet::new()),
+        copilot_usage_offsets: Mutex::new(HashMap::new()),
     });
 
     let client = WtaClient {
@@ -3907,6 +4055,11 @@ async fn dispatch_prompt_body(
     // through master → agent CLI verbatim; the agent only receives them if it
     // advertised `promptCapabilities.image` (the UI gates Alt+V on that flag).
     let content = build_prompt_content(&text, &prompt.images);
+    record_copilot_usage_offset(
+        &client_task,
+        &prompt_usage_identity_task,
+        &prompt_session_id,
+    );
     let prompt_fut = conn_task.prompt(acp::schema::v1::PromptRequest::new(
         prompt_session_id.clone(),
         content,
@@ -4895,6 +5048,7 @@ mod tests {
                 prompt_timing: Arc::new(super::super::PromptTimingState::default()),
                 provider_probe_capture: super::super::ProviderProbeCapture::default(),
                 standard_usage_sessions: std::sync::Mutex::new(std::collections::HashSet::new()),
+                copilot_usage_offsets: std::sync::Mutex::new(std::collections::HashMap::new()),
             });
             (WtaClient { state }, rx)
         }

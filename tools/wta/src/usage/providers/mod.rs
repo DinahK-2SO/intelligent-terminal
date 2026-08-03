@@ -12,8 +12,8 @@ pub enum PrivateUsagePolicy {
     StandardAcpOnly,
     /// A provider-specific adapter slot exists, but no private schema is trusted yet.
     Reserved,
-    /// A versioned, allowlisted local agent command is a verified usage source.
-    VerifiedCommandProbe,
+    /// Versioned, allowlisted local agent sources have been verified end to end.
+    VerifiedLocalSources,
     /// Provider-specific usage is intentionally excluded from the current product scope.
     OutOfScope,
 }
@@ -38,6 +38,8 @@ pub enum ProviderUsageInput<'a> {
         command: &'a str,
         text: &'a str,
     },
+    /// One parsed event from the agent's own session event stream.
+    ProviderSessionEvent(&'a serde_json::Value),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -139,6 +141,9 @@ pub(super) fn no_verified_private_usage(
         }
         ProviderUsageInput::ProviderCommandOutput { command, text } => {
             let _ = (command, text);
+        }
+        ProviderUsageInput::ProviderSessionEvent(event) => {
+            let _ = event;
         }
     }
     Ok(ProviderUsageContribution::default())
