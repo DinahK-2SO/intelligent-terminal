@@ -74,6 +74,7 @@ code it describes.
 | 46. Copilot command wire capture | Same-session probes must run in order without entering chat, and failures must release capture | Add helper-owned per-session capture and a bounded exact-identity probe primitive | Complete |
 | 47. Copilot automatic turn probe | Successful Copilot turns must report fallback Usage, while standard ACP Usage and probe failures stay isolated | Probe before single-flight release, remember standard-Usage sessions, and emit the existing typed event | Complete |
 | 48. Copilot provider metric display | Provider context detail and AI Units must render without currency reinterpretation | Extend the typed C++ cache and existing two-slot display selector | Complete |
+| 49. Copilot packaged integration | Real Copilot must show clean chat, context detail, and AI Units in the deployed app | Build/deploy, validate same-session routing, inspect UIA and screenshots, and sync final docs | Complete |
 
 ## Completed Steps
 
@@ -82,6 +83,57 @@ code it describes.
 > two-turn investigation and team review. Step 27 supersedes Step 23's currency-shape filtering;
 > amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
 > PowerShell installation path.
+
+### Step 49 - Copilot Packaged Integration
+
+**Build and deploy**
+
+- Built WTA with explicit target `x86_64-pc-windows-msvc`, then built the x64 Debug
+  `CascadiaPackage`; both completed with 0 errors.
+- Packaged `wta.exe` SHA256
+  `F87F317C6E18FE59F8E675B923AA16325301C967D58CC02011694048814DF890` exactly matched the Cargo
+  artifact.
+- Initial loose-layout deployment found the previously registered package still mapping
+  `resources.pri`. Unregistered only `IntelligentTerminal_0.8.0.2` with
+  `-PreserveApplicationData`, then deployed the app recipe successfully; package status returned
+  `Ok` at the expected Debug `AppX` location.
+- E2E used PATH-resolved PowerShell 7.6.4; the current process path matched `Get-Command pwsh`, so
+  no machine-specific host path was introduced.
+- Final complete WTA Rust suite: 1232 passed, 0 failed, 0 ignored.
+
+**Live Copilot validation**
+
+- GitHub Copilot CLI 1.0.77 reached Connected and returned the marker
+  `COPILOT_USAGE_UI_OK` for a real user turn.
+- Agent pane capture contained no `/context`, `/usage`, `Context Usage`, `Session Usage`,
+  `Requests:`, or cumulative token output. Probe responses did not pollute chat.
+- Bottom Bar UIA showed `Context Window: 9%` and `1 AI Units`; no currency label appeared.
+- Context Automation HelpText and visible hover tooltip both showed
+  `Context Window:\n23k / 264k tokens (9%)`, preserving provider display precision.
+- Logs for ACP SessionId `dd2af238-1580-4cf5-9f07-55f4986d54d3` contained exactly three prompt
+  route lines (user + two probes) and zero connection/optional-probe failures.
+- Screenshot inspection confirmed the Terminal window, Copilot pane, reply, both Bottom Bar items,
+  and context tooltip were visible without incoherent overlap.
+
+**Local-only evidence**
+
+- Ignored script/result/screenshots remain in
+  `test/e2e/artifacts/real-copilot-usage-ui/` and are intentionally not committed.
+- Existing ignored raw Copilot command captures and SHA256 manifests remain intact.
+- No credentials, provider configuration, local E2E framework code, wire captures, logs, or
+  screenshots enter the feature commit.
+
+**Documentation sync**
+
+- Updated `acp-price-calc.md` status, current-state table, runtime path, adapter policy/input,
+  Bottom Bar selection rules, implemented scope, failure isolation, standard precedence, and
+  packaged live evidence. Removed stale current-state claims that the Copilot fallback was
+  reserved/no-op or pending.
+
+**Committed files**
+
+- `doc/investigation/acp-price-calc.md`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 48 - Copilot Provider Metric Display
 
