@@ -2,6 +2,13 @@ use agent_client_protocol as acp;
 
 pub mod providers;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageDisplayKind {
+    Context,
+    Billing,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct UsageSnapshot {
     pub context: Option<UsageContext>,
@@ -26,9 +33,11 @@ pub struct UsageContextDisplay {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct UsageProviderMetric {
     pub metric_id: String,
+    pub display_kind: UsageDisplayKind,
     pub value_decimal_text: String,
     pub limit_decimal_text: Option<String>,
     pub unit_id: String,
+    pub unit_display_text: String,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -103,6 +112,7 @@ pub struct UsageProjection {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct UsageProjectionItem {
     pub metric_id: String,
+    pub display_kind: UsageDisplayKind,
     pub value_decimal_text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit_decimal_text: Option<String>,
@@ -113,6 +123,7 @@ pub struct UsageProjectionItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reported_percent: Option<u64>,
     pub unit_id: String,
+    pub unit_display_text: String,
     pub scope: &'static str,
     pub source: &'static str,
     pub stale: bool,
@@ -130,12 +141,14 @@ impl UsageProjection {
         if let Some(context) = &snapshot.context {
             items.push(UsageProjectionItem {
                 metric_id: "acp.context.window".to_string(),
+                display_kind: UsageDisplayKind::Context,
                 value_decimal_text: context.used.to_string(),
                 limit_decimal_text: Some(context.size.to_string()),
                 value_display_text: snapshot.context_display.as_ref().map(|display| display.used_text.clone()),
                 limit_display_text: snapshot.context_display.as_ref().map(|display| display.size_text.clone()),
                 reported_percent: snapshot.context_display.as_ref().map(|display| display.reported_percent),
                 unit_id: "token".to_string(),
+                unit_display_text: "token".to_string(),
                 scope: "session",
                 source: if snapshot.context_display.is_some() { "provider_reported" } else { "acp_standard" },
                 stale: staleness.context,
@@ -144,12 +157,14 @@ impl UsageProjection {
         if let Some(cost) = &snapshot.cost {
             items.push(UsageProjectionItem {
                 metric_id: "acp.billing.cost".to_string(),
+                display_kind: UsageDisplayKind::Billing,
                 value_decimal_text: cost.amount_decimal_text.clone(),
                 limit_decimal_text: None,
                 value_display_text: None,
                 limit_display_text: None,
                 reported_percent: None,
                 unit_id: cost.currency.clone(),
+                unit_display_text: cost.currency.clone(),
                 scope: "session",
                 source: "acp_standard",
                 stale: staleness.cost,
@@ -158,12 +173,14 @@ impl UsageProjection {
         for metric in &snapshot.provider_metrics {
             items.push(UsageProjectionItem {
                 metric_id: metric.metric_id.clone(),
+                display_kind: metric.display_kind,
                 value_decimal_text: metric.value_decimal_text.clone(),
                 limit_decimal_text: metric.limit_decimal_text.clone(),
                 value_display_text: None,
                 limit_display_text: None,
                 reported_percent: None,
                 unit_id: metric.unit_id.clone(),
+                unit_display_text: metric.unit_display_text.clone(),
                 scope: "session",
                 source: "provider_reported",
                 stale: staleness.provider_metrics,
@@ -190,9 +207,11 @@ pub fn normalize_provider_contribution(contribution: providers::ProviderUsageCon
         cost: contribution.cost,
         provider_metrics: contribution.metrics.into_iter().map(|metric| UsageProviderMetric {
             metric_id: metric.metric_id,
+            display_kind: metric.display_kind,
             value_decimal_text: metric.value_decimal_text,
             limit_decimal_text: metric.limit_decimal_text,
             unit_id: metric.unit_id,
+            unit_display_text: metric.unit_display_text,
         }).collect(),
     }
 }
@@ -280,6 +299,9 @@ mod tests {
         assert_eq!(projection.items.len(), 2);
         assert_eq!(projection.items[0].metric_id, "acp.context.window");
         assert_eq!(projection.items[1].metric_id, "acp.billing.cost");
+        assert_eq!(projection.items[0].display_kind, UsageDisplayKind::Context);
+        assert_eq!(projection.items[1].display_kind, UsageDisplayKind::Billing);
+        assert_eq!(projection.items[1].unit_display_text, "USD");
     }
 
     #[test]
@@ -319,9 +341,11 @@ mod tests {
             }),
             metrics: vec![providers::ProviderUsageMetric {
                 metric_id: "github.copilot.ai_credits".to_string(),
+                display_kind: UsageDisplayKind::Billing,
                 value_decimal_text: "7.5539".to_string(),
                 limit_decimal_text: None,
                 unit_id: "AIC".to_string(),
+                unit_display_text: "AIC".to_string(),
             }],
             ..Default::default()
         });
@@ -337,6 +361,8 @@ mod tests {
         assert_eq!(projection.items[1].metric_id, "github.copilot.ai_credits");
         assert_eq!(projection.items[1].value_decimal_text, "7.5539");
         assert_eq!(projection.items[1].unit_id, "AIC");
+        assert_eq!(projection.items[1].display_kind, UsageDisplayKind::Billing);
+        assert_eq!(projection.items[1].unit_display_text, "AIC");
         assert_eq!(projection.items[1].source, "provider_reported");
     }
 

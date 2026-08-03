@@ -111,9 +111,11 @@ fn try_parse_session_usage_event(event: &serde_json::Value) -> Option<ProviderUs
     Some(ProviderUsageContribution {
         metrics: vec![ProviderUsageMetric {
             metric_id: "github.copilot.ai_credits".to_string(),
+            display_kind: crate::usage::UsageDisplayKind::Billing,
             value_decimal_text: nano_aiu_decimal_text(total_nano_aiu),
             limit_decimal_text: None,
             unit_id: "AIC".to_string(),
+            unit_display_text: "AIC".to_string(),
         }],
         ..Default::default()
     })

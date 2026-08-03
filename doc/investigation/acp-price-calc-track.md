@@ -79,6 +79,7 @@ code it describes.
 | 51. Compact AIC display | AIC should match monetary cost's compact precision without losing ledger accuracy | Reuse half-up two-decimal main formatting and retain exact AIC in HelpText | Complete |
 | 52. Provider-owned local sources | Copilot path/schema/commands must not live in the common ACP client | Add adapter hooks and opaque cursors; keep client orchestration provider-neutral | Complete |
 | 53. Version-neutral Copilot try-get | Compatible future CLI shapes should keep working; missing fields should hide only that metric | Remove CLI-version binding and return empty contributions for absent shapes | Complete |
+| 54. Unified billing projection | Application rendering must not infer billing semantics from ACP/provider metric IDs | Project stable display kind and underlying unit display text for every billing source | Complete |
 
 ## Completed Steps
 
@@ -88,6 +89,49 @@ code it describes.
 > amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
 > PowerShell installation path. **Step 50 supersedes every AIC/AI Units conclusion in Steps 45-49**;
 > those entries remain as an audit trail of the incorrect assumption and its correction.
+
+### Step 54 - Unified Billing Projection
+
+**RED**
+
+- Added Rust contracts requiring standard ACP monetary cost and provider-retrieved AIC to project
+  the same `UsageDisplayKind::Billing` semantic.
+- Required every billing item to carry `unit_display_text` supplied by its normalized source.
+- The focused build failed because `UsageProjectionItem` exposed only metric/source identifiers;
+  no display kind or unit display text existed, forcing C++ to infer semantics from IDs.
+
+**GREEN**
+
+- Added serialized `UsageDisplayKind::{Context,Billing}` and `unit_display_text` to the normalized
+  projection contract.
+- Standard ACP cost projects as billing with its provider-reported currency string used as both
+  stable unit ID and display text.
+- Provider metrics now declare their display kind and unit display text in the retrieval/adapter
+  layer. Copilot AIC declares billing and display text `AIC`.
+- `metric_id` and `source` remain available for identity/provenance and merge diagnostics, but are
+  no longer needed to decide application presentation.
+- The existing AppEvent/`agent_state_changed.usage` route serializes `display_kind=context|billing`
+  and `unit_display_text` without adding a new transport.
+
+**Validation**
+
+- Focused RED failed with missing `UsageDisplayKind`, `display_kind`, and `unit_display_text`.
+- Focused projection GREEN: 1 passed, 0 failed.
+- Serialized AppEvent contract: 1 passed, 0 failed.
+- Usage-focused suite: 32 passed, 0 failed.
+- Complete WTA suite: 1233 passed, 0 failed.
+- Editor diagnostics and CRLF-aware whitespace checks: clean.
+- Crate-wide rustfmt remains blocked by historical `app_tests.rs` formatting drift; no differences
+  were reported in the three product Rust files.
+
+**Committed files**
+
+- `tools/wta/src/usage.rs`
+- `tools/wta/src/usage/providers/mod.rs`
+- `tools/wta/src/usage/providers/copilot.rs`
+- `tools/wta/src/app_tests.rs`
+- `doc/investigation/acp-price-calc.md`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 53 - Version-Neutral Copilot Try-Get
 

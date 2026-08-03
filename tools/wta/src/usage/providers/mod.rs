@@ -4,7 +4,7 @@ mod copilot;
 mod gemini;
 mod opencode;
 
-use super::UsageCost;
+use super::{UsageCost, UsageDisplayKind};
 
 #[derive(Debug, Clone)]
 pub struct ProviderLocalUsageCursor {
@@ -92,9 +92,11 @@ pub struct ProviderContextUsage {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderUsageMetric {
     pub metric_id: String,
+    pub display_kind: UsageDisplayKind,
     pub value_decimal_text: String,
     pub limit_decimal_text: Option<String>,
     pub unit_id: String,
+    pub unit_display_text: String,
 }
 
 /// Partial provider contribution merged only after the standard ACP normalizer.

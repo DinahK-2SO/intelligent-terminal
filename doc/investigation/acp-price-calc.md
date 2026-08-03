@@ -861,7 +861,8 @@ C++ UI 已支持但 WTA 后端静默落到 `unknown`。
   source cursor、session-event parser与post-turn command，其他private extractor保持no-op；
 4. **Usage store/merger**：复用 `TabSession` / App state，按 metric scope 与 aggregation 合并；
 5. **Rust projection**：复用 `project_tab_state()` 和现有 `agent_state_changed`，不新建第二条
-  COM/IDL/event transport；
+  COM/IDL/event transport。Projection为每个item提供provider-neutral `display_kind`和
+  `unit_display_text`；metric ID/source只用于identity/provenance，不驱动应用展示；
 6. **C++ rendering**：复用 `OnAgentStateChanged()`、`AgentPaneContent::StateChanged` 和
   `_UpdateBottomBarState()`，只消费 provider-neutral projection。
 

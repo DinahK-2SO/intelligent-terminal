@@ -7456,7 +7456,10 @@ fn usage_projection_contains_context_cost_and_explicit_null() {
         .expect("usage items");
     assert_eq!(items.len(), 2);
     assert_eq!(items[0]["metric_id"], "acp.context.window");
+    assert_eq!(items[0]["display_kind"], "context");
     assert_eq!(items[1]["metric_id"], "acp.billing.cost");
+    assert_eq!(items[1]["display_kind"], "billing");
+    assert_eq!(items[1]["unit_display_text"], "USD");
     assert!(items.iter().all(|item| item["stale"] == false));
 
     let cleared = super::app_status_projection::build_agent_state_changed_event(
