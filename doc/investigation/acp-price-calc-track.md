@@ -6,8 +6,9 @@ code it describes.
 
 ## Scope Guardrails
 
-- First release displays only standard ACP v1 `SessionUpdate::UsageUpdate` context-window data and
-  optional monetary cost.
+- The shared path displays standard ACP v1 `SessionUpdate::UsageUpdate` context-window data and
+  optional monetary cost. The approved Copilot fallback may additionally report its verified
+  context command and provider-owned AI usage unit without treating that unit as currency.
 - No end-turn input/output display, private Gemini quota parsing, local price conversion,
   credential access, billing API calls, or currency correction.
 - Rust owns validation, normalization, state, coalescing, and projection. C++/XAML only cache and
@@ -70,6 +71,7 @@ code it describes.
 | 43. Packaged percentage E2E/docs | Deployed UI must show percentage and a detailed real hover tooltip | Update ignored injectors, redeploy, capture hover, and sync final docs | Complete |
 | 44. Copilot command prerequisite/design | Prove local usage commands are non-consuming before special handling | Capture 31 responses, preserve hashes, separate command semantics, and choose helper-owned probes | Complete |
 | 45. Copilot command parser/domain | Verified command text must become provider-neutral Usage without confusing AI Units with currency | Add typed command input, exact identity parser, context display metadata, and provider metrics | Complete |
+| 46. Copilot command wire capture | Same-session probes must run in order without entering chat, and failures must release capture | Add helper-owned per-session capture and a bounded exact-identity probe primitive | Complete |
 
 ## Completed Steps
 
@@ -78,6 +80,49 @@ code it describes.
 > two-turn investigation and team review. Step 27 supersedes Step 23's currency-shape filtering;
 > amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
 > PowerShell installation path.
+
+### Step 46 - Copilot Command Wire Capture
+
+**RED**
+
+- Added a mock ACP contract requiring the verified Copilot identity to send `/context` then
+  `/usage` on the same SessionId, return normalized context plus AI Units, and suppress command
+  output from `AgentMessageChunk` chat events.
+- The focused build failed with `E0425` because `probe_copilot_usage` did not exist. A test-module
+  import error was corrected first so the behavioral RED was isolated to that missing primitive.
+
+**GREEN**
+
+- Added helper-owned, per-session probe capture to `WtaClient`. Captured text chunks are consumed
+  before prompt timing, content logging, and AppEvent chat routing; unrelated sessions continue
+  through the existing notification path.
+- Added a bounded sequential command primitive using the existing ACP connection and SessionId.
+  Capture remains active for the existing trailing-chunk flush window and is removed on success,
+  ACP error, or timeout.
+- The Copilot probe is gated before wire I/O by exact family `copilot`, reporter allowlist
+  `Copilot`, and `VerifiedCommandProbe` policy. Unsupported/lookalike identities return no data and
+  send no commands.
+- `/context` and `/usage` output is parsed by the Step 45 Copilot adapter and merged through the
+  provider-neutral `UsageSnapshot`; no Copilot-specific AppEvent, COM, IDL, or UI route was added.
+- Added boundary regressions proving a probe failure releases capture for later chat and a
+  non-Copilot identity performs no wire I/O.
+
+**Validation**
+
+- Initial focused GREEN: 1 passed, 0 failed.
+- Complete Copilot probe contracts: 3 passed, 0 failed.
+- Complete mock ACP harness: 34 passed, 0 failed.
+- Complete usage-focused Rust suite: 29 passed, 0 failed.
+- Editor diagnostics: clean. Builds retained 33 pre-existing warnings.
+- `cargo fmt --check` remains blocked by existing crate-wide formatting drift; neither touched
+  Rust file appeared in its reported differences.
+- CRLF-aware `git diff --check`: clean.
+
+**Committed files**
+
+- `tools/wta/src/protocol/acp/client.rs`
+- `tools/wta/src/protocol/acp/mock_agent_tests.rs`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 45 - Copilot Command Parser and Usage Domain
 

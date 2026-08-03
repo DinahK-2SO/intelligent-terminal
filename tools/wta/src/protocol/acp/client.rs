@@ -1526,6 +1526,40 @@ struct ClientState {
     event_tx: mpsc::UnboundedSender<AppEvent>,
     shell_mgr: Arc<ShellManager>,
     prompt_timing: Arc<PromptTimingState>,
+    provider_probe_capture: ProviderProbeCapture,
+}
+
+#[derive(Default)]
+struct ProviderProbeCapture {
+    active: Mutex<HashMap<String, String>>,
+}
+
+impl ProviderProbeCapture {
+    fn begin(&self, session_id: &str) -> bool {
+        let mut active = self.active.lock().unwrap();
+        if active.contains_key(session_id) {
+            return false;
+        }
+        active.insert(session_id.to_string(), String::new());
+        true
+    }
+
+    fn capture_text(&self, session_id: &str, text: &str) -> bool {
+        let mut active = self.active.lock().unwrap();
+        let Some(output) = active.get_mut(session_id) else {
+            return false;
+        };
+        output.push_str(text);
+        true
+    }
+
+    fn is_active(&self, session_id: &str) -> bool {
+        self.active.lock().unwrap().contains_key(session_id)
+    }
+
+    fn finish(&self, session_id: &str) -> Option<String> {
+        self.active.lock().unwrap().remove(session_id)
+    }
 }
 
 /// Our Client trait implementation — handles incoming agent requests and notifications.
@@ -1638,6 +1672,20 @@ impl WtaClient {
 
     async fn session_notification(&self, args: acp::schema::v1::SessionNotification) -> acp::Result<()> {
         let kind = session_update_kind(&args.update);
+        let sid = args.session_id.0.to_string();
+        if self.state.provider_probe_capture.is_active(&sid) {
+            if let acp::schema::v1::SessionUpdate::AgentMessageChunk(chunk) = &args.update {
+                if let acp::schema::v1::ContentBlock::Text(text_content) = &chunk.content {
+                    self.state
+                        .provider_probe_capture
+                        .capture_text(&sid, &text_content.text);
+                }
+                return Ok(());
+            }
+            if !matches!(args.update, acp::schema::v1::SessionUpdate::UsageUpdate(_)) {
+                return Ok(());
+            }
+        }
         // Per-streamed-chunk; trace-only (not via acp_log's debug) so default
         // debug logs aren't flooded with one line per token chunk.
         tracing::trace!(target: "acp", "session_notification: kind={}", kind);
@@ -1647,7 +1695,6 @@ impl WtaClient {
         if kind != "usage_update" {
             acp_trace_content(&format!("session_notification update: {:?}", args.update));
         }
-        let sid = args.session_id.0.to_string();
         self.state
             .prompt_timing
             .observe_session_update(&sid, kind);
@@ -1907,6 +1954,84 @@ impl WtaClient {
         }
         Ok(())
     }
+}
+
+async fn capture_provider_command(
+    conn: &conn::ClientLink,
+    client: &WtaClient,
+    session_id: &acp::schema::v1::SessionId,
+    command: &'static str,
+) -> Result<String> {
+    const PROVIDER_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+    let session_id_text = session_id.to_string();
+    if !client.state.provider_probe_capture.begin(&session_id_text) {
+        anyhow::bail!("provider probe already active for session");
+    }
+    let result = tokio::time::timeout(
+        PROVIDER_PROBE_TIMEOUT,
+        conn.prompt(acp::schema::v1::PromptRequest::new(
+            session_id.clone(),
+            vec![command.to_string().into()],
+        )),
+    )
+    .await;
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    let output = client
+        .state
+        .provider_probe_capture
+        .finish(&session_id_text)
+        .unwrap_or_default();
+
+    match result {
+        Ok(Ok(_)) => Ok(output),
+        Ok(Err(error)) => anyhow::bail!("{} probe failed: {}", command, error),
+        Err(_) => anyhow::bail!("{} probe timed out", command),
+    }
+}
+
+async fn probe_copilot_usage(
+    conn: &conn::ClientLink,
+    client: &WtaClient,
+    identity: &PromptUsageIdentity,
+    session_id: acp::schema::v1::SessionId,
+) -> Result<Option<crate::usage::UsageSnapshot>> {
+    if identity.family_id.as_deref() != Some(crate::agent_registry::COPILOT_AGENT_ID) {
+        return Ok(None);
+    }
+    let Some(reporter_id) = identity.reporter_id.as_deref() else {
+        return Ok(None);
+    };
+    let Some(adapter) = crate::usage::providers::lookup(crate::agent_registry::COPILOT_AGENT_ID)
+    else {
+        return Ok(None);
+    };
+    if adapter.private_usage_policy()
+        != crate::usage::providers::PrivateUsagePolicy::VerifiedCommandProbe
+        || !adapter.trusted_reporter_ids().contains(&reporter_id)
+    {
+        return Ok(None);
+    }
+
+    let context_output = capture_provider_command(conn, client, &session_id, "/context").await?;
+    let usage_output = capture_provider_command(conn, client, &session_id, "/usage").await?;
+    let context = adapter.extract_private_usage(crate::usage::providers::ProviderUsageRequest {
+        reporter_id: Some(reporter_id),
+        input: crate::usage::providers::ProviderUsageInput::ProviderCommandOutput {
+            command: "/context",
+            text: &context_output,
+        },
+    })?;
+    let usage = adapter.extract_private_usage(crate::usage::providers::ProviderUsageRequest {
+        reporter_id: Some(reporter_id),
+        input: crate::usage::providers::ProviderUsageInput::ProviderCommandOutput {
+            command: "/usage",
+            text: &usage_output,
+        },
+    })?;
+    let mut snapshot = crate::usage::normalize_provider_contribution(context);
+    snapshot.merge(crate::usage::normalize_provider_contribution(usage));
+    Ok(Some(snapshot))
 }
 
 /// The helper-mode ACP client loop. Instead of spawning the agent CLI
@@ -2268,6 +2393,7 @@ pub async fn run_acp_client_over_pipe(
         event_tx: event_tx.clone(),
         shell_mgr: shell_mgr.clone(),
         prompt_timing: prompt_timing.clone(),
+        provider_probe_capture: ProviderProbeCapture::default(),
     });
 
     let client = WtaClient {
@@ -4714,6 +4840,7 @@ mod tests {
                 event_tx: tx,
                 shell_mgr: Arc::new(ShellManager::new()),
                 prompt_timing: Arc::new(super::super::PromptTimingState::default()),
+                provider_probe_capture: super::super::ProviderProbeCapture::default(),
             });
             (WtaClient { state }, rx)
         }

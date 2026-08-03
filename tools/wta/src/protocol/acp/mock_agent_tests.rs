@@ -12,7 +12,10 @@
 //! The constructors are `pub(crate)` so app-module scenarios can borrow the
 //! harness and assert on real `App` state (see the spec, "option 2").
 
-use super::{ClientState, PromptTimingState, WtaClient};
+use super::{
+    probe_copilot_usage, ClientState, PromptTimingState, PromptUsageIdentity,
+    ProviderProbeCapture, WtaClient,
+};
 use super::{
     dispatch_cancel, dispatch_drop_session, dispatch_load_session, dispatch_master_ext_request,
     dispatch_new_session, dispatch_prompt, dispatch_rename_session,
@@ -46,6 +49,10 @@ enum MockBehavior {
     /// Stream the reply in two `AgentMessageChunk`s (`MOCK_` + `OK`), then end
     /// the turn — exercises streaming coalescing.
     StreamTwoChunks,
+    /// Return verified Copilot CLI text for `/context` and `/usage`.
+    CopilotUsageProbe,
+    /// Reject the first Copilot usage command to exercise capture cleanup.
+    CopilotUsageProbeFails,
 }
 
 /// Deterministic ACP agent. Implements only what the scenarios need; the rest
@@ -118,6 +125,9 @@ impl MockAgent {
     async fn prompt(&self, args: acp::schema::v1::PromptRequest) -> acp::Result<acp::schema::v1::PromptResponse> {
         let text = first_text(&args.prompt);
         self.seen_prompts.lock().unwrap().push(text.clone());
+        if matches!(self.behavior, MockBehavior::CopilotUsageProbeFails) {
+            return Err(acp::Error::internal_error().data("mock Copilot probe failure".to_string()));
+        }
         let images: Vec<(String, String)> = args
             .prompt
             .iter()
@@ -256,6 +266,24 @@ impl MockAgent {
                         }
                     });
                 }
+                MockBehavior::CopilotUsageProbe => {
+                    let reply = match text.as_str() {
+                        "/context" => "Context Usage\n\nclaude-sonnet-5 · 30k/264k tokens (11%)",
+                        "/usage" => "Session Usage\n\nRequests: 2 AI Units (53s)\nTokens: input 79.7k, output 16, cached 39.8k",
+                        _ => "UNEXPECTED_PROBE_COMMAND",
+                    };
+                    tokio::task::spawn_local(async move {
+                        let _ = conn
+                            .session_notification(acp::schema::v1::SessionNotification::new(
+                                sid,
+                                acp::schema::v1::SessionUpdate::AgentMessageChunk(
+                                    acp::schema::v1::ContentChunk::new(reply.into()),
+                                ),
+                            ))
+                            .await;
+                    });
+                }
+                MockBehavior::CopilotUsageProbeFails => unreachable!(),
             }
         }
 
@@ -302,6 +330,7 @@ fn connect_with(
         event_tx,
         shell_mgr: Arc::new(ShellManager::new()),
         prompt_timing: Arc::new(PromptTimingState::default()),
+        provider_probe_capture: ProviderProbeCapture::default(),
     });
     let wta = WtaClient { state };
 
@@ -523,6 +552,7 @@ async fn happy_path_chat_round_trip_surfaces_mock_reply() {
 /// the dispatcher threads into prompt assembly. `seen_prompts` is the
 /// agent-side record of every assembled prompt that reached the wire.
 pub(crate) struct DispatchHarness {
+    client: WtaClient,
     pub conn: conn::ClientLink,
     pub event_tx: mpsc::UnboundedSender<AppEvent>,
     pub event_rx: mpsc::UnboundedReceiver<AppEvent>,
@@ -554,6 +584,7 @@ fn connect_for_dispatch(behavior: MockBehavior) -> DispatchHarness {
         event_tx: event_tx.clone(),
         shell_mgr: shell_mgr.clone(),
         prompt_timing: prompt_timing.clone(),
+        provider_probe_capture: ProviderProbeCapture::default(),
     });
     let wta = WtaClient { state };
 
@@ -575,9 +606,10 @@ fn connect_for_dispatch(behavior: MockBehavior) -> DispatchHarness {
         slow_load: slow_load.clone(),
     };
 
-    let client_conn = spawn_mock_pair(wta, mock, &conn_cell);
+    let client_conn = spawn_mock_pair(wta.clone(), mock, &conn_cell);
 
     DispatchHarness {
+        client: wta,
         conn: client_conn,
         event_tx,
         event_rx,
@@ -589,6 +621,116 @@ fn connect_for_dispatch(behavior: MockBehavior) -> DispatchHarness {
         fail_load_session,
         slow_load,
     }
+}
+
+#[tokio::test]
+async fn copilot_usage_probe_captures_commands_without_chat_pollution() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let mut harness = connect_for_dispatch(MockBehavior::CopilotUsageProbe);
+            harness
+                .conn
+                .initialize(acp::schema::v1::InitializeRequest::new(
+                    acp::schema::ProtocolVersion::LATEST,
+                ))
+                .await
+                .expect("initialize failed");
+            let session = harness
+                .conn
+                .new_session(acp::schema::v1::NewSessionRequest::new("/test"))
+                .await
+                .expect("new_session failed");
+            let identity = PromptUsageIdentity {
+                family_id: Some(crate::agent_registry::COPILOT_AGENT_ID.to_string()),
+                reporter_id: Some("Copilot".to_string()),
+            };
+
+            let snapshot = probe_copilot_usage(
+                &harness.conn,
+                &harness.client,
+                &identity,
+                session.session_id,
+            )
+            .await
+            .expect("verified Copilot probe should succeed")
+            .expect("Copilot identity should enable the probe");
+
+            assert_eq!(
+                harness.seen_prompts.lock().unwrap().as_slice(),
+                &["/context".to_string(), "/usage".to_string()]
+            );
+            assert_eq!(snapshot.context.expect("context").used, 30_000);
+            assert_eq!(snapshot.provider_metrics[0].unit_id, "AI Units");
+            while let Ok(event) = harness.event_rx.try_recv() {
+                assert!(
+                    !matches!(event, AppEvent::AgentMessageChunk { .. }),
+                    "probe command output must not enter chat"
+                );
+            }
+        })
+        .await;
+}
+
+#[tokio::test]
+async fn copilot_usage_probe_skips_non_copilot_identity_before_wire_io() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let harness = connect_for_dispatch(MockBehavior::Reply);
+            let identity = PromptUsageIdentity {
+                family_id: Some(crate::agent_registry::CLAUDE_AGENT_ID.to_string()),
+                reporter_id: Some("Copilot".to_string()),
+            };
+
+            let snapshot = probe_copilot_usage(
+                &harness.conn,
+                &harness.client,
+                &identity,
+                acp::schema::v1::SessionId::new("mock-session-1"),
+            )
+            .await
+            .expect("unsupported identity should not fail");
+
+            assert!(snapshot.is_none());
+            assert!(harness.seen_prompts.lock().unwrap().is_empty());
+        })
+        .await;
+}
+
+#[tokio::test]
+async fn copilot_usage_probe_failure_releases_capture_for_later_chat() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let mut harness = connect_for_dispatch(MockBehavior::CopilotUsageProbeFails);
+            let identity = PromptUsageIdentity {
+                family_id: Some(crate::agent_registry::COPILOT_AGENT_ID.to_string()),
+                reporter_id: Some("Copilot".to_string()),
+            };
+            let session_id = acp::schema::v1::SessionId::new("mock-session-1");
+
+            assert!(
+                probe_copilot_usage(&harness.conn, &harness.client, &identity, session_id.clone())
+                    .await
+                    .is_err()
+            );
+            harness
+                .client
+                .dispatch_session_notification(acp::schema::v1::SessionNotification::new(
+                    session_id,
+                    acp::schema::v1::SessionUpdate::AgentMessageChunk(
+                        acp::schema::v1::ContentChunk::new("later chat".into()),
+                    ),
+                ))
+                .await;
+
+            assert!(matches!(
+                harness.event_rx.try_recv(),
+                Ok(AppEvent::AgentMessageChunk { text, .. }) if text == "later chat"
+            ));
+        })
+        .await;
 }
 
 /// Fresh, empty per-tab dispatcher state (session map, single-flight set,
@@ -1549,6 +1691,7 @@ fn bare_client() -> (WtaClient, mpsc::UnboundedReceiver<AppEvent>) {
         event_tx,
         shell_mgr: Arc::new(ShellManager::new()),
         prompt_timing: Arc::new(PromptTimingState::default()),
+        provider_probe_capture: ProviderProbeCapture::default(),
     });
     (WtaClient { state }, event_rx)
 }
