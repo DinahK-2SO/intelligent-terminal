@@ -5,7 +5,9 @@ pub mod providers;
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct UsageSnapshot {
     pub context: Option<UsageContext>,
+    pub context_display: Option<UsageContextDisplay>,
     pub cost: Option<UsageCost>,
+    pub provider_metrics: Vec<UsageProviderMetric>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -14,10 +16,26 @@ pub struct UsageContext {
     pub size: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct UsageContextDisplay {
+    pub used_text: String,
+    pub size_text: String,
+    pub reported_percent: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct UsageProviderMetric {
+    pub metric_id: String,
+    pub value_decimal_text: String,
+    pub limit_decimal_text: Option<String>,
+    pub unit_id: String,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct UsageStaleness {
     pub context: bool,
     pub cost: bool,
+    pub provider_metrics: bool,
 }
 
 impl UsageStaleness {
@@ -28,6 +46,9 @@ impl UsageStaleness {
         if snapshot.cost.is_some() {
             self.cost = false;
         }
+        if !snapshot.provider_metrics.is_empty() {
+            self.provider_metrics = false;
+        }
     }
 
     pub fn mark_present_stale(&mut self, snapshot: &UsageSnapshot) {
@@ -37,6 +58,9 @@ impl UsageStaleness {
         if snapshot.cost.is_some() {
             self.cost = true;
         }
+        if !snapshot.provider_metrics.is_empty() {
+            self.provider_metrics = true;
+        }
     }
 }
 
@@ -44,9 +68,23 @@ impl UsageSnapshot {
     pub fn merge(&mut self, incoming: Self) {
         if incoming.context.is_some() {
             self.context = incoming.context;
+            self.context_display = incoming.context_display;
         }
         if incoming.cost.is_some() {
             self.cost = incoming.cost;
+        }
+        for metric in incoming.provider_metrics {
+            if let Some(existing) = self
+                .provider_metrics
+                .iter_mut()
+                .find(|existing| existing.metric_id == metric.metric_id)
+            {
+                *existing = metric;
+            }
+            else
+            {
+                self.provider_metrics.push(metric);
+            }
         }
     }
 }
@@ -64,10 +102,16 @@ pub struct UsageProjection {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct UsageProjectionItem {
-    pub metric_id: &'static str,
+    pub metric_id: String,
     pub value_decimal_text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit_decimal_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value_display_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit_display_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reported_percent: Option<u64>,
     pub unit_id: String,
     pub scope: &'static str,
     pub source: &'static str,
@@ -82,30 +126,74 @@ impl From<&UsageSnapshot> for UsageProjection {
 
 impl UsageProjection {
     pub fn with_staleness(snapshot: &UsageSnapshot, staleness: UsageStaleness) -> Self {
-        let mut items = Vec::with_capacity(2);
+        let mut items = Vec::with_capacity(2 + snapshot.provider_metrics.len());
         if let Some(context) = &snapshot.context {
             items.push(UsageProjectionItem {
-                metric_id: "acp.context.window",
+                metric_id: "acp.context.window".to_string(),
                 value_decimal_text: context.used.to_string(),
                 limit_decimal_text: Some(context.size.to_string()),
+                value_display_text: snapshot.context_display.as_ref().map(|display| display.used_text.clone()),
+                limit_display_text: snapshot.context_display.as_ref().map(|display| display.size_text.clone()),
+                reported_percent: snapshot.context_display.as_ref().map(|display| display.reported_percent),
                 unit_id: "token".to_string(),
                 scope: "session",
-                source: "acp_standard",
+                source: if snapshot.context_display.is_some() { "provider_reported" } else { "acp_standard" },
                 stale: staleness.context,
             });
         }
         if let Some(cost) = &snapshot.cost {
             items.push(UsageProjectionItem {
-                metric_id: "acp.billing.cost",
+                metric_id: "acp.billing.cost".to_string(),
                 value_decimal_text: cost.amount_decimal_text.clone(),
                 limit_decimal_text: None,
+                value_display_text: None,
+                limit_display_text: None,
+                reported_percent: None,
                 unit_id: cost.currency.clone(),
                 scope: "session",
                 source: "acp_standard",
                 stale: staleness.cost,
             });
         }
+        for metric in &snapshot.provider_metrics {
+            items.push(UsageProjectionItem {
+                metric_id: metric.metric_id.clone(),
+                value_decimal_text: metric.value_decimal_text.clone(),
+                limit_decimal_text: metric.limit_decimal_text.clone(),
+                value_display_text: None,
+                limit_display_text: None,
+                reported_percent: None,
+                unit_id: metric.unit_id.clone(),
+                scope: "session",
+                source: "provider_reported",
+                stale: staleness.provider_metrics,
+            });
+        }
         Self { items }
+    }
+}
+
+pub fn normalize_provider_contribution(contribution: providers::ProviderUsageContribution) -> UsageSnapshot {
+    let (context, context_display) = contribution.context.map_or((None, None), |context| {
+        (
+            Some(UsageContext { used: context.used, size: context.size }),
+            Some(UsageContextDisplay {
+                used_text: context.used_display_text,
+                size_text: context.size_display_text,
+                reported_percent: context.reported_percent,
+            }),
+        )
+    });
+    UsageSnapshot {
+        context,
+        context_display,
+        cost: contribution.cost,
+        provider_metrics: contribution.metrics.into_iter().map(|metric| UsageProviderMetric {
+            metric_id: metric.metric_id,
+            value_decimal_text: metric.value_decimal_text,
+            limit_decimal_text: metric.limit_decimal_text,
+            unit_id: metric.unit_id,
+        }).collect(),
     }
 }
 
@@ -124,7 +212,9 @@ pub fn normalize_standard_usage(update: &acp::schema::v1::UsageUpdate) -> UsageS
             used: update.used,
             size: update.size,
         }),
+        context_display: None,
         cost,
+        provider_metrics: Vec::new(),
     }
 }
 
@@ -177,10 +267,12 @@ mod tests {
                 used: 1_024,
                 size: 8_192,
             }),
+            context_display: None,
             cost: Some(UsageCost {
                 amount_decimal_text: "0.004".to_string(),
                 currency: "USD".to_string(),
             }),
+            provider_metrics: Vec::new(),
         };
 
         let projection = UsageProjection::from(&snapshot);
@@ -197,10 +289,12 @@ mod tests {
 
         snapshot.merge(UsageSnapshot {
             context: None,
+            context_display: None,
             cost: Some(UsageCost {
                 amount_decimal_text: "0.004".to_string(),
                 currency: "USD".to_string(),
             }),
+            provider_metrics: Vec::new(),
         });
 
         assert_eq!(
@@ -211,6 +305,38 @@ mod tests {
             })
         );
         assert_eq!(snapshot.cost.expect("cost").currency, "USD");
+    }
+
+    #[test]
+    fn normalizes_and_projects_provider_context_and_ai_units() {
+        let snapshot = normalize_provider_contribution(providers::ProviderUsageContribution {
+            context: Some(providers::ProviderContextUsage {
+                used: 30_000,
+                size: 264_000,
+                used_display_text: "30k".to_string(),
+                size_display_text: "264k".to_string(),
+                reported_percent: 11,
+            }),
+            metrics: vec![providers::ProviderUsageMetric {
+                metric_id: "github.copilot.ai_units".to_string(),
+                value_decimal_text: "2".to_string(),
+                limit_decimal_text: None,
+                unit_id: "AI Units".to_string(),
+            }],
+            ..Default::default()
+        });
+
+        assert!(snapshot.cost.is_none(), "AI Units are not monetary cost");
+        let projection = UsageProjection::from(&snapshot);
+        assert_eq!(projection.items.len(), 2);
+        assert_eq!(projection.items[0].metric_id, "acp.context.window");
+        assert_eq!(projection.items[0].value_display_text.as_deref(), Some("30k"));
+        assert_eq!(projection.items[0].limit_display_text.as_deref(), Some("264k"));
+        assert_eq!(projection.items[0].reported_percent, Some(11));
+        assert_eq!(projection.items[0].source, "provider_reported");
+        assert_eq!(projection.items[1].metric_id, "github.copilot.ai_units");
+        assert_eq!(projection.items[1].unit_id, "AI Units");
+        assert_eq!(projection.items[1].source, "provider_reported");
     }
 
     #[test]
@@ -275,7 +401,7 @@ mod tests {
 
         assert_eq!(
             providers::lookup("copilot").unwrap().private_usage_policy(),
-            PrivateUsagePolicy::Reserved
+            PrivateUsagePolicy::VerifiedCommandProbe
         );
         assert_eq!(
             providers::lookup("claude").unwrap().private_usage_policy(),
@@ -315,6 +441,9 @@ mod tests {
         ];
 
         for provider in providers::all().iter().copied() {
+            if provider.private_usage_policy() == providers::PrivateUsagePolicy::VerifiedCommandProbe {
+                continue;
+            }
             assert!(
                 provider.trusted_reporter_ids().is_empty(),
                 "{} must not trust a private reporter before wire verification",

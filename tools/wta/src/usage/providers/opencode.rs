@@ -48,10 +48,12 @@ mod tests {
                     used: 6092,
                     size: 271790,
                 }),
+                context_display: None,
                 cost: Some(UsageCost {
                     amount_decimal_text: "0".to_string(),
                     currency: "USD".to_string(),
                 }),
+                provider_metrics: Vec::new(),
             }
         );
         assert_eq!(

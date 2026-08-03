@@ -69,6 +69,7 @@ code it describes.
 | 42. Context percentage and details | Main bar must show a compact percentage while hover/accessibility exposes exact counts | Add exact integer percentage formatting and reuse `PrimaryDisplayItem.fullText` | Complete |
 | 43. Packaged percentage E2E/docs | Deployed UI must show percentage and a detailed real hover tooltip | Update ignored injectors, redeploy, capture hover, and sync final docs | Complete |
 | 44. Copilot command prerequisite/design | Prove local usage commands are non-consuming before special handling | Capture 31 responses, preserve hashes, separate command semantics, and choose helper-owned probes | Complete |
+| 45. Copilot command parser/domain | Verified command text must become provider-neutral Usage without confusing AI Units with currency | Add typed command input, exact identity parser, context display metadata, and provider metrics | Complete |
 
 ## Completed Steps
 
@@ -77,6 +78,49 @@ code it describes.
 > two-turn investigation and team review. Step 27 supersedes Step 23's currency-shape filtering;
 > amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
 > PowerShell installation path.
+
+### Step 45 - Copilot Command Parser and Usage Domain
+
+**RED**
+
+- Added Copilot adapter contracts for exact reporter `Copilot`, versioned `/context` and `/usage`
+  command outputs, lookalike rejection, and fail-closed schema drift.
+- Added a provider-neutral domain contract requiring context display metadata and
+  `github.copilot.ai_units` projection without populating monetary `UsageCost`.
+- Compilation failed because command output, context display fields, provider metrics, and
+  contribution normalization did not exist.
+
+**GREEN**
+
+- Added `ProviderCommandOutput { command, text }` and `VerifiedCommandProbe` to the existing adapter
+  boundary. Other provider modules remain no-op for this input.
+- Copilot adapter now accepts only reporter `Copilot`; custom/lookalike reporters return no private
+  contribution. Known command schema drift returns typed `ProviderUsageError`.
+- `/context` parses the verified top-line ratio/percentage while preserving `30k`/`264k` display
+  text and normalizing counts for provider-neutral state.
+- `/usage` parses only the reported AI Unit/Credit amount and exact unit label. Input/output/cached
+  totals are intentionally ignored. Fractional amounts such as `0.33 AI Credits` retain precision.
+- Extended `UsageSnapshot` merge/staleness/projection with context display metadata and dynamic
+  provider metrics. AI Units project as `github.copilot.ai_units`, source `provider_reported`, not
+  `acp.billing.cost`.
+- Standard ACP snapshots carry no provider display/metrics and retain their existing behavior.
+
+**Validation**
+
+- Copilot parser tests: 3 passed, 0 failed.
+- Provider contribution/projection focused test: 1 passed, 0 failed.
+- Complete usage-focused Rust suite: 26 passed, 0 failed.
+- Editor diagnostics and CRLF-aware patch whitespace check: clean.
+- Removed formatter-only historical churn before finalizing the diff.
+
+**Committed files**
+
+- `tools/wta/src/usage.rs`
+- `tools/wta/src/usage/providers/mod.rs`
+- `tools/wta/src/usage/providers/copilot.rs`
+- `tools/wta/src/usage/providers/opencode.rs`
+- `tools/wta/src/app_tests.rs`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 44 - Copilot Command Prerequisite and Design
 

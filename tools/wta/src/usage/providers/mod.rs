@@ -12,6 +12,8 @@ pub enum PrivateUsagePolicy {
     StandardAcpOnly,
     /// A provider-specific adapter slot exists, but no private schema is trusted yet.
     Reserved,
+    /// A versioned, allowlisted local agent command is a verified usage source.
+    VerifiedCommandProbe,
     /// Provider-specific usage is intentionally excluded from the current product scope.
     OutOfScope,
 }
@@ -30,6 +32,12 @@ pub enum ProviderUsageInput<'a> {
         schema_id: &'a str,
         body: &'a serde_json::Value,
     },
+    /// Human-readable output from an allowlisted local agent command executed
+    /// on the existing ACP session. Provider adapters own its versioned schema.
+    ProviderCommandOutput {
+        command: &'a str,
+        text: &'a str,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -42,6 +50,9 @@ pub struct ProviderUsageRequest<'a> {
 pub struct ProviderContextUsage {
     pub used: u64,
     pub size: u64,
+    pub used_display_text: String,
+    pub size_display_text: String,
+    pub reported_percent: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -125,6 +136,9 @@ pub(super) fn no_verified_private_usage(
         }
         ProviderUsageInput::ProviderApiResponse { schema_id, body } => {
             let _ = (schema_id, body);
+        }
+        ProviderUsageInput::ProviderCommandOutput { command, text } => {
+            let _ = (command, text);
         }
     }
     Ok(ProviderUsageContribution::default())

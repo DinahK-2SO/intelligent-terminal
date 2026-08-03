@@ -7280,7 +7280,9 @@ fn enter_on_wsl_history_row_resumes_inside_distro() {
 fn usage_snapshot() -> crate::usage::UsageSnapshot {
     crate::usage::UsageSnapshot {
         context: Some(crate::usage::UsageContext { used: 20, size: 100 }),
+        context_display: None,
         cost: None,
+        provider_metrics: Vec::new(),
     }
 }
 
@@ -7318,10 +7320,12 @@ fn usage_reported_merges_independent_metrics_for_the_same_session() {
         session_id: "usage-session".to_string(),
         snapshot: crate::usage::UsageSnapshot {
             context: None,
+            context_display: None,
             cost: Some(crate::usage::UsageCost {
                 amount_decimal_text: "0.004".to_string(),
                 currency: "USD".to_string(),
             }),
+            provider_metrics: Vec::new(),
         },
     });
 
@@ -7437,10 +7441,12 @@ fn usage_projection_contains_context_cost_and_explicit_null() {
                 used: 1_024,
                 size: 8_192,
             }),
+            context_display: None,
             cost: Some(crate::usage::UsageCost {
                 amount_decimal_text: "0.004".to_string(),
                 currency: "USD".to_string(),
             }),
+            provider_metrics: Vec::new(),
         }),
         ..Default::default()
     };
@@ -7469,10 +7475,12 @@ fn transport_loss_marks_usage_stale_until_each_metric_is_reported_again() {
         .insert("usage-session".to_string(), DEFAULT_TAB_ID.to_string());
     app.current_tab_mut().usage = Some(crate::usage::UsageSnapshot {
         context: Some(crate::usage::UsageContext { used: 20, size: 100 }),
+        context_display: None,
         cost: Some(crate::usage::UsageCost {
             amount_decimal_text: "0.004".to_string(),
             currency: "USD".to_string(),
         }),
+        provider_metrics: Vec::new(),
     });
 
     app.handle_event(AppEvent::AgentError {
@@ -7485,6 +7493,7 @@ fn transport_loss_marks_usage_stale_until_each_metric_is_reported_again() {
         crate::usage::UsageStaleness {
             context: true,
             cost: true,
+            provider_metrics: false,
         }
     );
 
@@ -7492,7 +7501,9 @@ fn transport_loss_marks_usage_stale_until_each_metric_is_reported_again() {
         session_id: "usage-session".to_string(),
         snapshot: crate::usage::UsageSnapshot {
             context: Some(crate::usage::UsageContext { used: 25, size: 100 }),
+            context_display: None,
             cost: None,
+            provider_metrics: Vec::new(),
         },
     });
     assert_eq!(
@@ -7500,6 +7511,7 @@ fn transport_loss_marks_usage_stale_until_each_metric_is_reported_again() {
         crate::usage::UsageStaleness {
             context: false,
             cost: true,
+            provider_metrics: false,
         }
     );
 }
