@@ -66,6 +66,7 @@ code it describes.
 | 39. Whole Usage group visibility | Turning the toggle off must hide both context tokens and monetary cost | Gate the complete display projection before selecting either metric | Complete |
 | 40. Explicit usage-and-cost contract | Setting, controls, and text must state that both metrics are controlled | Rename to `showTokenUsageAndCost` and “Show token usage and cost” | Complete |
 | 41. Final whole-group E2E/docs | Packaged UI and final design must match the clarified whole-group behavior | Redeploy, verify Off/On cache projection, refresh screenshots, and sync docs | Complete |
+| 42. Context percentage and details | Main bar must show a compact percentage while hover/accessibility exposes exact counts | Add exact integer percentage formatting and reuse `PrimaryDisplayItem.fullText` | Complete |
 
 ## Completed Steps
 
@@ -74,6 +75,46 @@ code it describes.
 > two-turn investigation and team review. Step 27 supersedes Step 23's currency-shape filtering;
 > amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
 > PowerShell installation path.
+
+### Step 42 - Context Percentage and Detailed Hover
+
+**RED**
+
+- Changed the pure AgentUsage contract from `1024 / 8192 tokens` to
+  `Context Window: 13%` in the Bottom Bar.
+- Required `PrimaryDisplayItem.fullText` to contain two-line detail:
+  `Context Window:\n1024 / 8192 tokens (13%)`.
+- Added boundary contracts for half-up whole-percent rounding, below-half rounding,
+  provider-reported values above 100%, zero-size N/A, and maximum-u64 overflow safety.
+- The focused test failed because the implementation still returned the raw ratio as main text.
+
+**GREEN**
+
+- Added a pure context formatter that parses the normalized u64 count text and computes a rounded
+  whole percentage without floating point or overflow-prone `used * 100` multiplication.
+- Percentages are observational and not clamped: provider-reported `101 / 100` displays `101%`.
+- `size == 0` displays `Context Window: N/A`; hover still exposes `1 / 0 tokens (N/A)`.
+- Context detail is stored in the existing `PrimaryDisplayItem.fullText`, so `TerminalPage` reuses
+  the cost path for both Tooltip and Automation HelpText instead of adding another UI mechanism.
+- Added localized `Usage_ContextWindowLabel` and `Usage_Unavailable` resources; the production
+  call passes all display strings into the formatter.
+
+**Validation**
+
+- Focused percentage contract: 1 passed, 0 failed.
+- Focused rounding/capacity/maximum-u64 contract: 1 passed, 0 failed.
+- AgentUsage test class: 19 passed, 0 failed.
+- Terminal App unit-test project build: 0 errors.
+- Usage resource XML/BOM, editor diagnostics, and CRLF-aware patch whitespace checks: clean.
+
+**Committed files**
+
+- `src/cascadia/TerminalApp/AgentUsage.h`
+- `src/cascadia/TerminalApp/AgentUsage.cpp`
+- `src/cascadia/TerminalApp/TerminalPage.cpp`
+- `src/cascadia/TerminalApp/Resources/en-US/Resources.resw`
+- `src/cascadia/ut_app/AgentUsageTests.cpp`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 41 - Final Whole-Group E2E and Documentation
 

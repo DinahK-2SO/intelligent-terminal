@@ -4,6 +4,7 @@
 #include "pch.h"
 #include "AgentUsage.h"
 
+#include <charconv>
 #include <stdexcept>
 
 namespace
@@ -173,9 +174,77 @@ namespace
         return til::u8u16(rounded);
     }
 
+    std::optional<uint64_t> parseContextCount(const std::string_view text)
+    {
+        uint64_t value = 0;
+        const auto result = std::from_chars(text.data(), text.data() + text.size(), value);
+        if (result.ec != std::errc{} || result.ptr != text.data() + text.size())
+        {
+            return std::nullopt;
+        }
+        return value;
+    }
+
+    std::optional<std::wstring> formatContextPercentage(
+        const std::string_view usedText,
+        const std::string_view sizeText)
+    {
+        const auto used = parseContextCount(usedText);
+        const auto size = parseContextCount(sizeText);
+        if (!used || !size || *size == 0)
+        {
+            return std::nullopt;
+        }
+
+        auto whole = *used / *size;
+        const auto remainder = *used % *size;
+
+        // Compute round(100 * remainder / size) without overflowing u64.
+        // Each iteration maintains residual < size and adds one remainder.
+        uint64_t fractional = 0;
+        uint64_t residual = 0;
+        for (size_t i = 0; i < 100; ++i)
+        {
+            if (residual >= *size - remainder)
+            {
+                residual -= *size - remainder;
+                ++fractional;
+            }
+            else
+            {
+                residual += remainder;
+            }
+        }
+        if (residual >= *size - residual)
+        {
+            ++fractional;
+        }
+        if (fractional == 100)
+        {
+            ++whole;
+            fractional = 0;
+        }
+
+        std::string percentage;
+        if (whole == 0)
+        {
+            percentage = std::to_string(fractional);
+        }
+        else
+        {
+            percentage = std::to_string(whole);
+            percentage.push_back(static_cast<char>('0' + fractional / 10));
+            percentage.push_back(static_cast<char>('0' + fractional % 10));
+        }
+        percentage.push_back('%');
+        return til::u8u16(percentage);
+    }
+
     std::vector<TerminalApp::AgentUsage::PrimaryDisplayItem> buildPrimaryDisplayItems(
         const std::vector<TerminalApp::AgentUsage::Item>& items,
-        const std::wstring_view tokensUnit)
+        const std::wstring_view tokensUnit,
+        const std::wstring_view contextWindowLabel,
+        const std::wstring_view unavailableText)
     {
         using namespace TerminalApp::AgentUsage;
 
@@ -191,12 +260,30 @@ namespace
 
             if (item->metricId == "acp.context.window" && item->limitDecimalText)
             {
-                auto text = til::u8u16(item->valueDecimalText);
-                text += L" / ";
-                text += til::u8u16(*item->limitDecimalText);
-                text += L" ";
-                text += tokensUnit;
-                displayItems.emplace_back(PrimaryDisplayItem{ .text = std::move(text) });
+                const auto percentage = formatContextPercentage(
+                    item->valueDecimalText,
+                    *item->limitDecimalText);
+                const auto percentageText = percentage.value_or(std::wstring{ unavailableText });
+
+                std::wstring text{ contextWindowLabel };
+                text += L": ";
+                text += percentageText;
+
+                std::wstring fullText{ contextWindowLabel };
+                fullText += L":\n";
+                fullText += til::u8u16(item->valueDecimalText);
+                fullText += L" / ";
+                fullText += til::u8u16(*item->limitDecimalText);
+                fullText += L" ";
+                fullText += tokensUnit;
+                fullText += L" (";
+                fullText += percentageText;
+                fullText += L")";
+
+                displayItems.emplace_back(PrimaryDisplayItem{
+                    .text = std::move(text),
+                    .fullText = std::move(fullText),
+                });
             }
             else
             {
@@ -280,9 +367,15 @@ namespace TerminalApp::AgentUsage
 
     std::vector<std::wstring> BuildPrimaryDisplayTexts(
         const std::vector<Item>& items,
-        const std::wstring_view tokensUnit)
+        const std::wstring_view tokensUnit,
+        const std::wstring_view contextWindowLabel,
+        const std::wstring_view unavailableText)
     {
-        const auto displayItems = buildPrimaryDisplayItems(items, tokensUnit);
+        const auto displayItems = buildPrimaryDisplayItems(
+            items,
+            tokensUnit,
+            contextWindowLabel,
+            unavailableText);
         std::vector<std::wstring> texts;
         texts.reserve(displayItems.size());
         for (const auto& item : displayItems)
@@ -295,14 +388,20 @@ namespace TerminalApp::AgentUsage
     PrimaryDisplay BuildPrimaryDisplay(
         const std::vector<Item>& items,
         const std::wstring_view tokensUnit,
-        const bool showUsageAndCost)
+        const bool showUsageAndCost,
+        const std::wstring_view contextWindowLabel,
+        const std::wstring_view unavailableText)
     {
         if (!showUsageAndCost)
         {
             return {};
         }
 
-        auto displayItems = buildPrimaryDisplayItems(items, tokensUnit);
+        auto displayItems = buildPrimaryDisplayItems(
+            items,
+            tokensUnit,
+            contextWindowLabel,
+            unavailableText);
         const auto visible = !displayItems.empty();
         return PrimaryDisplay{
             .items = std::move(displayItems),

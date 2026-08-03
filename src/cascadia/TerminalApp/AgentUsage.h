@@ -44,9 +44,13 @@ namespace TerminalApp::AgentUsage
     void UpdateCache(std::vector<Item>& cache, const Json::Value& usage);
     std::vector<std::wstring> BuildPrimaryDisplayTexts(
         const std::vector<Item>& items,
-        std::wstring_view tokensUnit);
+        std::wstring_view tokensUnit,
+        std::wstring_view contextWindowLabel = L"Context Window",
+        std::wstring_view unavailableText = L"N/A");
     PrimaryDisplay BuildPrimaryDisplay(
         const std::vector<Item>& items,
         std::wstring_view tokensUnit,
-        bool showUsageAndCost = true);
+        bool showUsageAndCost = true,
+        std::wstring_view contextWindowLabel = L"Context Window",
+        std::wstring_view unavailableText = L"N/A");
 }

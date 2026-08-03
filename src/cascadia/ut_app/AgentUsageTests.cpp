@@ -41,12 +41,13 @@ namespace TerminalAppUnitTests
         TEST_METHOD(ParseRejectsExcessiveItems);
         TEST_METHOD(UpdateCacheReplacesAndClears);
         TEST_METHOD(UpdateCachePreservesPreviousOnMalformedInput);
-        TEST_METHOD(BuildPrimaryDisplayTextsFormatsContextAndCost);
+        TEST_METHOD(BuildPrimaryDisplayTextsFormatsContextPercentageAndCost);
         TEST_METHOD(BuildPrimaryDisplayTextsIgnoresInputOutput);
         TEST_METHOD(BuildPrimaryDisplayTextsCapsMainBarItems);
         TEST_METHOD(BuildPrimaryDisplayShowsCostWithoutTokens);
         TEST_METHOD(BuildPrimaryDisplayRoundsCostAndPreservesFullText);
         TEST_METHOD(BuildPrimaryDisplayShowsTokensWithoutCost);
+        TEST_METHOD(BuildPrimaryDisplayRoundsContextPercentageAndHandlesInvalidCapacity);
         TEST_METHOD(BuildPrimaryDisplayHidesStaleMetrics);
         TEST_METHOD(BuildPrimaryDisplayHidesInputOutputOnly);
         TEST_METHOD(BuildPrimaryDisplayHidesAfterContainedError);
@@ -160,7 +161,7 @@ namespace TerminalAppUnitTests
         VERIFY_IS_TRUE(cache == before);
     }
 
-    void AgentUsageTests::BuildPrimaryDisplayTextsFormatsContextAndCost()
+    void AgentUsageTests::BuildPrimaryDisplayTextsFormatsContextPercentageAndCost()
     {
         Json::Value usage{ Json::objectValue };
         usage["items"] = Json::Value{ Json::arrayValue };
@@ -169,10 +170,10 @@ namespace TerminalAppUnitTests
 
         const auto texts = TerminalApp::AgentUsage::BuildPrimaryDisplayTexts(
             TerminalApp::AgentUsage::Parse(usage),
-            L"Tokens");
+            L"tokens");
 
         VERIFY_ARE_EQUAL(static_cast<size_t>(2), texts.size());
-        VERIFY_ARE_EQUAL(std::wstring{ L"1024 / 8192 Tokens" }, texts[0]);
+        VERIFY_ARE_EQUAL(std::wstring{ L"Context Window: 13%" }, texts[0]);
         VERIFY_ARE_EQUAL(std::wstring{ L"<0.01 USD" }, texts[1]);
     }
 
@@ -187,10 +188,10 @@ namespace TerminalAppUnitTests
 
         const auto texts = TerminalApp::AgentUsage::BuildPrimaryDisplayTexts(
             TerminalApp::AgentUsage::Parse(usage),
-            L"Tokens");
+            L"tokens");
 
         VERIFY_ARE_EQUAL(static_cast<size_t>(2), texts.size());
-        VERIFY_ARE_EQUAL(std::wstring{ L"1024 / 8192 Tokens" }, texts[0]);
+        VERIFY_ARE_EQUAL(std::wstring{ L"Context Window: 13%" }, texts[0]);
         VERIFY_ARE_EQUAL(std::wstring{ L"<0.01 USD" }, texts[1]);
     }
 
@@ -288,12 +289,40 @@ namespace TerminalAppUnitTests
             },
         };
 
-        const auto display = TerminalApp::AgentUsage::BuildPrimaryDisplay(items, L"Tokens");
+        const auto display = TerminalApp::AgentUsage::BuildPrimaryDisplay(items, L"tokens");
 
         VERIFY_IS_TRUE(display.visible);
         VERIFY_ARE_EQUAL(static_cast<size_t>(1), display.items.size());
-        VERIFY_ARE_EQUAL(std::wstring{ L"1024 / 8192 Tokens" }, display.items[0].text);
-        VERIFY_IS_TRUE(display.items[0].fullText.empty());
+        VERIFY_ARE_EQUAL(std::wstring{ L"Context Window: 13%" }, display.items[0].text);
+        VERIFY_ARE_EQUAL(std::wstring{ L"Context Window:\n1024 / 8192 tokens (13%)" }, display.items[0].fullText);
+    }
+
+    void AgentUsageTests::BuildPrimaryDisplayRoundsContextPercentageAndHandlesInvalidCapacity()
+    {
+        const auto build = [](const std::string& used, const std::string& size) {
+            return TerminalApp::AgentUsage::BuildPrimaryDisplay(
+                { TerminalApp::AgentUsage::Item{
+                    .metricId = "acp.context.window",
+                    .valueDecimalText = used,
+                    .limitDecimalText = size,
+                    .unitId = "token",
+                    .scope = "session",
+                    .source = "acp_standard",
+                } },
+                L"tokens");
+        };
+
+        VERIFY_ARE_EQUAL(std::wstring{ L"Context Window: 43%" }, build("43", "100").items[0].text);
+        VERIFY_ARE_EQUAL(std::wstring{ L"Context Window: 43%" }, build("425", "1000").items[0].text);
+        VERIFY_ARE_EQUAL(std::wstring{ L"Context Window: 42%" }, build("424", "1000").items[0].text);
+        VERIFY_ARE_EQUAL(std::wstring{ L"Context Window: 101%" }, build("101", "100").items[0].text);
+        VERIFY_ARE_EQUAL(
+            std::wstring{ L"Context Window: 1844674407370955161500%" },
+            build("18446744073709551615", "1").items[0].text);
+
+        const auto unavailable = build("1", "0");
+        VERIFY_ARE_EQUAL(std::wstring{ L"Context Window: N/A" }, unavailable.items[0].text);
+        VERIFY_ARE_EQUAL(std::wstring{ L"Context Window:\n1 / 0 tokens (N/A)" }, unavailable.items[0].fullText);
     }
 
     void AgentUsageTests::BuildPrimaryDisplayHidesUsageAndCostWhenDisabled()
