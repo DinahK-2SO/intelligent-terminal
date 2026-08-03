@@ -160,13 +160,9 @@ async fn read_pane_last_message(
     result
 }
 
-/// Best-effort canonical shell executable for a pid — e.g. `pwsh.exe`,
-/// `powershell.exe`, `cmd.exe`, `bash.exe`, `wsl.exe`. Unlike the WT profile
-/// *name* (which the user can rename), this is the actual running process, so
-/// the agent can reliably pick shell syntax. Returns the file name only;
-/// `None` on any failure (or off Windows).
+/// Best-effort absolute process image path for a pid.
 #[cfg(windows)]
-fn process_image_name(pid: u32) -> Option<String> {
+fn process_image_path(pid: u32) -> Option<String> {
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Threading::{
         OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
@@ -196,17 +192,27 @@ fn process_image_name(pid: u32) -> Option<String> {
         if ok == 0 || size == 0 {
             return None;
         }
-        let full = String::from_utf16_lossy(&buf[..size as usize]);
-        full.rsplit(['\\', '/'])
-            .next()
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string())
+        Some(String::from_utf16_lossy(&buf[..size as usize]))
     }
 }
 
 #[cfg(not(windows))]
-fn process_image_name(_pid: u32) -> Option<String> {
+fn process_image_path(_pid: u32) -> Option<String> {
     None
+}
+
+/// Best-effort canonical shell executable for a pid — e.g. `pwsh.exe`,
+/// `powershell.exe`, `cmd.exe`, `bash.exe`, `wsl.exe`. Unlike the WT profile
+/// *name* (which the user can rename), this is the actual running process, so
+/// the agent can reliably pick shell syntax. Returns the file name only;
+/// `None` on any failure (or off Windows).
+fn process_image_name(pid: u32) -> Option<String> {
+    process_image_path(pid).and_then(|full| {
+        full.rsplit(['\\', '/'])
+            .next()
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    })
 }
 
 /// Resolve the shell identity for an active-pane JSON object. The agent gets
@@ -223,7 +229,7 @@ fn process_image_name(_pid: u32) -> Option<String> {
 ///      of which shell is actually drawing the prompt.
 ///   2. Otherwise, the canonical shell exe from the pane's `pid` (covers panes
 ///      without shell integration installed, or before the first prompt).
-fn shell_from_active(active: &serde_json::Value) -> Option<String> {
+pub(super) fn shell_from_active(active: &serde_json::Value) -> Option<String> {
     if let Some(shell) = active
         .get("shell")
         .and_then(|v| v.as_str())
@@ -295,6 +301,7 @@ async fn resolve_pane_by_session_id(
 struct PlannerTerminalContext {
     json: String,
     target_pane_id: String,
+    resolver_invocation: Option<crate::resolve_command::CommandResolverInvocation>,
 }
 
 async fn build_terminal_context(
@@ -334,6 +341,8 @@ async fn build_terminal_context(
     // `cd`, etc.). We use the real process rather than the WT profile name,
     // which the user can rename.
     let target_shell = shell_from_active(&active);
+    let resolver_invocation =
+        command_resolver_invocation(false, target_shell.as_deref(), Some(&active));
 
     tracing::debug!(
         target: "acp.terminal_context",
@@ -363,6 +372,7 @@ async fn build_terminal_context(
     Some(PlannerTerminalContext {
         json,
         target_pane_id,
+        resolver_invocation,
     })
 }
 
@@ -385,6 +395,8 @@ pub(super) struct ResolvedProviderContext {
     pub(super) resolved_fix_pane: Option<String>,
     pub(super) planner_terminal_context: Option<String>,
     pub(super) resolved_planner_pane: Option<String>,
+    pub(super) command_resolver_invocation:
+        Option<crate::resolve_command::CommandResolverInvocation>,
 }
 
 pub(super) async fn resolve_provider_context(
@@ -400,6 +412,7 @@ pub(super) async fn resolve_provider_context(
         resolved_fix_pane: None,
         planner_terminal_context: None,
         resolved_planner_pane: None,
+        command_resolver_invocation: command_resolver_invocation(is_autofix, None, None),
     };
     if !wt_connected {
         return resolved;
@@ -408,6 +421,7 @@ pub(super) async fn resolve_provider_context(
         if let Some(context) = build_terminal_context(shell_mgr, pane_context).await {
             resolved.planner_terminal_context = Some(context.json);
             resolved.resolved_planner_pane = Some(context.target_pane_id);
+            resolved.command_resolver_invocation = context.resolver_invocation;
         }
         return resolved;
     }
@@ -507,6 +521,9 @@ pub(super) struct ContextRequest<'a> {
     pub(super) terminal_output: Option<&'a str>,
     /// Planner only: terminal context assembled with its authoritative target.
     pub(super) planner_terminal_context: Option<&'a str>,
+    /// Planner only: resolver contract derived from the same authoritative pane.
+    pub(super) command_resolver_invocation:
+        Option<&'a crate::resolve_command::CommandResolverInvocation>,
 }
 
 /// One `### {heading}\n{body}` block to inject into the prompt. `heading` is
@@ -555,6 +572,7 @@ pub(super) trait ContextProvider: Send + Sync {
 pub(super) fn default_providers() -> &'static [&'static dyn ContextProvider] {
     &[
         // Planner turns.
+        &CommandResolverProvider,
         &DelegateAgentsProvider,
         &TerminalContextProvider,
         // Autofix turns.
@@ -562,6 +580,81 @@ pub(super) fn default_providers() -> &'static [&'static dyn ContextProvider] {
         &TerminalOutputProvider,
         &CommandNotFoundProvider,
     ]
+}
+
+/// Planner: a deterministic invocation of this WTA installation's local
+/// command resolver through the package execution alias injected into the
+/// agent CLI's PATH.
+struct CommandResolverProvider;
+
+pub(super) fn command_resolver_invocation(
+    is_autofix: bool,
+    planner_shell: Option<&str>,
+    planner_pane: Option<&serde_json::Value>,
+) -> Option<crate::resolve_command::CommandResolverInvocation> {
+    if is_autofix
+        || planner_shell.is_some_and(|shell| !crate::resolve_command::has_applicable_source(shell))
+    {
+        return None;
+    }
+
+    let executable = "wta.exe".to_string();
+    let cwd = planner_pane
+        .and_then(|pane| pane.get("cwd"))
+        .and_then(serde_json::Value::as_str)
+        .filter(|cwd| !cwd.is_empty())
+        .map(str::to_string);
+
+    let mut shell = planner_shell.unwrap_or("unknown").to_string();
+    if crate::command_recall::is_powershell(&shell) && !std::path::Path::new(&shell).is_absolute() {
+        if let Some(path) = planner_pane
+            .and_then(|pane| pane.get("pid"))
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|pid| u32::try_from(pid).ok())
+            .and_then(process_image_path)
+            .filter(|path| crate::command_recall::is_powershell(path))
+        {
+            shell = path;
+        }
+    }
+
+    Some(crate::resolve_command::CommandResolverInvocation::new(
+        executable, shell, cwd,
+    ))
+}
+
+#[async_trait]
+impl ContextProvider for CommandResolverProvider {
+    fn id(&self) -> &'static str {
+        "command_resolver"
+    }
+
+    fn applies(&self, req: &ContextRequest<'_>) -> bool {
+        req.command_resolver_invocation.is_some()
+    }
+
+    async fn provide(&self, req: &ContextRequest<'_>) -> Option<ContextSection> {
+        let invocation = req.command_resolver_invocation?;
+        let contract = serde_json::to_string_pretty(&invocation.contract("<name>")).ok()?;
+        let cwd_instruction = if invocation.cwd().is_some() {
+            "Keep the injected `--cwd` value unchanged so resolution uses the \
+             active pane's working directory. "
+        } else {
+            ""
+        };
+        Some(ContextSection {
+            heading: "Command Resolver Invocation",
+            body: format!(
+                "Replace `<name>` with the command name as one argument. Prefer \
+                 invoking `executable` with each `arguments` entry as a separate \
+                 argv. {}Use `powershell` only when the tool executes a PowerShell \
+                 command string; replace `<name>` inside its existing \
+                 single quotes and double every embedded `'` in the command name.\n\
+                 ```json\n{}\n```",
+                cwd_instruction, contract
+            ),
+        })
+    }
 }
 
 /// Planner: the agents this build can delegate to (`?<prompt>` etc.).
@@ -597,7 +690,7 @@ impl ContextProvider for TerminalContextProvider {
     }
 
     fn applies(&self, req: &ContextRequest<'_>) -> bool {
-        !req.is_autofix && req.wt_connected
+        !req.is_autofix && req.wt_connected && req.planner_terminal_context.is_some()
     }
 
     async fn provide(&self, req: &ContextRequest<'_>) -> Option<ContextSection> {
@@ -894,6 +987,7 @@ mod tests {
             shell_exe: None,
             terminal_output: None,
             planner_terminal_context: None,
+            command_resolver_invocation: None,
         }
     }
 
@@ -927,9 +1021,91 @@ mod tests {
     }
 
     #[test]
+    fn command_resolver_applies_to_supported_planner_shells() {
+        let mgr = ShellManager::new();
+        let pane = serde_json::json!({ "session_id": "pane-1" });
+        for shell in ["pwsh", "powershell.exe", "cmd.exe"] {
+            let invocation = command_resolver_invocation(false, Some(shell), Some(&pane));
+            let req = ContextRequest {
+                command_resolver_invocation: invocation.as_ref(),
+                ..req_planner(&mgr, true)
+            };
+            assert!(CommandResolverProvider.applies(&req), "shell={shell}");
+        }
+
+        let unknown_invocation = command_resolver_invocation(false, None, None);
+        let unknown = ContextRequest {
+            command_resolver_invocation: unknown_invocation.as_ref(),
+            ..req_planner(&mgr, false)
+        };
+        assert!(CommandResolverProvider.applies(&unknown));
+        let wsl_invocation = command_resolver_invocation(false, Some("wsl:Ubuntu"), Some(&pane));
+        let wsl = ContextRequest {
+            command_resolver_invocation: wsl_invocation.as_ref(),
+            ..req_planner(&mgr, true)
+        };
+        assert!(!CommandResolverProvider.applies(&wsl));
+        let autofix_invocation = command_resolver_invocation(true, Some("pwsh"), Some(&pane));
+        let autofix = ContextRequest {
+            is_autofix: true,
+            command_resolver_invocation: autofix_invocation.as_ref(),
+            ..req_planner(&mgr, true)
+        };
+        assert!(!CommandResolverProvider.applies(&autofix));
+    }
+
+    #[test]
+    fn command_resolver_uses_short_wta_execution_alias() {
+        let invocation = command_resolver_invocation(false, Some("cmd.exe"), None).unwrap();
+        let contract = serde_json::to_value(invocation.contract("git")).unwrap();
+
+        assert_eq!(contract["executable"], "wta.exe");
+        assert_eq!(invocation.shell(), "cmd.exe");
+        assert!(invocation.cwd().is_none());
+        assert_eq!(
+            contract["arguments"],
+            serde_json::json!(["resolve-command", "git", "--shell", "cmd.exe", "--json"])
+        );
+        assert_eq!(
+            contract["powershell"],
+            "& 'wta.exe' resolve-command 'git' --shell 'cmd.exe' --json"
+        );
+    }
+
+    #[test]
+    fn command_resolver_binds_active_pane_working_directory() {
+        let pane = serde_json::json!({ "cwd": "C:\\workspace" });
+        let invocation = command_resolver_invocation(false, Some("pwsh.exe"), Some(&pane)).unwrap();
+        let contract = serde_json::to_value(invocation.contract("deploy-it")).unwrap();
+
+        assert_eq!(invocation.cwd(), Some("C:\\workspace"));
+        assert_eq!(
+            contract["arguments"],
+            serde_json::json!([
+                "resolve-command",
+                "deploy-it",
+                "--shell",
+                "pwsh.exe",
+                "--cwd",
+                "C:\\workspace",
+                "--json"
+            ])
+        );
+        assert_eq!(
+            contract["powershell"],
+            "& 'wta.exe' resolve-command 'deploy-it' --shell 'pwsh.exe' \
+             --cwd 'C:\\workspace' --json"
+        );
+    }
+
+    #[test]
     fn terminal_context_requires_planner_and_wt_connection() {
         let mgr = ShellManager::new();
-        assert!(TerminalContextProvider.applies(&req_planner(&mgr, true)));
+        let connected = ContextRequest {
+            planner_terminal_context: Some("{}"),
+            ..req_planner(&mgr, true)
+        };
+        assert!(TerminalContextProvider.applies(&connected));
         assert!(!TerminalContextProvider.applies(&req_planner(&mgr, false)));
     }
 

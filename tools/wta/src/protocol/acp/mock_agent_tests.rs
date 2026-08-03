@@ -2104,6 +2104,58 @@ async fn request_permission_execute_kind_marks_target_as_command() {
         .await;
 }
 
+/// Resolver commands follow the same permission flow as every other execute
+/// request; receiving the event proves no built-in bypass selected an option.
+#[tokio::test]
+async fn request_permission_resolver_uses_normal_permission_flow() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (client, mut rx) = bare_client();
+            let req = acp::schema::v1::RequestPermissionRequest::new(
+                acp::schema::v1::SessionId::new("s1"),
+                acp::schema::v1::ToolCallUpdate::new(
+                    acp::schema::v1::ToolCallId::new("resolver-tool"),
+                    acp::schema::v1::ToolCallUpdateFields::new()
+                        .title("Resolve command")
+                        .kind(acp::schema::v1::ToolKind::Execute)
+                        .raw_input(Some(serde_json::json!({
+                            "command": "wta.exe",
+                            "args": [
+                                "resolve-command",
+                                "git",
+                                "--shell",
+                                "cmd.exe",
+                                "--cwd",
+                                r"C:\workspace",
+                                "--json"
+                            ],
+                        }))),
+                ),
+                vec![acp::schema::v1::PermissionOption::new(
+                    acp::schema::v1::PermissionOptionId::new("allow-once"),
+                    "Allow once",
+                    acp::schema::v1::PermissionOptionKind::AllowOnce,
+                )],
+            );
+            let handle =
+                tokio::task::spawn_local(async move { client.request_permission(req).await });
+
+            let responder = match rx.recv().await {
+                Some(AppEvent::PermissionRequest { responder, .. }) => responder,
+                _ => panic!("expected resolver PermissionRequest"),
+            };
+            responder.send("allow-once".to_string()).unwrap();
+
+            let response = handle.await.unwrap().unwrap();
+            assert!(matches!(
+                response.outcome,
+                acp::schema::v1::RequestPermissionOutcome::Selected(_)
+            ));
+        })
+        .await;
+}
+
 /// `request_permission` surfaces a `PermissionRequest` event and, once the user
 /// picks an option through the responder, returns `Selected(option_id)`.
 #[tokio::test]

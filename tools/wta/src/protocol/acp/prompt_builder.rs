@@ -102,12 +102,10 @@ pub(crate) async fn build_prompt_text(
     );
 
     // ── Shared context resolution ───────────────────────────────────────────
-    // Autofix turns resolve the failing pane, its canonical shell, and its last
-    // output once; the providers below borrow these from the `ContextRequest`.
-    // Planner turns need none of it (their providers query the shell manager
-    // directly). Resolving here also keeps the authoritative target pane
-    // side-output out of the provider chain. The App binds it to the matching
-    // turn context before any recommendation can execute.
+    // Resolve the authoritative planner or autofix pane once. Providers borrow
+    // the resulting terminal context and resolver invocation, while the App
+    // binds the same target pane to the matching turn before recommendations
+    // can execute.
     let resolved_context =
         prompt_context::resolve_provider_context(is_autofix, wt_connected, shell_mgr, pane_context)
             .await;
@@ -125,6 +123,7 @@ pub(crate) async fn build_prompt_text(
         shell_exe: resolved_context.shell_exe.as_deref(),
         terminal_output: resolved_context.terminal_output.as_deref(),
         planner_terminal_context: resolved_context.planner_terminal_context.as_deref(),
+        command_resolver_invocation: resolved_context.command_resolver_invocation.as_ref(),
     };
     for provider in prompt_context::default_providers() {
         if !provider.applies(&context_request) {
@@ -408,6 +407,14 @@ mod tests {
             "planner must ship the delegate-agents section"
         );
         assert!(
+            built_prompt.contains("### Command Resolver Invocation"),
+            "planner must ship the resolver contract"
+        );
+        assert!(
+            built_prompt.contains(r#""executable": "wta.exe""#),
+            "resolver contract must use the short WTA execution alias"
+        );
+        assert!(
             built_prompt.contains("## User Request\nlist files"),
             "planner must append the user text"
         );
@@ -463,7 +470,26 @@ mod tests {
         .await;
 
         assert!(built_prompt.contains("\"activeTarget\":\"submitted-source-pane\""));
+        assert!(built_prompt.contains(r#""C:\\repo""#));
+        assert!(!built_prompt.contains(r#""C:\\other""#));
         assert_eq!(target_pane.as_deref(), Some("submitted-source-pane"));
+    }
+
+    #[tokio::test]
+    async fn build_prompt_text_resolver_uses_active_pane_cwd() {
+        let mgr = shell_mgr_with_pane(serde_json::json!({
+            "session_id": "work-pane",
+            "shell": "cmd.exe",
+            "cwd": "C:\\workspace",
+            "is_agent_pane": false,
+        }));
+
+        let (built_prompt, _source, _display_name, target_pane) =
+            build_prompt_text(8, 0.0, "inspect local-tool", false, true, &mgr, true, None).await;
+
+        assert!(built_prompt.contains(r#""--cwd""#));
+        assert!(built_prompt.contains(r#""C:\\workspace""#));
+        assert_eq!(target_pane.as_deref(), Some("work-pane"));
     }
 
     /// An autofix turn loads the *autofix* persona (not the planner), appends a
