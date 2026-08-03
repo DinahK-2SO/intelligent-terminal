@@ -1,8 +1,8 @@
 # ACP Usage / Cost 调查与统一展示设计
 
-- **状态**：首版实现完成；TDD Step 0-43 与真实provider、本地完整pipeline及packaged Usage E2E验证已完成
+- **状态**：标准Usage首版与TDD Step 0-43已完成；Step 44完成Copilot command probe前置验证与设计，fallback实现待后续TDD步骤
 - **首次调查**：2026-07-17
-- **最后核验**：2026-07-30
+- **最后核验**：2026-08-03
 - **协议基线**：ACP protocol version 1
 - **本仓库依赖**：`agent-client-protocol = 1.2.0`，未启用end-turn token Usage feature
 - **当前开发验证包（固定版本，已落入启动映射）**：
@@ -18,7 +18,7 @@
 2. 单轮 input/output/cache/reasoning token 拆分仍受
   `unstable_end_turn_token_usage` feature 门控。团队最终决定首版不启用或展示这些字段。
 3. ACP 只定义 contract，不强制 agent 一定发送 usage/cost；每个 agent 必须实测。
-4. GitHub Copilot 的 **AI Units**（本机 CLI 1.0.71 用语；较早文档/changelog 使用
+4. GitHub Copilot 的 **AI Units**（本机 CLI 1.0.77 用语；较早文档/changelog 使用
   **AI Credits**）是 provider 专有单位，不是 ISO 4217 货币，ACP 标准 `Cost` 无法直接
   表达。
 5. 最终产品策略为：
@@ -205,7 +205,7 @@ GitHub issue 声称实现支持，就直接在产品中标记为准确费用。
 
 | WTA 内置 `agent_family_id` | 当前启动路径 | 已知 usage 模型 | ACP 证据状态 | 产品处理 |
 |---|---|---|---|---|
-| `copilot` | 原生 `copilot --acp --stdio` | 当前本机 `/usage` 称为 AI Units，同时显示 token breakdown | **本项目已验证 CLI 1.0.71**：只发现模型静态 `_meta.copilotUsage` 倍率和 `/usage` 人类可读文本；未发送标准 `UsageUpdate`、结构化实际 AI Units、cost 或 token usage | 当前不显示动态 usage；不解析 `/usage` 文本，不用倍率推算 |
+| `copilot` | 原生 `copilot --acp --stdio` | `/context`报告context gauge；`/usage`报告AI Units与累计token totals | **本项目已验证 CLI 1.0.77**：两条本地command都只返回人类可读`agent_message_chunk`，不发送标准Usage；重复调用不增加AI Units或tokens | 对内置Copilot做版本化、fail-closed的post-turn command probe；标准ACP一旦出现则停用probe |
 | `claude` | `@agentclientprotocol/claude-agent-acp@0.59.0` adapter | API 用户可看到 token 与估算 USD；订阅用户主要看到 plan usage | 第三方 issue 声称会发送标准 usage/cost；WTA 尚未独立验证 | 必须抓包；按实际收到的标准或白名单扩展处理 |
 | `codex` | `@agentclientprotocol/codex-acp@1.1.2` adapter | API 通常按 token/货币；ChatGPT 订阅走计划限制 | 官方 adapter 声明支持 token usage events；WTA 尚未独立验证 | 必须抓包；注意报告者是 adapter，不一定是 OpenAI 账单 API |
 | `gemini` | 原生 `gemini --acp` | API计费与账户quota分开 | **本项目已验证CLI 0.51.0**：只在private quota提供input/output，不发送标准UsageUpdate或cost | 不做特殊处理；等待标准ACP context/cost |
@@ -259,10 +259,36 @@ WTA 不能采用以下方法：
 - 只读取 `events.jsonl.outputTokens` 后补算其他 token 或费用：数据不完整且不是 ACP
   contract。
 
-因此在 Copilot 1.0.71 上，当前产品规则的结果是：**动态 usage 隐藏**。模型选择器可以
-单独展示 provider 已报告的静态倍率/价格类别，但不能把它标成“本次已使用”。未来如果
-Copilot 增加结构化 ACP extension、标准 `UsageUpdate` 或官方机器接口，再新增白名单
-adapter。
+1.0.71结论已被下面的1.0.77专项实验和manager决策取代；静态model multiplier仍不能用于
+推算本次实际AI Units。
+
+### 2.2.1 Copilot CLI 1.0.77 local command专项实验（2026-08-03）
+
+完整方法、数值表与证据位置见
+[copilot-local-usage-commands-1.0.77.md](per-provider-investigation/result/copilot-local-usage-commands-1.0.77.md)。
+所有实验均通过`copilot --acp --stdio`在同一session内顺序发送prompt，并为每次response保存
+独立JSON；raw wire保留在ignored `test/e2e/artifacts/`，SHA256 manifest与credential guard均通过。
+
+`/usage`实验：正常问题1后为`1 AI Units / input 39.8k / output 8 / cached 0`；正常问题2后为
+`2 AI Units / input 79.7k / output 16 / cached 39.8k`。随后连续15次`/usage`的四个数值完全不变，
+只有elapsed seconds变化。因此当前CLI的`/usage`不消耗AI Units或tokens。
+
+`/context`实验：一次正常问题后，交替发送5次`/context`与5次`/usage`。context始终报告
+`30k/264k tokens (11%)`；每次usage始终为`1 AI Units / input 39.8k / output 11 / cached 17.3k`。
+因此`/context`同样不消耗AI Units或tokens。
+
+两条command语义不同：
+
+- `/context`提供context occupancy/capacity/percentage；输出中的`k`值是provider展示精度，
+  tooltip必须保留`30k / 264k`，不能伪装成精确整数；
+- `/usage`提供session AI Units和累计input/output/cached；累计token totals不是context gauge，
+  本功能不显示或用它们推算context；
+- CLI 1.0.77实际单位是`AI Units`，不是manager口语中的AIC/AI Credits。UI原样显示agent当前
+  报告单位，不重命名、不当作ISO currency。
+
+这满足自动probe的前置条件，但文本仍是versioned CLI UI schema，不是ACP contract。只允许
+内置Copilot family + 精确reporter identity启用；格式漂移时fail closed并保留chat可用性；
+该session一旦收到标准ACP Usage，标准来源优先并停止command probe。
 
 ### 2.3 Claude 的 cost 也不自动等于发票
 
@@ -736,7 +762,7 @@ trait ProviderUsageAdapter: Sync {
 
 | Family module | 当前private policy | 当前行为 |
 |---|---|---|
-| `copilot` | `Reserved` | 为未来结构化AI Units接口保留；不解析`/usage`文本或倍率 |
+| `copilot` | `Reserved` | 当前代码仍no-op；CLI 1.0.77的`/context`与`/usage`schema已验证，下一TDD步骤启用allowlisted command probe；不解析倍率 |
 | `claude` | `StandardAcpOnly` | 仅消费adapter发送的标准`UsageUpdate` |
 | `codex` | `StandardAcpOnly` | 仅消费adapter发送的标准`UsageUpdate` |
 | `gemini` | `StandardAcpOnly` | private quota no-op；未来标准UsageUpdate自动支持 |
@@ -745,7 +771,29 @@ trait ProviderUsageAdapter: Sync {
 Provider API variant只接收由未来独立auth/network组件已经获取的response；adapter自身不得读取
 CLI凭据或发HTTP请求。unknown/custom family不匹配private adapter，仍可使用标准ACP路径。
 
-### 6.1 Agent ID 的唯一来源与跨语言复用
+### 6.1 Copilot post-turn command probe设计
+
+采用helper-owned sequential probe，而不是master probe或Usage层按SessionId反向请求：
+
+1. 正常user/autofix prompt成功结束后，在释放该tab的single-flight之前，helper使用同一ACP
+  connection和SessionId顺序发送`/context`、`/usage`。
+2. `WtaClient`维护短生命周期、按SessionId索引的probe capture。probe期间的command
+  `agent_message_chunk`被收集并从chat事件中抑制；user turn原有streaming与end event不变。
+3. Copilot adapter通过新的typed command-output input解析两个独立schema，产出partial
+  contribution：context gauge与`github.copilot.ai_units` provider metric。
+4. AppEvent、TabSession merge与既有`agent_state_changed.usage` projection继续作为唯一状态/UI
+  route；不新增Copilot专属COM/IDL事件。
+5. probe error、timeout或schema drift只丢弃该次partial contribution并记录无数值的结构化诊断；
+  不把command输出显示到chat，不把刚完成的user turn改成失败。
+6. 每个session记录是否已收到standard ACP Usage。收到后不再发文本probe，避免未来Copilot
+  实现ACP contract后双报和多余command。
+
+选择helper的原因：helper已经拥有tab single-flight、SessionId、effective family/reporter identity
+和AppEvent通道，可在一个控制流内顺序probe、抑制UI chunks、merge Usage。master只负责共享CLI
+和路由；让master解析并回传provider业务结果会建立第二套内部事件/state route。把SessionId传给
+Usage层再反向RPC则倒置依赖，并重复session ownership。
+
+### 6.2 Agent ID 的唯一来源与跨语言复用
 
 > 本节的 `build.rs` registry codegen 尚未实现。当前状态仍是 C++ `BuiltinAcpAgents` 与
 > Rust `KNOWN_AGENTS` 手工重复；下面内容是消除 drift 的目标设计。
@@ -789,7 +837,7 @@ launch command；用户提供的 `custom:*` 即使报告同名 reporter，首版
 和 usage adapter 必须引用生成常量。Rust 构建会在缺少对应 `AgentProfile` 时失败，防止
 C++ UI 已支持但 WTA 后端静默落到 `unknown`。
 
-### 6.2 模块化与现有路径复用
+### 6.3 模块化与现有路径复用
 
 实现必须保持以下单向边界，provider-specific 代码不能进入 store、projection 或 XAML：
 
@@ -1378,7 +1426,8 @@ direct Web API。
 5. C++ Bottom Bar 的右侧`UsageGroup`只显示context-window和monetary cost，最多两个items；
 6. 数值不进日志/遥测；
 7. custom agent 标准 ACP 自动支持；
-8. provider扩展接口保留，但所有private extractor当前no-op；Copilot等待未来标准ACP数据。
+8. provider扩展接口保留；Copilot command schema与非消耗前置条件已验证，但当前代码仍no-op，
+  后续TDD步骤将启用allowlisted fallback probe；标准ACP未来仍优先。
 9. Gemini不做private特殊处理；OpenCode标准UsageUpdate按原currency显示，不修正已知上游bug。
 10. `showTokenUsageAndCost`默认false；FRE与Settings → Agents都可开启。
 11. toggle关闭时整个UsageGroup隐藏；开启时按provider实际报告显示context-window、
@@ -1386,5 +1435,5 @@ direct Web API。
 12. 设置变更立即从当前active tab的cache重投影，不等待下一条provider消息。
 13. context-window主栏使用`Context Window: <percentage>%`；hover/HelpText显示精确counts。
 
-Copilot 1.0.71 因没有结构化动态 usage，首版仍隐藏其 usage。这样可以先验证通用 contract，
-而不为了某一家 provider 引入不稳定文本解析或直接 billing API。
+在Copilot fallback probe完成前，当前代码仍隐藏其动态usage；Step 44只完成了live prerequisite、
+schema证据与架构决策，没有提前把planned行为写成已实现事实。

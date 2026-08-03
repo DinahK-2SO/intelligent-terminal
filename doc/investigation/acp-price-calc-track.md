@@ -68,6 +68,7 @@ code it describes.
 | 41. Final whole-group E2E/docs | Packaged UI and final design must match the clarified whole-group behavior | Redeploy, verify Off/On cache projection, refresh screenshots, and sync docs | Complete |
 | 42. Context percentage and details | Main bar must show a compact percentage while hover/accessibility exposes exact counts | Add exact integer percentage formatting and reuse `PrimaryDisplayItem.fullText` | Complete |
 | 43. Packaged percentage E2E/docs | Deployed UI must show percentage and a detailed real hover tooltip | Update ignored injectors, redeploy, capture hover, and sync final docs | Complete |
+| 44. Copilot command prerequisite/design | Prove local usage commands are non-consuming before special handling | Capture 31 responses, preserve hashes, separate command semantics, and choose helper-owned probes | Complete |
 
 ## Completed Steps
 
@@ -76,6 +77,55 @@ code it describes.
 > two-turn investigation and team review. Step 27 supersedes Step 23's currency-shape filtering;
 > amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
 > PowerShell installation path.
+
+### Step 44 - Copilot Command Prerequisite and Design
+
+**Live verification**
+
+- GitHub Copilot CLI 1.0.77, ACP protocol v1.
+- Experiment A saved 19 turn JSON files in one session: two normal questions, each followed by
+  `/usage`, then fifteen consecutive `/usage` commands.
+- After question 2 and throughout all fifteen repeats, the unique value tuple remained exactly
+  `2 AI Units | input 79700 | output 16 | cached 39800`.
+- Experiment B saved 12 turn JSON files in one session: one normal question, a usage baseline, then
+  five alternating `/context` and `/usage` pairs. Usage remained exactly
+  `1 AI Units | input 39800 | output 11 | cached 17300`; context remained
+  `30k/264k tokens (11%)`.
+- Both experiments used one SessionId each and passed credential-pattern guards. A local ignored
+  SHA256 manifest covers all raw response files.
+
+**Conclusion**
+
+- `/usage` and `/context` did not consume AI Units or tokens in the verified CLI/session behavior,
+  so the feature prerequisite passes.
+- `/usage` does not provide context capacity; `/context` does. Product implementation must combine
+  them and must not reinterpret cumulative input/output/cached totals as context occupancy.
+- Actual unit is `AI Units`; it is provider usage, not monetary ACP cost.
+
+**Design**
+
+- Chose helper-owned sequential post-turn probes on the same SessionId, before releasing per-tab
+  single-flight.
+- Capture/suppress probe chunks in `WtaClient`; parse through the allowlisted Copilot adapter;
+  merge into the existing Usage/AppEvent/projection route.
+- Standard ACP Usage disables the fallback probe per session. Parse/timeout failure is contained to
+  Usage and cannot fail or pollute the completed chat turn.
+- Rejected master-owned parsing because it would require a second normalized-result route back to
+  the helper; rejected Usage-layer SessionId RPC because it reverses ownership dependencies.
+
+**Evidence**
+
+- Tracked summary:
+  `doc/investigation/per-provider-investigation/result/copilot-local-usage-commands-1.0.77.md`
+- Local ignored raw evidence and capture script:
+  - `test/e2e/artifacts/copilot-usage-command/`
+  - `test/e2e/artifacts/copilot-context-command/`
+
+**Committed files**
+
+- `doc/investigation/per-provider-investigation/result/copilot-local-usage-commands-1.0.77.md`
+- `doc/investigation/acp-price-calc.md`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 43 - Packaged Percentage E2E and Documentation
 
