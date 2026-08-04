@@ -1,6 +1,9 @@
 use clap::{Parser, Subcommand};
 
-use crate::{agent_hooks_installer, agent_registry, agent_sessions, resolve_command};
+use crate::{
+    agent_hooks_installer, agent_registry, agent_sessions,
+    agent_tools::command_resolution,
+};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -233,10 +236,10 @@ pub(crate) enum Command {
     /// Identify a command using sources applicable to the active shell
     ResolveCommand {
         /// Command name to identify (without arguments or a path)
-        #[arg(value_parser = resolve_command::parse_non_empty)]
+        #[arg(value_parser = command_resolution::parse_non_empty)]
         token: String,
         /// Active shell identity; PowerShell hosts also load their user profile
-        #[arg(long, default_value = "pwsh.exe", value_parser = resolve_command::parse_non_empty)]
+        #[arg(long, default_value = "pwsh.exe", value_parser = command_resolution::parse_non_empty)]
         shell: String,
         /// Working directory to inspect
         #[arg(long)]
@@ -425,6 +428,19 @@ pub(crate) enum Command {
         /// `session/list`).
         #[arg(long)]
         cli: Option<String>,
+    },
+    /// Submit a typed terminal-action proposal directly to the Helper that
+    /// owns the current turn. Intended to be run by an agent session using
+    /// the exact canonical command injected into its prompt.
+    #[command(hide = true)]
+    ProposeTerminalActions {
+        /// Opaque per-turn channel from the Helper's runtime instruction.
+        #[arg(long)]
+        channel: String,
+        /// Compact versioned proposal JSON. stdin and payload files are
+        /// intentionally unsupported so permission matching has one form.
+        #[arg(long)]
+        payload_json: String,
     },
 }
 

@@ -117,6 +117,10 @@ pub enum AppEvent {
         /// meaningful when `location.is_some()`.
         location_is_command: bool,
     },
+    HideToolCall {
+        session_id: String,
+        id: String,
+    },
     Plan {
         session_id: String,
         entries: Vec<PlanEntry>,
@@ -174,6 +178,20 @@ pub enum AppEvent {
     AliveSessionRemoved(agent_client_protocol::schema::v1::SessionId),
     AliveJoinUpgrade(Vec<(String, Option<String>)>),
     SessionsChanged,
+    DirectTerminalActionProposal {
+        context: crate::agent_tools::action_proposal::channel::ValidationContext,
+        payload: String,
+        responder: tokio::sync::oneshot::Sender<
+            crate::agent_tools::action_proposal::pipe::ProposalValidationDecision,
+        >,
+    },
+    DirectTerminalActionProposalCommit {
+        proposal_id: String,
+    },
+    DirectTerminalActionProposalInvalidate {
+        proposal_id: String,
+        session_id: String,
+    },
     AgentsSnapshotLoaded {
         request_id: u64,
         sessions: Vec<crate::session_registry::SessionInfo>,

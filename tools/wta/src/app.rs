@@ -39,10 +39,7 @@ struct DeferredAcpParams {
     owner_tab_id: Option<String>,
 }
 
-fn agent_command_on_enter(
-    input: &str,
-    selected: Option<&AvailableAgent>,
-) -> Option<ParsedCommand> {
+fn agent_command_on_enter(input: &str, selected: Option<&AvailableAgent>) -> Option<ParsedCommand> {
     commands::agent_id_prefix(input)?;
     Some(ParsedCommand {
         kind: CommandKind::Agent,
@@ -51,13 +48,14 @@ fn agent_command_on_enter(
     })
 }
 
-mod autofix;
 mod attachments;
+mod autofix;
 mod input_edit;
 mod tab_state;
 mod turn_state;
 use autofix::*;
 
+pub use crate::turn_context::TurnContext;
 #[cfg(test)]
 use input_edit::{next_word_boundary, prev_word_boundary, INPUT_HISTORY_MAX_ENTRIES};
 pub(crate) use tab_state::DEFAULT_TAB_ID;
@@ -66,7 +64,6 @@ pub use tab_state::{
     RecommendationFocus, Scroll, TabSession, View,
 };
 pub use turn_state::{AutofixContext, ChunkKind, SubmittedPrompt, TurnOutcome, TurnState};
-pub use crate::turn_context::TurnContext;
 
 // ─── MVP sessions origin filter ────────────────────────────────────────────────────
 //
@@ -108,15 +105,12 @@ pub fn resolve_sessions_origin_filter() -> crate::agent_sessions::OriginFilter {
     }
 }
 
-use crate::commands::{self, CommandKind, ParseOutcome, ParsedCommand};
 pub use crate::app_contracts::{
     AcpModelInfo, AppEvent, AvailableAgent, CheckStatus, DebugDir, DebugMessage, PermOption,
     PlanEntry, PlanEntryStatus, PreflightResult,
 };
-use crate::coordinator::{
-    parse_autofix_response, parse_recommendation_set, recommended_choice_index,
-    AutofixDecision, RecommendationChoice, RecommendationSet,
-};
+use crate::commands::{self, CommandKind, ParseOutcome, ParsedCommand};
+use crate::coordinator::{recommended_choice_index, RecommendationChoice, RecommendationSet};
 use crate::pane_context::PaneContext;
 
 use crate::protocol::acp::client::{
@@ -539,13 +533,19 @@ where
                 .unwrap_or("")
                 .to_string();
             if crate::agent_sessions::is_user_input_tool(&tool_name) {
-                let tool_event = SessionEvent::ToolStarting { key: key.clone(), tool_name };
+                let tool_event = SessionEvent::ToolStarting {
+                    key: key.clone(),
+                    tool_name,
+                };
                 reg.apply(tool_event.clone());
                 hook_sink(tool_event);
-                let message = payload.get("tool_input")
-                    .and_then(|ti| ti.get("question")
+                let message = payload
+                    .get("tool_input")
+                    .and_then(|ti| {
+                        ti.get("question")
                         .or_else(|| ti.get("prompt"))
-                        .or_else(|| ti.get("message")))
+                            .or_else(|| ti.get("message"))
+                    })
                     .and_then(|v| v.as_str())
                     .unwrap_or("waiting for user input")
                     .to_string();
@@ -689,7 +689,7 @@ pub fn classify_wt_event(
                         summary: String::new(),
                         acknowledged: true, // auto-acknowledge so it never shows
                         age_ticks: 100,     // will be auto-dismissed immediately
-                    }
+                    };
                 }
                 _ => WtNotification {
                     severity: WtEventSeverity::Informational,
@@ -993,8 +993,7 @@ pub struct App {
     /// `agent_config_changed` settings event so the configured delegate
     /// agent/model can change without restarting the agent pane. None in
     /// tests / manual runs where no executor is wired.
-    delegate_agents:
-        Option<Arc<std::sync::Mutex<Vec<crate::coordinator::DelegateAgentRuntime>>>>,
+    delegate_agents: Option<Arc<std::sync::Mutex<Vec<crate::coordinator::DelegateAgentRuntime>>>>,
     /// The helper's own `--agent` cmdline. Needed to re-derive the delegate
     /// runtime commandline when only the delegate agent/model change.
     delegate_base_agent_cmd: String,
@@ -1048,6 +1047,8 @@ pub struct App {
     /// the bootstrap RPC hasn't returned yet. Tracked as an Atomic so
     /// the bootstrap task can flip it from a non-`&mut self` context.
     pub alive_loaded: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub proposal_channels:
+        Arc<crate::agent_tools::action_proposal::channel::ProposalChannelManager>,
 }
 
 /// How long the close-pane arm (localized via `system.close_pane_hint`) stays live. Long
@@ -1220,8 +1221,19 @@ impl App {
             transient_hint: None,
             alive: crate::session_registry::InMemoryRegistry::shared(),
             alive_loaded: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            proposal_channels: Arc::new(
+                crate::agent_tools::action_proposal::channel::ProposalChannelManager::new(),
+            ),
             shell_mgr,
         }
+    }
+
+    pub fn set_proposal_channels(
+        &mut self,
+        proposal_channels:
+            Arc<crate::agent_tools::action_proposal::channel::ProposalChannelManager>,
+    ) {
+        self.proposal_channels = proposal_channels;
     }
 
     /// Stash pipe-mode launch parameters on App so that a post-FRE-login
@@ -1387,9 +1399,9 @@ impl App {
                     let recovery_tab_id = owner_tab_opt.clone();
                     let recovery_agent_id = self.current_agent_id.clone();
                     let event_tx_for_pipe = event_tx.clone();
+                    let proposal_channels = Arc::clone(&self.proposal_channels);
                     tokio::task::spawn_local(async move {
-                        if let Err(e) =
-                            crate::protocol::acp::client::run_acp_client_over_pipe(
+                        if let Err(e) = crate::protocol::acp::client::run_acp_client_over_pipe(
                                 pipe_name,
                                 acp_model,
                                 agent_id_opt,
@@ -1410,6 +1422,7 @@ impl App {
                                 shell_mgr,
                                 wt_connected,
                                 post_login_auth, // only true on genuine LoginComplete reconnects
+                            proposal_channels,
                             )
                             .await
                         {
@@ -1624,11 +1637,7 @@ impl App {
                 let source = crate::agent_source::AgentSource::Host;
                 AvailableAgent {
                     id: profile.id.to_string(),
-                    display_name: format!(
-                        "{} — {}",
-                        profile.display_name,
-                        source.display_suffix()
-                    ),
+                    display_name: format!("{} — {}", profile.display_name, source.display_suffix()),
                     source,
                 }
             })
@@ -1647,8 +1656,8 @@ impl App {
         let allowlist_present = self.host_agent_allowlist_present;
         tokio::task::spawn_local(async move {
             let active_pane = shell_mgr.wt_get_active_pane().await.ok();
-            let Some(distro) =
-                crate::agent_source::active_pane_wsl_distro(active_pane.as_ref()).map(str::to_string)
+            let Some(distro) = crate::agent_source::active_pane_wsl_distro(active_pane.as_ref())
+                .map(str::to_string)
             else {
                 let _ = event_tx.send(AppEvent::AgentSourcesDiscovered {
                     generation,
@@ -1661,8 +1670,7 @@ impl App {
             let candidates = crate::agent_registry::KNOWN_AGENTS
                 .iter()
                 .filter(|profile| {
-                    !allowlist_present
-                        || allowed_agent_ids.iter().any(|id| id == profile.id)
+                    !allowlist_present || allowed_agent_ids.iter().any(|id| id == profile.id)
                 })
                 .map(|profile| (profile.id, profile.display_name));
             let wsl_sources = futures::stream::iter(candidates)
@@ -1672,8 +1680,7 @@ impl App {
                         crate::agent_check::wsl_agent_available(&distro, id)
                             .await
                             .then(|| {
-                                let source =
-                                    crate::agent_source::AgentSource::Wsl { distro };
+                                let source = crate::agent_source::AgentSource::Wsl { distro };
                                 AvailableAgent {
                                     id: id.to_string(),
                                     display_name: format!(
@@ -1722,8 +1729,7 @@ impl App {
         }
 
         self.refresh_available_agents();
-        let selected =
-            Self::find_host_agent_for_command(&self.available_agents, arg).cloned();
+        let selected = Self::find_host_agent_for_command(&self.available_agents, arg).cloned();
         match selected {
             Some(agent) => self.apply_agent_pick(agent),
             None => {
@@ -2113,8 +2119,7 @@ impl App {
                 };
                 let msg = match reason {
                     NotResumableReason::LiveWithoutPane => {
-                        t!("system.cannot_focus_session", session_id = s.key.as_str())
-                            .into_owned()
+                        t!("system.cannot_focus_session", session_id = s.key.as_str()).into_owned()
                     }
                     NotResumableReason::LoadSessionNotSupported => {
                         let agent: String = if self.agent_name.is_empty() {
@@ -2361,8 +2366,7 @@ impl App {
                 format!("Resuming {cli_id} session {short_key}...")
             }
         };
-        let launch_commandline =
-            format!("cmd /c echo \x1b[2;37m{banner}\x1b[0m && {commandline}");
+        let launch_commandline = format!("cmd /c echo \x1b[2;37m{banner}\x1b[0m && {commandline}");
         let mut argv = vec![
             "new-tab".to_string(),
             "-c".to_string(),
@@ -2380,7 +2384,8 @@ impl App {
         // second Enter on the same row sees a non-terminal status and
         // skips this branch (idempotent: ResumeDispatched no-ops on live
         // rows). See `agent_sessions::SessionEvent::ResumeDispatched`.
-        let resume_event = crate::agent_sessions::SessionEvent::ResumeDispatched { key: key.clone() };
+        let resume_event =
+            crate::agent_sessions::SessionEvent::ResumeDispatched { key: key.clone() };
         self.agent_sessions.apply(resume_event.clone());
         self.publish_session_hook(resume_event);
         self.dispatch_session_resume_dispatched_rpc(&key);
@@ -2516,15 +2521,22 @@ impl App {
 
         // Mirror dispatch_resume's optimistic state flip so a rapid
         // double press doesn't double-dispatch.
-        let resume_event = crate::agent_sessions::SessionEvent::ResumeDispatched { key: key.clone() };
+        let resume_event =
+            crate::agent_sessions::SessionEvent::ResumeDispatched { key: key.clone() };
         self.agent_sessions.apply(resume_event.clone());
         self.publish_session_hook(resume_event);
         self.dispatch_session_resume_dispatched_rpc(&key);
 
         let mut params = serde_json::Map::new();
-        params.insert("session_id".to_string(), serde_json::Value::String(key.clone()));
+        params.insert(
+            "session_id".to_string(),
+            serde_json::Value::String(key.clone()),
+        );
         if !cwd_string.is_empty() {
-            params.insert("cwd".to_string(), serde_json::Value::String(cwd_string.clone()));
+            params.insert(
+                "cwd".to_string(),
+                serde_json::Value::String(cwd_string.clone()),
+            );
         }
         let evt = serde_json::json!({
             "type": "event",
@@ -2771,8 +2783,9 @@ impl App {
             .and_then(|sid| rows.iter().position(|row| row.key == sid.0.as_ref()))
             .unwrap_or_else(|| old_selected.min(rows.len() - 1));
         tab.agents_list_state.select(Some(idx));
-        tab.agents_view.focused_sid =
-            Some(agent_client_protocol::schema::v1::SessionId::new(rows[idx].key.clone()));
+        tab.agents_view.focused_sid = Some(agent_client_protocol::schema::v1::SessionId::new(
+            rows[idx].key.clone(),
+        ));
     }
 
     fn update_agents_focus_for_tab(&mut self, tab_id: &str) {
@@ -3071,7 +3084,10 @@ impl App {
                         "login failed"
                     );
                 }
-                tracing::info!("login: spawn_blocking returned, sending LoginComplete success={}", success);
+                tracing::info!(
+                    "login: spawn_blocking returned, sending LoginComplete success={}",
+                    success
+                );
                 let send_result = tx.send(AppEvent::LoginComplete {
                     agent_id: id,
                     success,
@@ -3518,6 +3534,7 @@ impl App {
             AppEvent::TimingMetric { .. } => "timing_metric",
             AppEvent::ToolCall { .. } => "tool_call",
             AppEvent::ToolCallUpdate { .. } => "tool_call_update",
+            AppEvent::HideToolCall { .. } => "hide_tool_call",
             AppEvent::Plan { .. } => "plan",
             AppEvent::PermissionRequest { .. } => "permission_request",
             AppEvent::SystemMessage(_) => "system_message",
@@ -3540,6 +3557,13 @@ impl App {
             AppEvent::AgentsSnapshotFailed { .. } => "agents_snapshot_failed",
             AppEvent::RegisterBornBoundSession { .. } => "register_born_bound_session",
             AppEvent::MasterMutationCompleted { .. } => "master_mutation_completed",
+            AppEvent::DirectTerminalActionProposal { .. } => "direct_terminal_action_proposal",
+            AppEvent::DirectTerminalActionProposalCommit { .. } => {
+                "direct_terminal_action_proposal_commit"
+            }
+            AppEvent::DirectTerminalActionProposalInvalidate { .. } => {
+                "direct_terminal_action_proposal_invalidate"
+            }
             AppEvent::RevealTick => "reveal_tick",
         }
     }
@@ -3611,9 +3635,7 @@ impl App {
                     CheckStatus::Failed(t!("agent.status.not_found").into_owned())
                 },
                 cli_path: agent_status.cli_path.clone(),
-                auth_status: CheckStatus::Failed(
-                    t!("system.authentication_failed").into_owned(),
-                ),
+                auth_status: CheckStatus::Failed(t!("system.authentication_failed").into_owned()),
                 install_hint: profile.install_hint.to_string(),
                 install_url: String::new(),
                 auth_hint: profile.auth_hint.to_string(),
@@ -3624,11 +3646,9 @@ impl App {
             options,
             title: t!("setup.title.sign_in").into_owned(),
             subtitle: if profile.id == "copilot" {
-                t!("setup.subtitle.copilot_auth", agent = profile.display_name)
-                    .into_owned()
+                t!("setup.subtitle.copilot_auth", agent = profile.display_name).into_owned()
             } else {
-                t!("setup.subtitle.agent_auth", agent = profile.display_name)
-                    .into_owned()
+                t!("setup.subtitle.agent_auth", agent = profile.display_name).into_owned()
             },
         });
         let tab = self.current_tab_mut();
@@ -3676,7 +3696,8 @@ impl App {
         };
         tokio::task::spawn_local(async move {
             let tab_for_result = target_tab.clone();
-            let result = tokio::task::spawn_blocking(crate::win32::read_paste_string_from_clipboard).await;
+            let result =
+                tokio::task::spawn_blocking(crate::win32::read_paste_string_from_clipboard).await;
             let event = match result {
                 Ok(Ok(text)) => AppEvent::AgentPasteTextReady {
                     tab_id: tab_for_result,
@@ -3699,7 +3720,10 @@ impl App {
     }
 
     fn agent_paste_target_tab<'a>(&self, params: &'a serde_json::Value) -> Option<&'a str> {
-        let target_window = params.get("window_id").and_then(|v| v.as_str()).unwrap_or("");
+        let target_window = params
+            .get("window_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         let target_tab = params.get("tab_id").and_then(|v| v.as_str()).unwrap_or("");
         let our_window = self.window_id.as_deref().unwrap_or("");
         let owner_tab = self.owner_tab_id.as_deref().unwrap_or("");
@@ -3794,14 +3818,12 @@ impl App {
             "inserted pasted text into agent input"
         );
     }
-
 }
 
 #[path = "app_events.rs"]
 mod app_events;
 
 impl App {
-
     fn event_requires_redraw(&self, event: &AppEvent) -> bool {
         match event {
             AppEvent::Tick => self.has_activity_indicator() || self.show_notification_banner,
@@ -3860,14 +3882,12 @@ impl App {
             tab.reveal_chars = (tab.reveal_chars + step).min(len);
         }
     }
-
 }
 
 #[path = "app_keys.rs"]
 mod app_keys;
 
 impl App {
-
     fn scroll_to_bottom(&mut self) {
         self.current_tab_mut().scroll_to_bottom();
     }
@@ -4072,9 +4092,7 @@ impl App {
         } else {
             commands::agent_id_prefix(&self.current_tab().input)
         };
-        self.available_agents
-            .iter()
-            .filter(move |agent| {
+        self.available_agents.iter().filter(move |agent| {
                 prefix.is_some_and(|prefix| {
                     agent
                         .id
@@ -4120,7 +4138,10 @@ impl App {
         }
         let prefix = commands::agent_id_prefix(&tab.input)?;
         let candidate = self.selected_agent_command_candidate()?;
-        candidate.id.get(prefix.len()..).filter(|suffix| !suffix.is_empty())
+        candidate
+            .id
+            .get(prefix.len()..)
+            .filter(|suffix| !suffix.is_empty())
     }
 
     /// Per-frame state for the `/model` picker modal, or `None` when it's not
@@ -4270,7 +4291,9 @@ impl App {
     /// down (reuses the existing `connection.lost` string).
     fn push_degraded_command_hint(&mut self) {
         let msg = t!("connection.lost").into_owned();
-        self.current_tab_mut().messages.push(ChatMessage::System(msg));
+        self.current_tab_mut()
+            .messages
+            .push(ChatMessage::System(msg));
     }
 
     /// Dispatch a parsed slash-command. The Enter handler is responsible
@@ -4355,9 +4378,8 @@ impl App {
     fn cmd_new(&mut self, in_flight: bool) {
         if in_flight {
             let tab = self.current_tab_mut();
-            tab.messages.push(ChatMessage::System(
-                t!("system.busy_use_stop").into_owned(),
-            ));
+            tab.messages
+                .push(ChatMessage::System(t!("system.busy_use_stop").into_owned()));
             tab.scroll_to_bottom();
             return;
         }
@@ -4365,9 +4387,7 @@ impl App {
             .tab_id
             .clone()
             .unwrap_or_else(|| DEFAULT_TAB_ID.to_string());
-        let _ = self
-            .new_session_tx
-            .send(NewSessionForTab {
+        let _ = self.new_session_tx.send(NewSessionForTab {
                 tab_id,
                 cwd: self.source_cwd.clone(),
             });
@@ -4478,7 +4498,11 @@ impl App {
         let key = self
             .tab_sessions
             .get(&preferred_key)
-            .filter(|tab| tab.turn.prompt().is_some_and(|prompt| prompt.id == prompt_id))
+            .filter(|tab| {
+                tab.turn
+                    .prompt()
+                    .is_some_and(|prompt| prompt.id == prompt_id)
+            })
             .map(|_| preferred_key)
             .or_else(|| {
                 self.tab_sessions.iter().find_map(|(key, tab)| {
@@ -4491,7 +4515,10 @@ impl App {
         let Some(key) = key else {
             return;
         };
-        let tab = self.tab_sessions.get_mut(&key).expect("resolved tab exists");
+        let tab = self
+            .tab_sessions
+            .get_mut(&key)
+            .expect("resolved tab exists");
         let Some(prompt) = tab.turn.prompt_mut() else {
             return;
         };
@@ -5036,7 +5063,6 @@ impl App {
         let _ = cmd.spawn();
     }
 
-
     /// Ask WT to tear down this agent pane. Wired to the second tap of the
     /// double-Ctrl+C close sequence. WT closes the Pane, which causes its
     /// ConPty to SIGKILL us — so the natural side effect of pane teardown
@@ -5067,7 +5093,6 @@ impl App {
         tracing::info!(target: "close_pane", "double-Ctrl+C → asking WT to close agent pane");
         send_wt_protocol_event(evt.to_string());
     }
-
 
     /// Recompute the chip-target override for the tab and, if it changed
     /// since the last emit, publish a `set_agent_chip_target` event so the
@@ -5364,7 +5389,6 @@ fn build_switch_agent_event(
     })
     .to_string()
 }
-
 
 /// Tell WT which pane in `tab_id` should display the blue "Agent" chip.
 /// `pane_session_id = None` releases the override and lets the C++ side

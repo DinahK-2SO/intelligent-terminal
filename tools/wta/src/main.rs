@@ -3,6 +3,7 @@ extern crate rust_i18n;
 
 mod agent_check;
 mod agent_hooks_installer;
+mod agent_tools;
 mod agent_pane_origin;
 mod agent_registry;
 mod agent_sessions;
@@ -26,7 +27,6 @@ mod master;
 mod osc52;
 mod pane_context;
 mod protocol;
-mod resolve_command;
 mod rtl;
 mod runtime_paths;
 mod session_history;

@@ -38,34 +38,32 @@ impl App {
                 self.text_selection.clear();
                 self.handle_key(key);
             }
-            AppEvent::Mouse(mouse) => {
-                match mouse.kind {
-                    crossterm::event::MouseEventKind::ScrollUp
-                    | crossterm::event::MouseEventKind::ScrollDown
-                        if self.mode == AppMode::Chat
-                            && self.current_tab().current_view == View::Chat =>
-                    {
-                        self.text_selection.clear();
-                        let lines = if mouse.modifiers.contains(KeyModifiers::ALT) {
-                            1
-                        } else {
-                            3
-                        };
-                        match mouse.kind {
-                            crossterm::event::MouseEventKind::ScrollUp => {
-                                self.current_tab_mut().chat_scroll.by(lines);
-                            }
-                            crossterm::event::MouseEventKind::ScrollDown => {
-                                self.current_tab_mut().chat_scroll.by(-lines);
-                            }
-                            _ => {}
+            AppEvent::Mouse(mouse) => match mouse.kind {
+                crossterm::event::MouseEventKind::ScrollUp
+                | crossterm::event::MouseEventKind::ScrollDown
+                    if self.mode == AppMode::Chat
+                        && self.current_tab().current_view == View::Chat =>
+                {
+                    self.text_selection.clear();
+                    let lines = if mouse.modifiers.contains(KeyModifiers::ALT) {
+                        1
+                    } else {
+                        3
+                    };
+                    match mouse.kind {
+                        crossterm::event::MouseEventKind::ScrollUp => {
+                            self.current_tab_mut().chat_scroll.by(lines);
                         }
-                    }
-                    _ => {
-                        self.text_selection.handle_mouse(mouse);
+                        crossterm::event::MouseEventKind::ScrollDown => {
+                            self.current_tab_mut().chat_scroll.by(-lines);
+                        }
+                        _ => {}
                     }
                 }
-            }
+                _ => {
+                    self.text_selection.handle_mouse(mouse);
+                }
+            },
             AppEvent::AgentPasteTextReady {
                 tab_id,
                 generation,
@@ -173,6 +171,8 @@ impl App {
                 // A live connection cancels the degraded latch (e.g. the
                 // post-sign-in reconnect that goes back through master).
                 self.transport_lost = false;
+                self.proposal_channels
+                    .set_agent_transport_available(true);
                 self.preflight_setup_active = false;
                 // If we were in Setup (e.g. after Retry), transition to Chat
                 if self.mode == AppMode::Setup {
@@ -313,6 +313,7 @@ impl App {
                 tab.pending_user_replay.clear();
                 tab.timing_note = None;
                 tab.turn = TurnState::Idle;
+                tab.active_direct_proposal_id = None;
                 tab.messages.push(ChatMessage::Error(message));
                 tab.scroll_to_bottom();
             }
@@ -377,6 +378,8 @@ impl App {
                     crate::protocol::acp::failure::AgentFailure::TransportLost
                 ) {
                     self.transport_lost = true;
+                    self.proposal_channels
+                        .set_agent_transport_available(false);
                 }
 
                 let is_auth_error = failure.is_auth();
@@ -618,16 +621,8 @@ impl App {
                 tab.pending_agent_response.push_str(&text);
 
                 // Append to the streaming buffer. The state machine drops
-                // late chunks and handles the stale-autofix generation check
-                // before returning whether the buffer actually grew.
-                let advanced = self.turn_observe_chunk(&session_id, ChunkKind::Message, &text);
-
-                // Surface the card the moment the streamed JSON parses,
-                // instead of waiting for AgentMessageEnd (gated behind
-                // Copilot's Stop/SessionEnd hooks, ~8s on Windows).
-                if advanced {
-                    self.turn_try_eager_surface(&session_id);
-                }
+                // late chunks and handles the stale-autofix generation check.
+                self.turn_observe_chunk(&session_id, ChunkKind::Message, &text);
             }
             AppEvent::UserMessageReplayChunk { session_id, text } => {
                 // Replayed historical user prompt from a `session/load`
@@ -725,6 +720,13 @@ impl App {
                         }
                     }
                 }
+            }
+            AppEvent::HideToolCall { session_id, id } => {
+                let tab = self.session_tab_mut(&session_id);
+                tab.tool_calls.remove(&id);
+                tab.messages.retain(
+                    |message| !matches!(message, ChatMessage::ToolCall { id: message_id, .. } if message_id == &id),
+                );
             }
             AppEvent::Plan {
                 session_id,
@@ -971,6 +973,28 @@ impl App {
             AppEvent::SessionsChanged => {
                 self.schedule_agents_refetch_for_open_views();
             }
+            AppEvent::DirectTerminalActionProposal {
+                context,
+                payload,
+                responder,
+            } => {
+                let decision = self.evaluate_direct_terminal_action_proposal(&context, &payload);
+                let _ = responder.send(decision);
+            }
+            AppEvent::DirectTerminalActionProposalCommit { proposal_id } => {
+                if !self.commit_terminal_action_proposal(&proposal_id) {
+                    self.proposal_channels.resolve_final(
+                        &proposal_id,
+                        crate::agent_tools::action_proposal::channel::ProposalFinalStatus::Cancelled,
+                    );
+                }
+            }
+            AppEvent::DirectTerminalActionProposalInvalidate {
+                proposal_id,
+                session_id,
+            } => {
+                self.invalidate_terminal_action_proposal(&proposal_id, &session_id);
+            }
             AppEvent::AgentsSnapshotLoaded {
                 request_id,
                 sessions,
@@ -984,9 +1008,7 @@ impl App {
                 if self
                     .master_request_tx
                     .send(
-                        crate::protocol::acp::client::MasterExtRequest::SessionBornBound {
-                            event,
-                        },
+                        crate::protocol::acp::client::MasterExtRequest::SessionBornBound { event },
                     )
                     .is_err()
                 {
@@ -1072,10 +1094,7 @@ impl App {
                 if method == "agent_prompt" {
                     // Command palette `?<prompt>` delegation. Not a WT
                     // notification — has nothing to do with banner/queue.
-                    let prompt = params
-                        .get("prompt")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
+                    let prompt = params.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
                     tracing::info!(target: "autofix", prompt_len = prompt.len(), "agent_prompt: delegating");
                     if !prompt.is_empty() {
                         self.delegate_to_tab_agent(prompt);
@@ -1097,9 +1116,7 @@ impl App {
                     // — all in place, with NO agent-pane teardown/restart.
                     // (Agent *identity* changes go through a master respawn
                     // on the C++ side, not this event.)
-                    if let Some(enabled) =
-                        params.get("autofix_enabled").and_then(|v| v.as_bool())
-                    {
+                    if let Some(enabled) = params.get("autofix_enabled").and_then(|v| v.as_bool()) {
                         tracing::info!(
                             target: "autofix",
                             old = self.autofix_enabled,
@@ -1532,9 +1549,7 @@ impl App {
                             // Capture the key BEFORE PaneClosed clears
                             // the pane→key binding, so the log can report
                             // which row was demoted.
-                            let key_before = self
-                                .agent_sessions
-                                .key_for_pane(&pane_id);
+                            let key_before = self.agent_sessions.key_for_pane(&pane_id);
                             let event = crate::agent_sessions::SessionEvent::PaneClosed {
                                 pane_session_id: pane_id.clone(),
                             };
@@ -1613,7 +1628,8 @@ impl App {
                     // keeps working for its original shell-pane use
                     // case without nuking agent panes.
                     let origin = self.agent_sessions.origin_for_pane(&pane_id);
-                    let is_shell_agent = matches!(origin, Some(crate::agent_sessions::SessionOrigin::Unknown));
+                    let is_shell_agent =
+                        matches!(origin, Some(crate::agent_sessions::SessionOrigin::Unknown));
                     if seq == "osc:133;A" && is_shell_agent {
                         tracing::info!(
                             target: "agent_session_registry",
@@ -1637,14 +1653,10 @@ impl App {
                 // this helper's concern. Drop notifications whose tab_id
                 // doesn't match our owner_tab_id; empty/missing tab_id falls
                 // through (no per-tab scope).
-                if let (Some(event_tab), Some(self_tab)) = (
-                    notification.tab_id.as_deref(),
-                    self.owner_tab_id.as_deref(),
-                ) {
-                    if !event_tab.is_empty()
-                        && !self_tab.is_empty()
-                        && event_tab != self_tab
-                    {
+                if let (Some(event_tab), Some(self_tab)) =
+                    (notification.tab_id.as_deref(), self.owner_tab_id.as_deref())
+                {
+                    if !event_tab.is_empty() && !self_tab.is_empty() && event_tab != self_tab {
                         // Per-cross-tab-event (very high volume in multi-tab
                         // windows) — trace-only.
                         tracing::trace!(
@@ -1668,11 +1680,7 @@ impl App {
                         WtEventSeverity::Informational => None,
                     };
                     if let Some(severity_str) = severity_str {
-                        crate::telemetry::log_error_detected(
-                            severity_str,
-                            &method,
-                            &pane_id,
-                        );
+                        crate::telemetry::log_error_detected(severity_str, &method, &pane_id);
                     }
                 }
 
@@ -1734,9 +1742,8 @@ impl App {
                                         .trigger_echo_pane
                                         .clone();
                                     if echo.as_deref() == Some(pane_id.as_str()) {
-                                        self.tab_mut(&t.to_string())
-                                            .autofix
-                                            .trigger_echo_pane = None;
+                                        self.tab_mut(&t.to_string()).autofix.trigger_echo_pane =
+                                            None;
                                         false
                                     } else {
                                         true
@@ -1762,11 +1769,8 @@ impl App {
                                 // command exited cleanly — the user's problem resolved.
                                 // Elapsed is monotonic (`Instant::elapsed`) from arm to
                                 // clean exit, not wall-clock.
-                                if let Some(armed) = self
-                                    .tab_mut(&target_tab)
-                                    .autofix
-                                    .armed_at
-                                    .take()
+                                if let Some(armed) =
+                                    self.tab_mut(&target_tab).autofix.armed_at.take()
                                 {
                                     let elapsed_ms = armed.elapsed().as_secs_f64() * 1000.0;
                                     crate::telemetry::log_error_fix_resolved(
@@ -1943,8 +1947,16 @@ impl App {
                     }
                 }
             }
-            AppEvent::LoginComplete { success, error, agent_id } => {
-                tracing::info!("LoginComplete received: success={} deferred_acp={}", success, self.deferred_acp.is_some());
+            AppEvent::LoginComplete {
+                success,
+                error,
+                agent_id,
+            } => {
+                tracing::info!(
+                    "LoginComplete received: success={} deferred_acp={}",
+                    success,
+                    self.deferred_acp.is_some()
+                );
                 // Ignore stale/late completions: only act on a completion that
                 // matches the currently active auth attempt. After the user
                 // escapes the auth screen (auth = None) or switches agents, a
@@ -1975,7 +1987,10 @@ impl App {
                     // try_start_acp can spawn a new ACP client.
                     if self.deferred_acp.is_none() {
                         let new_cmd = self.build_agent_cmd(&agent_id);
-                        tracing::info!("LoginComplete: creating deferred_acp for reconnect cmd={}", new_cmd);
+                        tracing::info!(
+                            "LoginComplete: creating deferred_acp for reconnect cmd={}",
+                            new_cmd
+                        );
                         self.deferred_acp = Some(DeferredAcpParams {
                             agent_cmd: new_cmd,
                             acp_model: None,

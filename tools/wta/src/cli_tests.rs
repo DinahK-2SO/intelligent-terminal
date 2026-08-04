@@ -421,6 +421,46 @@ fn wsl_agent_probe_script_prints_command_v_resolution() {
     );
 }
 
+#[test]
+fn propose_terminal_actions_cli_parses_channel_and_inline_payload() {
+    let cli = Cli::try_parse_from([
+        "wta",
+        "propose-terminal-actions",
+        "--channel",
+        "v1.0123456789abcdef0123456789abcdef.abcdef0123456789abcdef0123456789",
+        "--payload-json",
+        r#"{"schema_version":1}"#,
+    ])
+    .expect("propose-terminal-actions flags must parse");
+
+    match cli.command {
+        Some(Command::ProposeTerminalActions {
+            channel,
+            payload_json,
+        }) => {
+            assert_eq!(
+                channel,
+                "v1.0123456789abcdef0123456789abcdef.abcdef0123456789abcdef0123456789"
+            );
+            assert_eq!(payload_json, r#"{"schema_version":1}"#);
+        }
+        other => panic!("expected ProposeTerminalActions command, got {other:?}"),
+    }
+}
+
+#[test]
+fn propose_terminal_actions_cli_requires_channel_and_payload() {
+    Cli::try_parse_from(["wta", "propose-terminal-actions"])
+        .expect_err("channel and payload are required");
+    Cli::try_parse_from([
+        "wta",
+        "propose-terminal-actions",
+        "--channel",
+        "channel-only",
+    ])
+    .expect_err("payload is required");
+}
+
 // `wta delegate`'s own launch checks (explicit `--delegate-source`, never
 // auto-routed) are covered by the module-private tests in `cli/delegate.rs`,
 // alongside its `parse_delegate_source` / `select_wsl_delegate_cwd` coverage.

@@ -1,3 +1,4 @@
+pub(crate) mod agent_tools;
 pub(crate) mod args;
 pub(crate) mod delegate;
 pub(crate) mod hooks;
@@ -27,14 +28,12 @@ pub(crate) async fn run(command: Command, json_mode: bool) -> Result<()> {
         | Command::SetEnv { .. }
         | Command::Listen { .. }) => wt::run(command, json_mode).await,
         Command::ResolveCommand { token, shell, cwd } => {
-            let result = crate::resolve_command::resolve(&token, &shell, cwd.as_deref()).await;
-            if json_mode {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                println!("{}", crate::resolve_command::format_human(&result));
-            }
-            Ok(())
+            agent_tools::run_command_resolution(&token, &shell, cwd.as_deref(), json_mode).await
         }
+        Command::ProposeTerminalActions {
+            channel,
+            payload_json,
+        } => agent_tools::run_action_proposal(channel, payload_json).await,
         Command::Delegate {
             prompt,
             agent,

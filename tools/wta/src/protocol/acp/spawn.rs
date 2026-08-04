@@ -186,9 +186,7 @@ impl AgentSpawn {
     /// Human-readable agent label for error messages. Prefers the npx
     /// adapter package id when present.
     pub fn label(&self) -> &str {
-        self.adapter_package
-            .as_deref()
-            .unwrap_or(&self.raw_program)
+        self.adapter_package.as_deref().unwrap_or(&self.raw_program)
     }
 }
 
@@ -220,7 +218,11 @@ pub(crate) fn spawn_agent_process(agent_cmd: &str, cwd: Option<&Path>) -> Result
         None
     };
 
-    let program = if needs_cmd { "cmd" } else { resolved_program.as_str() };
+    let program = if needs_cmd {
+        "cmd"
+    } else {
+        resolved_program.as_str()
+    };
     let mut cmd = tokio::process::Command::new(program);
     if needs_cmd {
         cmd.arg("/c").arg(&resolved_program);
@@ -259,6 +261,7 @@ pub(crate) fn spawn_agent_process(agent_cmd: &str, cwd: Option<&Path>) -> Result
             );
         }
     }
+    cmd.env("WTA_CLI_PATH", wta_cli_directory()?.join("wta.exe"));
 
     // Tell the agent CLI's hook scripts (`send-event.ps1`, inherited via the
     // CLI → node → powershell process chain) where to write their diagnostic
@@ -411,9 +414,7 @@ fn spawn_wsl_agent_process(agent_cmd: &str, distro: &str) -> Result<AgentSpawn> 
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
 
-    let child = command
-        .spawn()
-        .map_err(|error| {
+    let child = command.spawn().map_err(|error| {
             anyhow!(
                 "failed to spawn agent '{}' in WSL distro '{}': {}",
                 agent_cmd,
@@ -592,17 +593,11 @@ mod tests {
         let line = "a".repeat(STARTUP_STDERR_MAX_CHARS_PER_LINE + 1);
         let truncated = truncate_stderr_line(&line);
 
-        assert_eq!(
-            truncated.chars().count(),
-            STARTUP_STDERR_MAX_CHARS_PER_LINE
-        );
+        assert_eq!(truncated.chars().count(), STARTUP_STDERR_MAX_CHARS_PER_LINE);
         assert!(truncated.ends_with("..."));
         assert_eq!(
             truncated,
-            format!(
-                "{}...",
-                "a".repeat(STARTUP_STDERR_MAX_CHARS_PER_LINE - 3)
-            )
+            format!("{}...", "a".repeat(STARTUP_STDERR_MAX_CHARS_PER_LINE - 3))
         );
     }
 
@@ -611,16 +606,10 @@ mod tests {
         let line = "界".repeat(STARTUP_STDERR_MAX_CHARS_PER_LINE + 1);
         let truncated = truncate_stderr_line(&line);
 
-        assert_eq!(
-            truncated.chars().count(),
-            STARTUP_STDERR_MAX_CHARS_PER_LINE
-        );
+        assert_eq!(truncated.chars().count(), STARTUP_STDERR_MAX_CHARS_PER_LINE);
         assert_eq!(
             truncated,
-            format!(
-                "{}...",
-                "界".repeat(STARTUP_STDERR_MAX_CHARS_PER_LINE - 3)
-            )
+            format!("{}...", "界".repeat(STARTUP_STDERR_MAX_CHARS_PER_LINE - 3))
         );
     }
 
