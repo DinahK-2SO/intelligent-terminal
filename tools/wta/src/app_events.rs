@@ -156,8 +156,13 @@ impl App {
                 self.agent_model = model;
                 self.agent_version = version;
                 self.session_id = session_id.clone();
-                self.available_models = available_models.clone();
-                self.current_model_id = current_model_id.clone();
+                let (available_models, current_model_id) = self
+                    .session_model_configs
+                    .entry(session_id.clone())
+                    .or_insert((available_models, current_model_id))
+                    .clone();
+                self.available_models = available_models;
+                self.current_model_id = current_model_id;
                 self.agent_supports_load_session = load_session_supported;
                 self.agent_supports_image = image_supported;
                 self.state = ConnectionState::Connected;
@@ -214,6 +219,19 @@ impl App {
                 available_models,
                 current_model_id,
             } => {
+                let is_active_tab = self.active_tab_key() == tab_id;
+                let replaced_session_ids: Vec<String> = self
+                    .session_to_tab
+                    .iter()
+                    .filter(|(known_session_id, known_tab_id)| {
+                        *known_tab_id == &tab_id && *known_session_id != &session_id
+                    })
+                    .map(|(known_session_id, _)| known_session_id.clone())
+                    .collect();
+                for replaced_session_id in replaced_session_ids {
+                    self.session_to_tab.remove(&replaced_session_id);
+                    self.session_model_configs.remove(&replaced_session_id);
+                }
                 self.session_to_tab
                     .insert(session_id.clone(), tab_id.clone());
                 let tab = self.tab_mut(&tab_id);
@@ -245,10 +263,13 @@ impl App {
                 // this session in the future. For now we keep
                 // App.available_models pointing at the active session's
                 // models so the existing settings UI stays correct.
-                if !available_models.is_empty() {
+                let (available_models, current_model_id) = self
+                    .session_model_configs
+                    .entry(session_id.clone())
+                    .or_insert((available_models, current_model_id))
+                    .clone();
+                if is_active_tab {
                     self.available_models = available_models;
-                }
-                if current_model_id.is_some() {
                     self.current_model_id = current_model_id;
                 }
                 // Keep freshly-created sessions on the effective model for
@@ -264,6 +285,21 @@ impl App {
                     }
                 }
                 self.publish_agent_status();
+            }
+            AppEvent::ModelConfigUpdated {
+                session_id,
+                available_models,
+                current_model_id,
+            } => {
+                self.session_model_configs.insert(
+                    session_id.clone(),
+                    (available_models.clone(), current_model_id.clone()),
+                );
+                if self.current_tab().session_id.as_deref() == Some(session_id.as_str()) {
+                    self.available_models = available_models;
+                    self.current_model_id = current_model_id;
+                    self.publish_agent_status();
+                }
             }
             AppEvent::TabError { tab_id, message } => {
                 // Scoped error for a specific tab. Bypasses the global
@@ -1295,7 +1331,6 @@ impl App {
                         tab.clear_chat_history();
                         tab.completed_turns.clear();
                         tab.selected_completed_turn_idx = None;
-                        tab.session_id = None;
                         // Open the replay window: chunk handlers will
                         // now accept session/update events for this
                         // tab even though `turn` stays Idle. Closed by

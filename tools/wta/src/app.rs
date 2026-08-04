@@ -872,6 +872,9 @@ pub struct App {
     /// `agent_status` event so the settings UI can render a dropdown.
     pub available_models: Vec<AcpModelInfo>,
     pub current_model_id: Option<String>,
+    /// Latest ACP model config for each session. Notifications can race ahead
+    /// of the event that attaches their session to a tab.
+    session_model_configs: HashMap<String, (Vec<AcpModelInfo>, Option<String>)>,
     pub prompt_name: Option<String>,
     pub session_id: String,
     #[allow(dead_code)]
@@ -1163,6 +1166,7 @@ impl App {
             agent_version: None,
             available_models: Vec::new(),
             current_model_id: None,
+            session_model_configs: HashMap::new(),
             prompt_name: None,
             session_id: String::new(),
             wt_connected,
@@ -3495,6 +3499,7 @@ impl App {
             AppEvent::ConnectionStage(_) => "connection_stage",
             AppEvent::AgentConnected { .. } => "agent_connected",
             AppEvent::SessionAttached { .. } => "session_attached",
+            AppEvent::ModelConfigUpdated { .. } => "model_config_updated",
             AppEvent::TabError { .. } => "tab_error",
             AppEvent::TabSystemMessage { .. } => "tab_system_message",
             AppEvent::AgentPasteTextReady { .. } => "agent_paste_text_ready",
@@ -4366,6 +4371,9 @@ impl App {
                 tab_id,
                 cwd: self.source_cwd.clone(),
             });
+        if let Some(session_id) = self.current_tab().session_id.clone() {
+            self.session_model_configs.remove(&session_id);
+        }
         let tab = self.current_tab_mut();
         tab.clear_chat_history();
         tab.completed_turns.clear();
@@ -4547,6 +4555,7 @@ impl App {
     fn cmd_restart(&mut self) {
         self.state = ConnectionState::Connecting("Restarting agent...".to_string());
         self.session_to_tab.clear();
+        self.session_model_configs.clear();
         self.session_id.clear();
         for (_, tab) in self.tab_sessions.iter_mut() {
             tab.clear_chat_history();
@@ -4706,6 +4715,16 @@ impl App {
         );
         self.tab_id = Some(new_tab_id);
 
+        let (models, current) = self
+            .current_tab()
+            .session_id
+            .as_deref()
+            .and_then(|session_id| self.session_model_configs.get(session_id))
+            .cloned()
+            .unwrap_or_default();
+        self.available_models = models;
+        self.current_model_id = current;
+
         // The new active tab's `current_view` (and autofix bar) is now
         // authoritative for the shared C++ agent pane. Re-emit so the bar
         // title and bottom-bar highlight match the tab we just switched to;
@@ -4739,6 +4758,9 @@ impl App {
             return;
         }
         let removed = self.tab_sessions.remove(closed_tab_id);
+        if let Some(session_id) = removed.as_ref().and_then(|tab| tab.session_id.as_ref()) {
+            self.session_model_configs.remove(session_id);
+        }
         self.session_to_tab.retain(|_, tab| tab != closed_tab_id);
 
         // Tell the ACP client to release the binding for this tab so
@@ -4941,15 +4963,19 @@ impl App {
     /// next tab_changed back into this tab finds an empty-but-present
     /// `TabSession` and just renders an empty chat.
     fn reset_tab_session_for(&mut self, tab_id: &str) {
+        let mut removed_session_id = None;
         // Same wipe as the `/clear` slash command: clear in-flight chat state
         // via `clear_chat_history` AND the completed-turn history that
         // `clear_chat_history` deliberately leaves alone.
         if let Some(tab) = self.tab_sessions.get_mut(tab_id) {
+            removed_session_id = tab.session_id.take();
             tab.clear_chat_history();
             tab.completed_turns.clear();
             tab.selected_completed_turn_idx = None;
             tab.scroll_to_bottom();
-            tab.session_id = None;
+        }
+        if let Some(session_id) = removed_session_id {
+            self.session_model_configs.remove(&session_id);
         }
 
         // Prune the reverse SessionId → tab routing so late ACP chunks for
