@@ -1,6 +1,6 @@
 # ACP Usage / Cost 调查与统一展示设计
 
-- **状态**：标准Usage首版与Copilot command-only try-get fallback均已完成；Step 60禁止使用user-folder ledger作为产品计费source
+- **状态**：标准Usage首版与Copilot command-only try-get fallback均已完成；Step 61将用户可见文案统一为unit-neutral session cost
 - **首次调查**：2026-07-17
 - **最后核验**：2026-08-04
 - **协议基线**：ACP protocol version 1
@@ -37,9 +37,9 @@
   boundary 加一次 release 降级：失败则隐藏 Usage，不影响聊天主流程。
 10. 首版继续支持Gemini CLI的聊天能力，但不解析其private quota，因为它没有遵守本功能采用
   的标准ACP UsageUpdate contract。若未来Gemini发送标准context/cost，通用路径自动生效。
-11. Context-window usage与billing information默认都隐藏。用户可在首次启动FRE或
-  Settings → Agents开启`showTokenUsageAndCost`；billing可能是reported monetary cost或
-  non-currency credits，且任一数据都可能缺失。该设置不停止Usage接收/缓存。
+11. Context-window usage与session cost默认都隐藏。用户可在首次启动FRE或
+  Settings → Agents开启`showTokenUsageAndCost`；两项数据都可能缺失。该设置不停止Usage
+  接收/缓存。用户可见文案不指定session cost的单位或结算类型。
 12. 内置Copilot只在同一ACP session顺序try-get `/context`与`/usage`，并抑制两条command输出。
   `/usage`只有在直接报告可识别的AI Unit/Credit单位且数值`> 0`时才产生billing item；`<= 0`、
   格式漂移或未知单位均不显示billing。不得读取user-folder logs、checkpoint或ledger补值。
@@ -1317,13 +1317,14 @@ Step 5 已在 Rust projection 中实现该 transport shape。最终产品selecto
   `UsageGroup`；
 - XAML：在 Bottom Bar Column 2 增加右对齐的动态 usage presenter。
 
-#### Context and billing usage visibility
+#### Context usage and session cost visibility
 
-- FRE与Settings使用相同的source-neutral文案：标题`Show context usage and billing`；说明
-  `When available, show context-window usage and reported cost or credits in the terminal bottom bar.`。
-  “when available”表示context与billing任一项都可能缺失，并不表示remaining context；
-  “reported”不承诺数值来自provider
-  billing API，也不承诺cost是最终发票金额。
+- FRE与Settings使用相同的source-neutral、unit-neutral文案：标题
+  `Show context usage and session cost`；说明
+  `When available, show context-window usage and session cost in the terminal bottom bar.`。
+  “when available”表示context与session cost任一项都可能缺失；“session cost”不承诺具体
+  单位、结算类型或来源。内部transport仍使用`display_kind=context|billing`，避免copy改动影响
+  provider-neutral projection contract。
 - 全局设置键为`showTokenUsageAndCost`，默认`false`。关闭时整个`UsageGroup`隐藏，
   `display_kind=context|billing`都不渲染。
 - 关闭只影响C++ display projection。Rust state、`agent_state_changed`传输和per-tab C++ cache
@@ -1492,7 +1493,7 @@ ACP 没有“重新查询当前 session usage”的标准 request。Master/agent
 9. Gemini不做private特殊处理；OpenCode标准UsageUpdate按原currency显示，不修正已知上游bug。
 10. `showTokenUsageAndCost`默认false；FRE与Settings → Agents都可开启。
 11. toggle关闭时整个UsageGroup隐藏；开启时按agent实际报告显示可用的context-window与
-  billing information；billing可以是monetary cost或non-currency credits，任一项都可能缺失。
+  session cost，任一项都可能缺失；用户可见文案不指定session cost的单位或结算类型。
 12. 设置变更立即从当前active tab的cache重投影，不等待下一条provider消息。
 13. context-window主栏使用`Context Window: <percentage>%`；hover/HelpText显示精确counts。
 14. Copilot `/context`保留provider display strings/reported percentage；`/usage`只接受CLI直接

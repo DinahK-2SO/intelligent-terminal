@@ -86,6 +86,7 @@ code it describes.
 | 58. Final Usage copy and localization | Copy must not overstate data provenance or availability, and every bundled locale must contain the complete Usage UI vocabulary | Finalize source-neutral copy, localize five strings, and enforce locale parity with Pester | Complete |
 | 59. PR review convergence | Malformed cross-process Usage must not terminate the UI, and spelling fixtures must not block review | Add one C++ containment boundary and preserve test semantics with review-safe fixtures | Complete |
 | 60. Official-source-only Copilot billing | Product billing must not read unsupported user-folder logs; unavailable or nonpositive command values must stay hidden | Delete the local ledger path and restore positive-only `/usage` try-get | Complete |
+| 61. Neutral session-cost UI copy | FRE and Settings must describe optional context usage and cost without naming billing or a unit | Replace both visible strings and translator guidance across every existing locale | Complete |
 
 ## Completed Steps
 
@@ -97,7 +98,55 @@ code it describes.
 > those entries remain as an audit trail of the incorrect assumption and its correction. **Step 56
 > supersedes Step 42's zero-size N/A and over-capacity display policy. Step 58 supersedes Step 57's
 > interim visible copy while retaining its provider-neutral UI architecture. Step 60 supersedes
-> Steps 50-53's user-folder checkpoint implementation; those steps remain investigation history.**
+> Steps 50-53's user-folder checkpoint implementation; those steps remain investigation history.
+> Step 61 supersedes Step 58's visible toggle wording while retaining its locale coverage and
+> internal provider-neutral billing projection.**
+
+### Step 61 - Neutral Session-Cost UI Copy
+
+**Product decision**
+
+- FRE and Settings use the exact shared English title `Show context usage and session cost` and
+  description `When available, show context-window usage and session cost in the terminal bottom bar.`
+- `session cost` is intentionally unit-neutral. Visible copy and translator guidance do not name a
+  payment unit or provider behavior; either context usage or session cost may be unavailable.
+- Internal identifiers remain stable: `showTokenUsageAndCost`, the existing resource keys, and
+  `display_kind=context|billing` do not change. This is a copy/localization step, not a transport or
+  rendering contract migration.
+
+**RED**
+
+- Changed the existing Pester localization contract first to require the final title/description
+  and reject `billing`, `credits`, `monetary`, `provider`, and `token usage` in the English copy.
+- Focused RED executed five tests: four locale-integrity tests passed and the English-copy test
+  failed at the old title `Show context usage and billing`.
+
+**GREEN**
+
+- Updated the two FRE resources in all dynamically discovered 89 TerminalApp locales and the two
+  Settings resources in all 16 existing Settings locales.
+- Localized the final wording in all 85 real non-source locales, kept `en-US`/`en-GB` aligned, and
+  retained English fallback text in the three pseudo-locales.
+- Replaced the old billing-specific translator comments with generic session-cost guidance that
+  names no unit. The three already-localized Bottom Bar Usage keys were left byte-for-byte unchanged.
+- Reused an ignored XML-aware localization workflow, including reviewed regional/script corrections;
+  the generator, review data, and updater remain local and uncommitted under `test/e2e/artifacts/`.
+
+**Validation**
+
+- Focused `UsageLocalization.Unit.Tests.ps1`: 5 passed, 0 failed.
+- Complete Unit-tagged e2e selftests under the PATH-resolved PowerShell 7.6.4 host: 20 passed,
+  0 failed, 19 not selected by the Unit filter.
+- Resource scope is exactly 89 TerminalApp plus 16 Settings files, with only the two target
+  serialized lines replaced in each file.
+- All 105 files parse as XML, retain exactly one UTF-8 BOM, define each target key once, keep
+  shared-locale FRE/Settings copy identical, and contain no English fallback in real non-English locales.
+
+**Publish/dev split**
+
+- Publish cherry-pick commit `5e13434b9` contains the 105 resource files only.
+- The Pester localization contract and both investigation documents remain in a separate dev-only
+  commit because the publish branch excludes that test and `doc/`.
 
 ### Step 60 - Official-Source-Only Copilot Billing
 

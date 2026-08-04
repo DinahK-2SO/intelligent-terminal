@@ -30,9 +30,9 @@ Describe 'Usage localization resources' -Tag 'Unit' {
         $title = Get-ResourceValue $english 'FreOverlay_ShowTokenUsageAndCostLabel.Text'
         $description = Get-ResourceValue $english 'FreOverlay_ShowTokenUsageAndCostDescription.Text'
 
-        $title | Should -Be 'Show context usage and billing'
-        $description | Should -Be 'When available, show context-window usage and reported cost or credits in the terminal bottom bar.'
-        "$title $description" | Should -Not -Match '(?i)provider|monetary|token usage'
+        $title | Should -Be 'Show context usage and session cost'
+        $description | Should -Be 'When available, show context-window usage and session cost in the terminal bottom bar.'
+        "$title $description" | Should -Not -Match '(?i)provider|monetary|billing|credits|token usage'
     }
 
     It 'defines every usage key exactly once in every TerminalApp locale with a UTF-8 BOM' {
