@@ -2853,8 +2853,8 @@
   <data name="AIAgents_AutoFix.HelpText" xml:space="preserve">
     <value>Quando habilitado, o agente de IA analisa automaticamente os comandos com falha e propõe uma correção. Quando desabilitado, os comandos com falha exibem uma dica clicável na barra de status — pressione Ctrl+Alt+. ou clique na dica para solicitar uma correção.</value>
   </data>
-  <data name="AIAgents_ShowTokenUsageAndCost.Header" xml:space="preserve"><value>Mostrar uso de tokens e custo</value><comment>Header for the setting that controls whether context-window token usage and monetary cost appear in the terminal bottom bar.</comment></data>
-  <data name="AIAgents_ShowTokenUsageAndCost.HelpText" xml:space="preserve"><value>Mostra o uso de tokens da janela de contexto e o custo monetário na barra inferior do terminal.</value><comment>Supplementary description for the token usage and cost visibility setting.</comment></data>
+  <data name="AIAgents_ShowTokenUsageAndCost.Header" xml:space="preserve"><value>Mostrar uso e cobrança</value><comment>Header for the setting that controls whether context-window usage and provider-reported cost or credits appear in the terminal bottom bar.</comment></data>
+  <data name="AIAgents_ShowTokenUsageAndCost.HelpText" xml:space="preserve"><value>Mostrar o uso da janela de contexto e o custo ou os créditos informados pelo provedor na barra inferior do terminal.</value><comment>Supplementary description for the usage and billing visibility setting.</comment></data>
   <data name="AIAgents_PanePosition.Header" xml:space="preserve">
     <value>Posição do painel</value>
   </data>

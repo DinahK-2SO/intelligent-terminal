@@ -1086,8 +1086,8 @@
     <value>Durch Aktivieren werden Integrations-hooks installiert, um Sitzungen über Ihre Agenten hinweg zu verfolgen.</value>
     <comment>{Locked="hooks"}</comment>
   </data>
-  <data name="FreOverlay_ShowTokenUsageAndCostLabel.Text" xml:space="preserve"><value>Tokennutzung und Kosten anzeigen</value><comment>Header for the first-run setting that controls whether context-window token usage and monetary cost appear in the terminal bottom bar.</comment></data>
-  <data name="FreOverlay_ShowTokenUsageAndCostDescription.Text" xml:space="preserve"><value>Zeigt die Tokennutzung des Kontextfensters und die monetären Kosten in der unteren Leiste des Terminals an.</value><comment>Description for the token usage and cost visibility toggle in the first-run wizard.</comment></data>
+  <data name="FreOverlay_ShowTokenUsageAndCostLabel.Text" xml:space="preserve"><value>Nutzung und Abrechnung anzeigen</value><comment>Header for the first-run setting that controls whether context-window usage and provider-reported cost or credits appear in the terminal bottom bar.</comment></data>
+  <data name="FreOverlay_ShowTokenUsageAndCostDescription.Text" xml:space="preserve"><value>Nutzung des Kontextfensters und vom Anbieter gemeldete Kosten oder Guthaben in der unteren Leiste des Terminals anzeigen.</value><comment>Description for the usage and billing visibility toggle in the first-run wizard.</comment></data>
   <data name="FreOverlay_PanePositionLabel.Text" xml:space="preserve">
     <value>Bereichsposition</value>
   </data>

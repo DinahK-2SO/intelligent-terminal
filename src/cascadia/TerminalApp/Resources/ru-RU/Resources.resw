@@ -1112,8 +1112,8 @@ In this context, "agent" refers to an AI agent (e.g. Copilot, Claude, Gemini), n
     <value>Включение этой функции установит интеграционные hooks для отслеживания сеансов во всех ваших агентах.</value>
     <comment>{Locked="hooks"} In this context, "agent" refers to an AI agent (e.g. Copilot, Claude, Gemini), not a human agent or representative.</comment>
   </data>
-  <data name="FreOverlay_ShowTokenUsageAndCostLabel.Text" xml:space="preserve"><value>Показывать использование токенов и стоимость</value><comment>Header for the first-run setting that controls whether context-window token usage and monetary cost appear in the terminal bottom bar.</comment></data>
-  <data name="FreOverlay_ShowTokenUsageAndCostDescription.Text" xml:space="preserve"><value>Показывает использование токенов контекстного окна и денежную стоимость на нижней панели терминала.</value><comment>Description for the token usage and cost visibility toggle in the first-run wizard.</comment></data>
+  <data name="FreOverlay_ShowTokenUsageAndCostLabel.Text" xml:space="preserve"><value>Показывать сведения об использовании и оплате</value><comment>Header for the first-run setting that controls whether context-window usage and provider-reported cost or credits appear in the terminal bottom bar.</comment></data>
+  <data name="FreOverlay_ShowTokenUsageAndCostDescription.Text" xml:space="preserve"><value>Показывать использование контекстного окна и стоимость или кредиты, указанные поставщиком, на нижней панели терминала.</value><comment>Description for the usage and billing visibility toggle in the first-run wizard.</comment></data>
   <data name="FreOverlay_PanePositionLabel.Text" xml:space="preserve">
     <value>Положение панели</value>
   </data>

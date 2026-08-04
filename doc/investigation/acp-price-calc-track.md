@@ -82,6 +82,7 @@ code it describes.
 | 54. Unified billing projection | Application rendering must not infer billing semantics from ACP/provider metric IDs | Project stable display kind and underlying unit display text for every billing source | Complete |
 | 55. Unified billing consumer | C++ must render all billing items identically without knowing ACP/provider origins | Parse display kind/unit text and use one billing selection/formatting branch | Complete |
 | 56. Valid-or-hidden context UX | Invalid context cannot help users judge remaining capacity and must not show N/A or >100% | Filter at projection and C++ boundaries; preserve independent billing | Complete |
+| 57. Provider-neutral Usage copy | UI text must cover context usage plus provider-reported currency or credits without promising token-only monetary cost | Say “usage and billing” in FRE and Settings, then synchronize every existing locale | Complete |
 
 ## Completed Steps
 
@@ -92,6 +93,42 @@ code it describes.
 > PowerShell installation path. **Step 50 supersedes every AIC/AI Units conclusion in Steps 45-49**;
 > those entries remain as an audit trail of the incorrect assumption and its correction. **Step 56
 > supersedes Step 42's zero-size N/A and over-capacity display policy.**
+
+### Step 57 - Provider-Neutral Usage Copy
+
+**RED**
+
+- FRE and Settings still said “token usage and cost” and promised “monetary cost,” even though the
+  unified billing projection may display provider-reported currency or a provider billing unit
+  such as Copilot AIC.
+- The same obsolete contract existed in translated resources, English fallback locales, and
+  pseudo-locales across both UI entry points.
+
+**GREEN**
+
+- Changed the shared visible title to “Show usage and billing.”
+- Changed the description to “Show context-window usage and provider-reported cost or credits in
+  the terminal bottom bar.” This describes both standard ACP monetary cost and approved
+  provider-reported billing units without exposing their retrieval path.
+- Synchronized all 89 existing TerminalApp locale resources and all 16 existing Settings Editor
+  locale resources. Updated the 12 translated locales in their own languages and refreshed
+  English fallback, pseudo-locale, and translator-comment text.
+- Kept the persisted setting and resource keys unchanged because this step changes only the
+  user-facing contract.
+
+**Validation**
+
+- Parsed all 105 changed resource files as XML and verified the exact locale-specific values and
+  translator comments.
+- Verified every changed file has exactly one UTF-8 BOM.
+- Diff-scope check passed: each file has exactly two changed resource nodes (2 additions and 2
+  deletions), with no XML reformatting or unrelated resource changes.
+
+**Committed files**
+
+- `src/cascadia/TerminalApp/Resources/*/Resources.resw` (89 existing locale files)
+- `src/cascadia/TerminalSettingsEditor/Resources/*/Resources.resw` (16 existing locale files)
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 56 - Valid-or-Hidden Context UX
 

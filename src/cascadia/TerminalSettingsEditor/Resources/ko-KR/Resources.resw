@@ -2864,8 +2864,8 @@
     <value>사용하도록 설정하면 AI 에이전트가 실패한 명령을 자동으로 분석하고 수정 사항을 제안합니다. 사용하지 않도록 설정하면 실패한 명령에 대해 상태 표시줄에 클릭 가능한 힌트가 표시됩니다 — Ctrl+Alt+. 를 누르거나 힌트를 클릭하여 수정을 요청합니다.</value>
     <comment>Supplementary description for the auto-error-detection setting.</comment>
   </data>
-  <data name="AIAgents_ShowTokenUsageAndCost.Header" xml:space="preserve"><value>토큰 사용량 및 비용 표시</value><comment>Header for the setting that controls whether context-window token usage and monetary cost appear in the terminal bottom bar.</comment></data>
-  <data name="AIAgents_ShowTokenUsageAndCost.HelpText" xml:space="preserve"><value>터미널의 아래쪽 표시줄에 컨텍스트 창 토큰 사용량과 금전적 비용을 표시합니다.</value><comment>Supplementary description for the token usage and cost visibility setting.</comment></data>
+  <data name="AIAgents_ShowTokenUsageAndCost.Header" xml:space="preserve"><value>사용량 및 청구 정보 표시</value><comment>Header for the setting that controls whether context-window usage and provider-reported cost or credits appear in the terminal bottom bar.</comment></data>
+  <data name="AIAgents_ShowTokenUsageAndCost.HelpText" xml:space="preserve"><value>터미널 하단 표시줄에 컨텍스트 창 사용량과 공급자가 보고한 비용 또는 크레딧을 표시합니다.</value><comment>Supplementary description for the usage and billing visibility setting.</comment></data>
   <data name="AIAgents_PanePosition.Header" xml:space="preserve">
     <value>창 위치</value>
     <comment>Header for the setting that controls where the agent pane appears relative to the active pane.</comment>
