@@ -1331,10 +1331,6 @@ In this context, "agent" refers to an AI agent (e.g. Copilot, Claude, Gemini), n
     <value>Context Window</value>
     <comment>Label for the AI agent context-window usage percentage shown in the terminal bottom bar.</comment>
   </data>
-  <data name="Usage_Unavailable" xml:space="preserve">
-    <value>N/A</value>
-    <comment>Short label shown when an AI agent reports a context-window size of zero, so a percentage cannot be calculated. {Locked="N/A"}</comment>
-  </data>
   <data name="TerminalProtocolTeachingTipTitle" xml:space="preserve">
     <value>Terminal Protocol</value>
     <comment>Title for the teaching tip that displays Terminal Protocol connection information. {Locked="Terminal Protocol"}</comment>

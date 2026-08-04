@@ -201,19 +201,10 @@ namespace
         return value;
     }
 
-    std::optional<std::wstring> formatContextPercentage(
-        const std::string_view usedText,
-        const std::string_view sizeText)
+    std::wstring formatContextPercentage(const uint64_t used, const uint64_t size)
     {
-        const auto used = parseContextCount(usedText);
-        const auto size = parseContextCount(sizeText);
-        if (!used || !size || *size == 0)
-        {
-            return std::nullopt;
-        }
-
-        auto whole = *used / *size;
-        const auto remainder = *used % *size;
+        auto whole = used / size;
+        const auto remainder = used % size;
 
         // Compute round(100 * remainder / size) without overflowing u64.
         // Each iteration maintains residual < size and adds one remainder.
@@ -221,9 +212,9 @@ namespace
         uint64_t residual = 0;
         for (size_t i = 0; i < 100; ++i)
         {
-            if (residual >= *size - remainder)
+            if (residual >= size - remainder)
             {
-                residual -= *size - remainder;
+                residual -= size - remainder;
                 ++fractional;
             }
             else
@@ -231,7 +222,7 @@ namespace
                 residual += remainder;
             }
         }
-        if (residual >= *size - residual)
+        if (residual >= size - residual)
         {
             ++fractional;
         }
@@ -256,11 +247,22 @@ namespace
         return til::u8u16(percentage);
     }
 
+    bool isValidContextItem(const TerminalApp::AgentUsage::Item& item)
+    {
+        if (item.displayKind != TerminalApp::AgentUsage::DisplayKind::Context ||
+            item.stale || !item.limitDecimalText)
+        {
+            return false;
+        }
+        const auto used = parseContextCount(item.valueDecimalText);
+        const auto size = parseContextCount(*item.limitDecimalText);
+        return used && size && *size > 0 && *used <= *size;
+    }
+
     std::vector<TerminalApp::AgentUsage::PrimaryDisplayItem> buildPrimaryDisplayItems(
         const std::vector<TerminalApp::AgentUsage::Item>& items,
         const std::wstring_view tokensUnit,
-        const std::wstring_view contextWindowLabel,
-        const std::wstring_view unavailableText)
+        const std::wstring_view contextWindowLabel)
     {
         using namespace TerminalApp::AgentUsage;
 
@@ -269,7 +271,9 @@ namespace
         for (const auto displayKind : { DisplayKind::Context, DisplayKind::Billing })
         {
             const auto item = std::ranges::find_if(items, [displayKind](const auto& candidate) {
-                return candidate.displayKind == displayKind && !candidate.stale;
+                return displayKind == DisplayKind::Context ?
+                           isValidContextItem(candidate) :
+                           candidate.displayKind == displayKind && !candidate.stale;
             });
             if (item == items.end() || displayItems.size() == MaxPrimaryItems)
             {
@@ -278,16 +282,11 @@ namespace
 
             if (displayKind == DisplayKind::Context)
             {
-                if (!item->limitDecimalText)
-                {
-                    continue;
-                }
-                const auto percentageText = item->reportedPercent ?
+                const auto used = parseContextCount(item->valueDecimalText);
+                const auto size = parseContextCount(*item->limitDecimalText);
+                const auto percentageText = item->reportedPercent && *item->reportedPercent <= 100 ?
                                                 std::to_wstring(*item->reportedPercent) + L"%" :
-                                                formatContextPercentage(
-                                                    item->valueDecimalText,
-                                                    *item->limitDecimalText)
-                                                    .value_or(std::wstring{ unavailableText });
+                                                formatContextPercentage(*used, *size);
 
                 std::wstring text{ contextWindowLabel };
                 text += L": ";
@@ -361,6 +360,10 @@ namespace TerminalApp::AgentUsage
             result.valueDecimalText = requiredString(item, "value_decimal_text", MaxDecimalTextLength);
             if (!isDecimalText(result.valueDecimalText))
             {
+                if (result.displayKind == DisplayKind::Context)
+                {
+                    continue;
+                }
                 throw std::invalid_argument{ "usage value_decimal_text is invalid" };
             }
             if (item.isMember("limit_decimal_text"))
@@ -368,7 +371,22 @@ namespace TerminalApp::AgentUsage
                 result.limitDecimalText = requiredString(item, "limit_decimal_text", MaxDecimalTextLength);
                 if (!isDecimalText(*result.limitDecimalText))
                 {
+                    if (result.displayKind == DisplayKind::Context)
+                    {
+                        continue;
+                    }
                     throw std::invalid_argument{ "usage limit_decimal_text is invalid" };
+                }
+            }
+            if (result.displayKind == DisplayKind::Context)
+            {
+                const auto used = parseContextCount(result.valueDecimalText);
+                const auto size = result.limitDecimalText ?
+                                      parseContextCount(*result.limitDecimalText) :
+                                      std::nullopt;
+                if (!used || !size || *size == 0 || *used > *size)
+                {
+                    continue;
                 }
             }
             if (item.isMember("value_display_text"))
@@ -412,14 +430,12 @@ namespace TerminalApp::AgentUsage
     std::vector<std::wstring> BuildPrimaryDisplayTexts(
         const std::vector<Item>& items,
         const std::wstring_view tokensUnit,
-        const std::wstring_view contextWindowLabel,
-        const std::wstring_view unavailableText)
+        const std::wstring_view contextWindowLabel)
     {
         const auto displayItems = buildPrimaryDisplayItems(
             items,
             tokensUnit,
-            contextWindowLabel,
-            unavailableText);
+            contextWindowLabel);
         std::vector<std::wstring> texts;
         texts.reserve(displayItems.size());
         for (const auto& item : displayItems)
@@ -433,8 +449,7 @@ namespace TerminalApp::AgentUsage
         const std::vector<Item>& items,
         const std::wstring_view tokensUnit,
         const bool showUsageAndCost,
-        const std::wstring_view contextWindowLabel,
-        const std::wstring_view unavailableText)
+        const std::wstring_view contextWindowLabel)
     {
         if (!showUsageAndCost)
         {
@@ -444,8 +459,7 @@ namespace TerminalApp::AgentUsage
         auto displayItems = buildPrimaryDisplayItems(
             items,
             tokensUnit,
-            contextWindowLabel,
-            unavailableText);
+            contextWindowLabel);
         const auto visible = !displayItems.empty();
         return PrimaryDisplay{
             .items = std::move(displayItems),

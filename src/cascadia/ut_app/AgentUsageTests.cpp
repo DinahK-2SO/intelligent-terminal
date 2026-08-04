@@ -44,14 +44,14 @@ namespace TerminalAppUnitTests
         TEST_METHOD(ParseRejectsInvalidDecimalText);
         TEST_METHOD(ParseRejectsExcessiveItems);
         TEST_METHOD(UpdateCacheReplacesAndClears);
-        TEST_METHOD(UpdateCachePreservesPreviousOnMalformedInput);
+        TEST_METHOD(UpdateCacheDropsInvalidContext);
         TEST_METHOD(BuildPrimaryDisplayTextsFormatsContextPercentageAndCost);
         TEST_METHOD(BuildPrimaryDisplayTextsIgnoresInputOutput);
         TEST_METHOD(BuildPrimaryDisplayTextsCapsMainBarItems);
         TEST_METHOD(BuildPrimaryDisplayShowsCostWithoutTokens);
         TEST_METHOD(BuildPrimaryDisplayRoundsCostAndPreservesFullText);
         TEST_METHOD(BuildPrimaryDisplayShowsTokensWithoutCost);
-        TEST_METHOD(BuildPrimaryDisplayRoundsContextPercentageAndHandlesInvalidCapacity);
+        TEST_METHOD(BuildPrimaryDisplayShowsOnlyValidContext);
         TEST_METHOD(BuildPrimaryDisplayShowsProviderContextAndAic);
         TEST_METHOD(BuildPrimaryDisplayUsesFirstBillingItem);
         TEST_METHOD(BuildPrimaryDisplayHidesStaleMetrics);
@@ -162,7 +162,7 @@ namespace TerminalAppUnitTests
         VERIFY_IS_TRUE(cache.empty());
     }
 
-    void AgentUsageTests::UpdateCachePreservesPreviousOnMalformedInput()
+    void AgentUsageTests::UpdateCacheDropsInvalidContext()
     {
         const auto previous = makeUsageItem("acp.context.window", "20", "token", "context", "100");
         Json::Value valid{ Json::objectValue };
@@ -170,19 +170,14 @@ namespace TerminalAppUnitTests
         valid["items"].append(previous);
         std::vector<TerminalApp::AgentUsage::Item> cache;
         TerminalApp::AgentUsage::UpdateCache(cache, valid);
-        const auto before = cache;
-
         auto malformed = previous;
         malformed["value_decimal_text"] = "not-a-number";
         Json::Value invalid{ Json::objectValue };
         invalid["items"] = Json::Value{ Json::arrayValue };
         invalid["items"].append(std::move(malformed));
 
-        VERIFY_THROWS_SPECIFIC(
-            TerminalApp::AgentUsage::UpdateCache(cache, invalid),
-            std::invalid_argument,
-            [](const std::invalid_argument&) { return true; });
-        VERIFY_IS_TRUE(cache == before);
+        TerminalApp::AgentUsage::UpdateCache(cache, invalid);
+        VERIFY_IS_TRUE(cache.empty());
     }
 
     void AgentUsageTests::BuildPrimaryDisplayTextsFormatsContextPercentageAndCost()
@@ -332,7 +327,7 @@ namespace TerminalAppUnitTests
         VERIFY_ARE_EQUAL(std::wstring{ L"Context Window:\n1024 / 8192 tokens (13%)" }, display.items[0].fullText);
     }
 
-    void AgentUsageTests::BuildPrimaryDisplayRoundsContextPercentageAndHandlesInvalidCapacity()
+    void AgentUsageTests::BuildPrimaryDisplayShowsOnlyValidContext()
     {
         const auto build = [](const std::string& used, const std::string& size) {
             return TerminalApp::AgentUsage::BuildPrimaryDisplay(
@@ -352,14 +347,51 @@ namespace TerminalAppUnitTests
         VERIFY_ARE_EQUAL(std::wstring{ L"Context Window: 43%" }, build("43", "100").items[0].text);
         VERIFY_ARE_EQUAL(std::wstring{ L"Context Window: 43%" }, build("425", "1000").items[0].text);
         VERIFY_ARE_EQUAL(std::wstring{ L"Context Window: 42%" }, build("424", "1000").items[0].text);
-        VERIFY_ARE_EQUAL(std::wstring{ L"Context Window: 101%" }, build("101", "100").items[0].text);
-        VERIFY_ARE_EQUAL(
-            std::wstring{ L"Context Window: 1844674407370955161500%" },
-            build("18446744073709551615", "1").items[0].text);
+        VERIFY_ARE_EQUAL(std::wstring{ L"Context Window: 0%" }, build("0", "100").items[0].text);
+        VERIFY_IS_TRUE(build("100", "100").visible);
+        VERIFY_ARE_EQUAL(std::wstring{ L"Context Window: 100%" }, build("100", "100").items[0].text);
+        VERIFY_IS_FALSE(build("101", "100").visible);
+        VERIFY_IS_FALSE(build("1", "0").visible);
 
-        const auto unavailable = build("1", "0");
-        VERIFY_ARE_EQUAL(std::wstring{ L"Context Window: N/A" }, unavailable.items[0].text);
-        VERIFY_ARE_EQUAL(std::wstring{ L"Context Window:\n1 / 0 tokens (N/A)" }, unavailable.items[0].fullText);
+        Json::Value negative{ Json::objectValue };
+        negative["items"] = Json::Value{ Json::arrayValue };
+        auto invalidContext = makeUsageItem("vendor.context", "-1", "token", "context", "100");
+        negative["items"].append(std::move(invalidContext));
+        negative["items"].append(makeUsageItem("vendor.billing", "1.235", "vendor.usd", "billing"));
+        negative["items"][1]["unit_display_text"] = "USD";
+
+        const auto display = TerminalApp::AgentUsage::BuildPrimaryDisplay(
+            TerminalApp::AgentUsage::Parse(negative),
+            L"tokens");
+        VERIFY_IS_TRUE(display.visible);
+        VERIFY_ARE_EQUAL(static_cast<size_t>(1), display.items.size());
+        VERIFY_ARE_EQUAL(std::wstring{ L"1.24 USD" }, display.items[0].text);
+
+        const std::vector<TerminalApp::AgentUsage::Item> duplicateContext{
+            TerminalApp::AgentUsage::Item{
+                .metricId = "invalid.context",
+                .displayKind = TerminalApp::AgentUsage::DisplayKind::Context,
+                .valueDecimalText = "101",
+                .limitDecimalText = "100",
+                .unitId = "token",
+                .unitDisplayText = "token",
+                .scope = "session",
+                .source = "invalid",
+            },
+            TerminalApp::AgentUsage::Item{
+                .metricId = "valid.context",
+                .displayKind = TerminalApp::AgentUsage::DisplayKind::Context,
+                .valueDecimalText = "50",
+                .limitDecimalText = "100",
+                .reportedPercent = 900,
+                .unitId = "token",
+                .unitDisplayText = "token",
+                .scope = "session",
+                .source = "valid",
+            },
+        };
+        const auto duplicateDisplay = TerminalApp::AgentUsage::BuildPrimaryDisplay(duplicateContext, L"tokens");
+        VERIFY_ARE_EQUAL(std::wstring{ L"Context Window: 50%" }, duplicateDisplay.items[0].text);
     }
 
     void AgentUsageTests::BuildPrimaryDisplayShowsProviderContextAndAic()

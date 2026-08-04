@@ -2746,8 +2746,7 @@ namespace winrt::TerminalApp::implementation
                     impl->GetAgentUsage(),
                     RS_(L"Usage_TokensUnit"),
                     _settings && _settings.GlobalSettings().ShowTokenUsageAndCost(),
-                    RS_(L"Usage_ContextWindowLabel"),
-                    RS_(L"Usage_Unavailable"));
+                    RS_(L"Usage_ContextWindowLabel"));
                 usageVisible = display.visible;
                 for (const auto& item : display.items)
                 {

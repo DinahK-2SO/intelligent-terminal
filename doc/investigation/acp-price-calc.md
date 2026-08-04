@@ -166,9 +166,10 @@ pub struct Cost {
 | `used / size` | 当前会话上下文占用 | gauge，新值替换旧值 |
 | `cost` | 当前会话累计货币费用 | cumulative，新值替换旧值，不能再次累加 |
 
-`used`和`size`是provider报告的两个非负计数；ACP没有声明`used <= size`，客户端也不根据
-两者关系推断容量耗尽、拒绝请求或触发压缩。即使provider报告`size == 0`或`used > size`，
-WTA仍原样保留和展示，后续prompt是否接受及是否压缩完全由provider决定。
+`used`和`size`是provider报告的两个`u64`计数，typed ACP路径因此不可能出现负数。产品只在
+`size > 0 && used <= size`时投影context-window数据：`used=0`和`used=size`分别是有意义的
+0%/100%状态；零容量、超容量、缺失limit或无法解析的合成payload不能帮助用户判断剩余context，
+因此隐藏context item。该展示过滤不控制prompt是否接受或是否压缩，也不影响独立billing item。
 
 如果provider真正通过`session/prompt`返回ACP protocol error，WTA结束当前turn并显示该错误，
 但不把仍健康的ACP session改成连接失败。只有typed auth、handshake或transport failure进入各自
@@ -936,8 +937,9 @@ Context Window: 7%     7.54 AIC
 | 标准ACP tokens-only | 主栏显示 `Context Window: <percentage>%`；hover/HelpText显示精确counts与percentage |
 | Copilot context + AIC | 主栏显示provider报告percentage与half-up两位AIC；hover/HelpText保留完整checkpoint AIC与context的`k`展示精度 |
 | context有效但optional cost无效 | 保留并显示context，只省略cost；chat保持可用 |
-| provider报告`used > size` | 显示大于100%的观察值，不clamp、不触发客户端容量策略 |
-| provider报告`size == 0` | 主栏显示`Context Window: N/A`；hover保留原始`used / 0 tokens (N/A)` |
+| `used=0,size>0` | 显示`Context Window: 0%`，用户可确认窗口尚未占用 |
+| `used=size,size>0` | 显示`Context Window: 100%`，用户可确认没有剩余context |
+| `size==0`、`used>size`、负数/小数合成payload或缺失limit | 只隐藏context；独立billing仍显示，不显示N/A或错误百分比 |
 | transport断连后的旧metric | 保留在tab state并投影`stale=true`；Bottom Bar隐藏，直到provider重新报告该metric |
 | agent没有发送Usage | Usage保持隐藏，不显示`0`、`N/A`或占位符 |
 
@@ -948,9 +950,9 @@ Context Window: 7%     7.54 AIC
 - Bottom Bar中的cost按decimal text做half-up两位显示；正数但不足`0.01`时显示
   `<0.01 <currency>`，精确零显示`0.00 <currency>`；hover tooltip与Automation HelpText显示
   provider报告的完整amount与currency；
-- context-window主栏percentage按最接近的整数显示，`.5`向上取整。计算使用无溢出的整数算法，
-  不经过浮点数；hover tooltip与Automation HelpText显示两行明细：
-  `Context Window:\n<used> / <size> tokens (<percentage>%)`；
+- valid context-window主栏percentage按最接近的整数显示，`.5`向上取整。计算使用无溢出的整数
+  算法，不经过浮点数；hover tooltip与Automation HelpText显示两行明细：
+  `Context Window:\n<used> / <size> tokens (<percentage>%)`。无效context不产生UI；
 - Copilot AIC主栏复用cost的exact-decimal half-up两位格式；正数sub-cent显示`<0.01 AIC`，
   完整`totalNanoAiu/1e9` decimal保留在tooltip/Automation HelpText。AIC仍不是currency，不参与
   monetary cost换算；
@@ -1441,8 +1443,8 @@ ACP 没有“重新查询当前 session usage”的标准 request。Master/agent
 - 标准 `Tokens`、currency code 等通用单位可由 UI 本地化格式化，但不能换算数值；
 - 主Bottom Bar的货币cost统一为两位；正数sub-cent使用`<0.01`避免显示为假零，完整值保留在
   tooltip/HelpText和Rust state中；
-- context-window主栏显示整数percentage；原始`used / size`和同一percentage保留在两行
-  tooltip/HelpText中。`size == 0`使用N/A，`used > size`不clamp；
+- valid context-window主栏显示整数percentage；原始`used / size`和同一percentage保留在两行
+  tooltip/HelpText中。无效context直接隐藏，不提供N/A状态；
 - Bottom Bar 在窄宽度下优先保留数值和单位，详细 source/scope 放 tooltip；
 - XAML 增加 AutomationProperties.Name；终端路径需要纯文本、不能只靠颜色表达 stale/error；
 - 数字更新不要被屏幕阅读器按 token/chunk 高频朗读，只在 turn 完成或显著变化时通知。

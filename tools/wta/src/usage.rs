@@ -138,7 +138,11 @@ impl From<&UsageSnapshot> for UsageProjection {
 impl UsageProjection {
     pub fn with_staleness(snapshot: &UsageSnapshot, staleness: UsageStaleness) -> Self {
         let mut items = Vec::with_capacity(2 + snapshot.provider_metrics.len());
-        if let Some(context) = &snapshot.context {
+        if let Some(context) = snapshot
+            .context
+            .as_ref()
+            .filter(|context| context.size > 0 && context.used <= context.size)
+        {
             items.push(UsageProjectionItem {
                 metric_id: "acp.context.window".to_string(),
                 display_kind: UsageDisplayKind::Context,
@@ -367,12 +371,31 @@ mod tests {
     }
 
     #[test]
-    fn preserves_provider_reported_context_gauges() {
+    fn hides_invalid_context_projection_without_hiding_billing() {
         for (used, size) in [(1, 0), (101, 100)] {
-            let snapshot = normalize_standard_usage(&acp::schema::v1::UsageUpdate::new(used, size));
+            let snapshot = UsageSnapshot {
+                context: Some(UsageContext { used, size }),
+                context_display: None,
+                cost: Some(UsageCost {
+                    amount_decimal_text: "0.004".to_string(),
+                    currency: "USD".to_string(),
+                }),
+                provider_metrics: Vec::new(),
+            };
 
-            assert_eq!(snapshot.context, Some(UsageContext { used, size }));
+            let projection = UsageProjection::from(&snapshot);
+            assert_eq!(projection.items.len(), 1);
+            assert_eq!(projection.items[0].display_kind, UsageDisplayKind::Billing);
         }
+
+        let valid = UsageProjection::from(&UsageSnapshot {
+            context: Some(UsageContext { used: 100, size: 100 }),
+            context_display: None,
+            cost: None,
+            provider_metrics: Vec::new(),
+        });
+        assert_eq!(valid.items.len(), 1, "a full but valid context remains useful");
+        assert_eq!(valid.items[0].display_kind, UsageDisplayKind::Context);
     }
 
     #[test]

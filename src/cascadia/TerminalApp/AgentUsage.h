@@ -58,12 +58,10 @@ namespace TerminalApp::AgentUsage
     std::vector<std::wstring> BuildPrimaryDisplayTexts(
         const std::vector<Item>& items,
         std::wstring_view tokensUnit,
-        std::wstring_view contextWindowLabel = L"Context Window",
-        std::wstring_view unavailableText = L"N/A");
+        std::wstring_view contextWindowLabel = L"Context Window");
     PrimaryDisplay BuildPrimaryDisplay(
         const std::vector<Item>& items,
         std::wstring_view tokensUnit,
         bool showUsageAndCost = true,
-        std::wstring_view contextWindowLabel = L"Context Window",
-        std::wstring_view unavailableText = L"N/A");
+        std::wstring_view contextWindowLabel = L"Context Window");
 }

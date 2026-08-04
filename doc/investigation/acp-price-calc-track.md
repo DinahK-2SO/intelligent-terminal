@@ -81,6 +81,7 @@ code it describes.
 | 53. Version-neutral Copilot try-get | Compatible future CLI shapes should keep working; missing fields should hide only that metric | Remove CLI-version binding and return empty contributions for absent shapes | Complete |
 | 54. Unified billing projection | Application rendering must not infer billing semantics from ACP/provider metric IDs | Project stable display kind and underlying unit display text for every billing source | Complete |
 | 55. Unified billing consumer | C++ must render all billing items identically without knowing ACP/provider origins | Parse display kind/unit text and use one billing selection/formatting branch | Complete |
+| 56. Valid-or-hidden context UX | Invalid context cannot help users judge remaining capacity and must not show N/A or >100% | Filter at projection and C++ boundaries; preserve independent billing | Complete |
 
 ## Completed Steps
 
@@ -89,7 +90,67 @@ code it describes.
 > two-turn investigation and team review. Step 27 supersedes Step 23's currency-shape filtering;
 > amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
 > PowerShell installation path. **Step 50 supersedes every AIC/AI Units conclusion in Steps 45-49**;
-> those entries remain as an audit trail of the incorrect assumption and its correction.
+> those entries remain as an audit trail of the incorrect assumption and its correction. **Step 56
+> supersedes Step 42's zero-size N/A and over-capacity display policy.**
+
+### Step 56 - Valid-or-Hidden Context UX
+
+**Product decision**
+
+- Context is useful only when it can answer how much capacity remains. Display requires
+  `size > 0 && used <= size`.
+- `used=0,size>0` is valid and displays 0%; `used=size,size>0` is valid and displays 100%.
+- Typed ACP uses `u64`, so negative counts cannot enter the Rust domain. Defensive C++ parsing
+  still handles negative/decimal synthetic payloads by omitting context.
+- Zero/negative capacity, over-capacity, missing limit, non-integer counts, or an invalid first
+  context item are hidden. A later valid context may still display, and independent billing must
+  remain visible.
+- Provider-reported percent above 100 is ignored and recomputed from valid counts.
+
+**RED**
+
+- Rust projection test expected zero-capacity and over-capacity contexts to be omitted while USD
+  billing remained; both invalid contexts still projected.
+- C++ focused test expected over-capacity/zero-capacity contexts to hide; over-capacity still
+  displayed.
+- Negative synthetic context initially failed atomic parsing, which would have hidden valid
+  billing and preserved stale context under the old cache test.
+
+**GREEN**
+
+- Rust projection emits context only for positive capacity with used within capacity. Snapshot
+  may retain the provider report for diagnostics; the user-facing projection is valid-only.
+- C++ parser drops malformed/negative/zero/over-capacity context items without rejecting sibling
+  billing; display selection repeats validity checks for direct/internal items.
+- Invalid new context replaces the old cache with no context, preventing stale data from remaining
+  visible.
+- Context selection skips invalid entries and can use a later valid one. Invalid reported percent
+  falls back to the overflow-safe count calculation.
+- Removed the unreachable `Usage_Unavailable` API parameter and localized resource; no N/A context
+  state remains.
+
+**Validation**
+
+- Focused Rust RED failed with 2 items instead of billing-only; GREEN passed.
+- Focused C++ RED displayed over-capacity context; GREEN covered 0%, 100%, zero capacity,
+  over-capacity, negative payload, invalid-first duplicate, invalid reported percent, and billing
+  preservation.
+- Usage-focused Rust suite: 32 passed, 0 failed.
+- Complete WTA suite: 1233 passed, 0 failed.
+- Complete `AgentUsageTests`: 22 passed, 0 failed, 0 skipped.
+- Terminal App unit-test build: 0 errors.
+- Resource XML/BOM, clang-format for AgentUsage files, and editor diagnostics: clean.
+
+**Committed files**
+
+- `tools/wta/src/usage.rs`
+- `src/cascadia/TerminalApp/AgentUsage.h`
+- `src/cascadia/TerminalApp/AgentUsage.cpp`
+- `src/cascadia/TerminalApp/TerminalPage.cpp`
+- `src/cascadia/TerminalApp/Resources/en-US/Resources.resw`
+- `src/cascadia/ut_app/AgentUsageTests.cpp`
+- `doc/investigation/acp-price-calc.md`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 55 - Unified Billing Consumer
 
