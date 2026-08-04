@@ -102,7 +102,7 @@ fixture/记录并重新跑 Claude/Codex E2E mock。
 | Usage receive | master已可靠按metric coalesce/定向latest value；helper原样保留typed context gauge，无效optional cost只省略cost metric | 保持provider-neutral；按实际agent版本继续维护structured Usage兼容矩阵 |
 | Provider usage layer | `tools/wta/src/usage/providers/`为五个family提供统一typed registry；Copilot为`VerifiedLocalSources`，只接受内置family与精确reporter `Copilot`，解析真实checkpoint和`/context` | 未来provider实现标准ACP无需特殊代码；新增private schema必须重新review |
 | Usage state/UI | Rust按session保存/合并optional context/cost/provider metrics并立即投影；C++只按`display_kind=context|billing`最多选择两项，不区分billing来自标准ACP cost还是provider unit。`showTokenUsageAndCost`默认false并控制整个UsageGroup | 不增加平行UI/state route；FRE与Settings共用GlobalAppSettings source of truth |
-| C++ event route | 现有`agent_state_changed`按`tab_id`路由并消费可选`usage`/null；missing保持、null清除、malformed fail-fast；Rust session-boundary reset沿同一projection发送null；`_UpdateBottomBarState`从active tab cache渲染 | 不新增COM/IDL route或第二个业务异常层 |
+| C++ event route | 现有`agent_state_changed`按`tab_id`路由并消费可选`usage`/null；missing保持、null清除；纯`Parse`/`UpdateCache`对malformed输入保持fail-fast，跨进程入口只通过`TryUpdateCache`这一层containment清空cache并隐藏Usage；Rust session-boundary reset沿同一projection发送null；`_UpdateBottomBarState`从active tab cache渲染 | 不新增COM/IDL route或分散的业务异常层 |
 | Rust codegen | [tools/wta/build.rs](../../tools/wta/build.rs) 当前只生成 ETW telemetry metadata | 增加 Agent registry codegen，但保留现有 ETW 生成 |
 | Gemini / Antigravity | Gemini CLI 0.51.0使用官方`--acp`，但private quota不进入Usage产品路径 | 等待标准ACP context/cost；Antigravity另行调查且不预先复用identity |
 
@@ -1393,11 +1393,13 @@ Usage 是辅助功能，但开发期间不能用“辅助功能应降级”掩�
   fail fast；另加一个边界测试证明 Usage failure 只隐藏 UI 而不终止会话。
 
 当前standard `UsageUpdate` context normalizer在typed ACP反序列化后不可失败，optional cost
-独立过滤；outer boundary保留给未来可能失败的typed provider extension。C++只接收normalized projection，
-不新增 usage-specific `try/catch`；它沿用 `agent_state_changed` 的 JSON 输入校验，并在 debug/
-contract tests 对 malformed usage sub-object 失败，在 release 拒绝该 sub-object 并隐藏
-`UsageGroup`。这是现有跨进程输入验证，不是第二套业务异常吞错层。上述 fail-fast 约束只适用
-于新增 Usage pipeline，不要求移除仓库中与本功能无关的既有异常边界。
+独立过滤；outer boundary保留给未来可能失败的typed provider extension。C++只接收normalized projection：
+`Parse`与`UpdateCache`继续对malformed usage失败，让单元测试直接暴露contract drift；
+`AgentPaneContent`的跨进程入口只调用一次`TryUpdateCache`，该函数捕获解析失败、清空旧cache并返回
+`false`，`TerminalPage`仅记录无数值的固定诊断。错误类型和错误schema都因此隐藏`UsageGroup`，
+而不会终止UI线程、聊天或tool call。这是C++ projection入口的唯一release containment，不在
+normalizer、selector或formatter中增加兜底。上述fail-fast约束只适用于containment内部，不要求
+移除仓库中与本功能无关的既有异常边界。
 
 ### 9.7 P0：Usage 数值不能进入普通日志或遥测
 

@@ -84,6 +84,7 @@ code it describes.
 | 56. Valid-or-hidden context UX | Invalid context cannot help users judge remaining capacity and must not show N/A or >100% | Filter at projection and C++ boundaries; preserve independent billing | Complete |
 | 57. Provider-neutral Usage copy | UI text must cover context usage plus provider-reported currency or credits without promising token-only monetary cost | Say “usage and billing” in FRE and Settings, then synchronize every existing locale | Complete |
 | 58. Final Usage copy and localization | Copy must not overstate data provenance or availability, and every bundled locale must contain the complete Usage UI vocabulary | Finalize source-neutral copy, localize five strings, and enforce locale parity with Pester | Complete |
+| 59. PR review convergence | Malformed cross-process Usage must not terminate the UI, and spelling fixtures must not block review | Add one C++ containment boundary and preserve test semantics with review-safe fixtures | Complete |
 
 ## Completed Steps
 
@@ -95,6 +96,54 @@ code it describes.
 > those entries remain as an audit trail of the incorrect assumption and its correction. **Step 56
 > supersedes Step 42's zero-size N/A and over-capacity display policy. Step 58 supersedes Step 57's
 > interim visible copy while retaining its provider-neutral UI architecture.**
+
+### Step 59 - PR Review Convergence
+
+**Review triage**
+
+- Copilot's locale-key comment was already resolved by Step 58: all 89 TerminalApp locales now
+  define `Usage`, `tokens`, and `Context Window`, with a Pester parity contract.
+- Copilot's high-severity malformed-event comment and its suppressed parser-exception companion
+  were still valid: `OnAgentStateChanged` could throw for a non-object `usage`, and
+  `ApplyAgentUsage` could propagate `AgentUsage::Parse` failures onto the UI thread.
+- Four Advanced Security inline comments were spelling-only findings on synthetic test data
+  (`lookalike`, `USDD`, lowercase `usd`). The latest spelling report additionally identified the
+  real Copilot terms AIC and AIU.
+
+**RED**
+
+- Added a TAEF contract that starts with valid cached context, applies both a wrong top-level
+  Usage type and a recognized object with malformed item schema, and requires each operation to
+  return failure and clear the old cache without throwing.
+- Focused compilation failed only because `AgentUsage::TryUpdateCache` did not exist.
+
+**GREEN**
+
+- Kept `Parse` and `UpdateCache` fail-fast for direct contract tests, and added one
+  `[[nodiscard]] TryUpdateCache(... ) noexcept` boundary that catches parsing failures, clears
+  stale Usage, and returns `false`.
+- Routed every present `agent_state_changed.usage` value through that boundary. Invalid values
+  now produce only the fixed diagnostic `invalid usage hidden`; no Usage values enter the log.
+- `AgentPaneContent` still raises `StateChanged` after containment, so malformed replacement data
+  immediately hides previously rendered Usage.
+- Replaced spelling-only identity fixtures with `impostor` and retained all invalid-currency
+  dimensions using dictionary-safe values. Added the real AIC/AIU terms to spelling expectations.
+
+**Validation**
+
+- Terminal App unit-test project build: 0 errors.
+- Complete `AgentUsageTests`: 23 passed, 0 failed, 0 skipped.
+- Four affected Rust tests each executed once and passed.
+- Complete WTA suite: 1,233 passed, 0 failed.
+- `clang-format --Werror` passes on every changed C++ range; patch whitespace is clean.
+- Case-sensitive source audit found none of the four reviewed spelling fixtures remaining.
+
+**Publish/dev split**
+
+- Publish cherry-pick commit `50c82caa2` contains only product code, existing C++/Rust tests, and
+  spelling configuration required to resolve PR #512 review feedback.
+- This Step 59 tracking note and the design synchronization remain in a separate dev-only commit,
+  because the publish branch intentionally excludes `doc/` and `AGENTS.md`.
 
 ### Step 58 - Final Usage Copy and Localization
 
