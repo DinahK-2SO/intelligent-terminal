@@ -109,7 +109,7 @@ namespace winrt::TerminalApp::implementation
         winrt::hstring GetSuggestionTitle() const noexcept { return _suggestionTitle; }
         winrt::hstring GetDetectedSummary() const noexcept { return _detectedSummary; }
         winrt::hstring GetAgentPanePosition() const noexcept { return _agentPanePosition; }
-        void ApplyAgentUsage(const Json::Value& usage);
+        [[nodiscard]] bool ApplyAgentUsage(const Json::Value& usage);
         const std::vector<::TerminalApp::AgentUsage::Item>& GetAgentUsage() const noexcept { return _agentUsage; }
 
         // Fired whenever cached bottom-bar-relevant state changes (autofix

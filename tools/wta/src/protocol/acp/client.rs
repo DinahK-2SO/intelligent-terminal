@@ -4309,7 +4309,7 @@ mod tests {
         assert!(!is_redundant_startup_model_error(
             &PromptUsageIdentity {
                 family_id: Some("gemini".to_string()),
-                reporter_id: Some("lookalike-gemini".to_string()),
+                reporter_id: Some("impostor-gemini".to_string()),
             },
             &acp::Error::method_not_found(),
         ));

@@ -427,6 +427,20 @@ namespace TerminalApp::AgentUsage
         cache = std::move(parsed);
     }
 
+    bool TryUpdateCache(std::vector<Item>& cache, const Json::Value& usage) noexcept
+    {
+        try
+        {
+            UpdateCache(cache, usage);
+            return true;
+        }
+        catch (...)
+        {
+            cache.clear();
+            return false;
+        }
+    }
+
     std::vector<std::wstring> BuildPrimaryDisplayTexts(
         const std::vector<Item>& items,
         const std::wstring_view tokensUnit,

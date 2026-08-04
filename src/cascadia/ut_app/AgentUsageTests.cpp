@@ -45,6 +45,7 @@ namespace TerminalAppUnitTests
         TEST_METHOD(ParseRejectsExcessiveItems);
         TEST_METHOD(UpdateCacheReplacesAndClears);
         TEST_METHOD(UpdateCacheDropsInvalidContext);
+        TEST_METHOD(TryUpdateCacheContainsMalformedUsage);
         TEST_METHOD(BuildPrimaryDisplayTextsFormatsContextPercentageAndCost);
         TEST_METHOD(BuildPrimaryDisplayTextsIgnoresInputOutput);
         TEST_METHOD(BuildPrimaryDisplayTextsCapsMainBarItems);
@@ -177,6 +178,29 @@ namespace TerminalAppUnitTests
         invalid["items"].append(std::move(malformed));
 
         TerminalApp::AgentUsage::UpdateCache(cache, invalid);
+        VERIFY_IS_TRUE(cache.empty());
+    }
+
+    void AgentUsageTests::TryUpdateCacheContainsMalformedUsage()
+    {
+        const auto validItem = makeUsageItem("acp.context.window", "20", "token", "context", "100");
+        Json::Value validUsage{ Json::objectValue };
+        validUsage["items"] = Json::Value{ Json::arrayValue };
+        validUsage["items"].append(validItem);
+        const auto expected = TerminalApp::AgentUsage::Parse(validUsage);
+        std::vector<TerminalApp::AgentUsage::Item> cache{ expected };
+
+        VERIFY_IS_FALSE(TerminalApp::AgentUsage::TryUpdateCache(cache, Json::Value{ "malformed" }));
+        VERIFY_IS_TRUE(cache.empty());
+
+        Json::Value malformedSchema{ Json::objectValue };
+        malformedSchema["items"] = Json::Value{ Json::arrayValue };
+        auto malformedItem = validItem;
+        malformedItem["stale"] = "false";
+        malformedSchema["items"].append(std::move(malformedItem));
+        cache = expected;
+
+        VERIFY_IS_FALSE(TerminalApp::AgentUsage::TryUpdateCache(cache, malformedSchema));
         VERIFY_IS_TRUE(cache.empty());
     }
 

@@ -276,7 +276,7 @@ mod tests {
     }
 
     #[test]
-    fn ignores_lookalike_reporters_and_missing_future_fields() {
+    fn ignores_impostor_reporters_and_missing_future_fields() {
         for reporter_id in [None, Some("copilot"), Some("GitHub Copilot")] {
             let contribution = ADAPTER
                 .extract_private_usage(ProviderUsageRequest {

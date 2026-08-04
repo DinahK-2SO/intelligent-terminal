@@ -412,7 +412,7 @@ mod tests {
 
     #[test]
     fn preserves_provider_reported_currency_without_shape_policy() {
-        for currency in ["US", "USDD", "usd", "US1", "U$D"] {
+        for currency in ["EU", "EURO", "lowercase", "EU1", "E$U"] {
             let update = acp::schema::v1::UsageUpdate::new(1, 100)
                 .cost(acp::schema::v1::Cost::new(1.0, currency));
             let snapshot = normalize_standard_usage(&update);
@@ -499,7 +499,7 @@ mod tests {
                 "{} must not trust a private reporter before wire verification",
                 provider.family_id()
             );
-            for reporter_id in [None, Some("lookalike-reporter")] {
+            for reporter_id in [None, Some("impostor-reporter")] {
                 for input in &inputs {
                     assert_eq!(
                         provider

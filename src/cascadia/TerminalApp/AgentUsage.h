@@ -55,6 +55,7 @@ namespace TerminalApp::AgentUsage
 
     std::vector<Item> Parse(const Json::Value& usage);
     void UpdateCache(std::vector<Item>& cache, const Json::Value& usage);
+    [[nodiscard]] bool TryUpdateCache(std::vector<Item>& cache, const Json::Value& usage) noexcept;
     std::vector<std::wstring> BuildPrimaryDisplayTexts(
         const std::vector<Item>& items,
         std::wstring_view tokensUnit,

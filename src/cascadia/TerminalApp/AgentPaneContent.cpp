@@ -173,10 +173,11 @@ namespace winrt::TerminalApp::implementation
         StateChanged.raise(*this, nullptr);
     }
 
-    void AgentPaneContent::ApplyAgentUsage(const Json::Value& usage)
+    bool AgentPaneContent::ApplyAgentUsage(const Json::Value& usage)
     {
-        ::TerminalApp::AgentUsage::UpdateCache(_agentUsage, usage);
+        const auto updated = ::TerminalApp::AgentUsage::TryUpdateCache(_agentUsage, usage);
         StateChanged.raise(*this, nullptr);
+        return updated;
     }
 
     void AgentPaneContent::SetAgentPanePosition(const winrt::hstring& position)
