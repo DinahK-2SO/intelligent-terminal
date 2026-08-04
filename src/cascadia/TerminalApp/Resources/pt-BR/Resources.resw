@@ -1107,8 +1107,8 @@
     <value>Habilitar isso instalará hooks de integração para rastrear sessões nos seus agentes.</value>
     <comment>{Locked="hooks"}</comment>
   </data>
-  <data name="FreOverlay_ShowTokenUsageAndCostLabel.Text" xml:space="preserve"><value>Mostrar uso e cobrança</value><comment>Header for the first-run setting that controls whether context-window usage and provider-reported cost or credits appear in the terminal bottom bar.</comment></data>
-  <data name="FreOverlay_ShowTokenUsageAndCostDescription.Text" xml:space="preserve"><value>Mostrar o uso da janela de contexto e o custo ou os créditos informados pelo provedor na barra inferior do terminal.</value><comment>Description for the usage and billing visibility toggle in the first-run wizard.</comment></data>
+  <data name="FreOverlay_ShowTokenUsageAndCostLabel.Text" xml:space="preserve"><value>Mostrar uso do contexto e cobrança</value><comment>Header for a first-run toggle that shows context-window usage and billing information in the terminal bottom bar when available. Billing information may be a reported monetary cost or a non-currency credit unit. The connected AI agent or provider may omit either value; Intelligent Terminal does not calculate or convert them.</comment></data>
+  <data name="FreOverlay_ShowTokenUsageAndCostDescription.Text" xml:space="preserve"><value>Quando disponíveis, mostrar o uso da janela de contexto e o custo ou os créditos informados na barra inferior do terminal.</value><comment>Description for the usage visibility toggle in the first-run wizard. Cost may be an estimate reported by the connected AI agent or provider; credits are non-currency billing units. Either value may be unavailable. Intelligent Terminal does not calculate or convert these values.</comment></data>
   <data name="FreOverlay_PanePositionLabel.Text" xml:space="preserve">
     <value>Posição do painel</value>
   </data>
@@ -1301,4 +1301,7 @@
     <value>⚠ A política de execução do PowerShell está bloqueando scripts. Detecção de erros desativada.</value>
     <comment>{Locked="PowerShell"}</comment>
   </data>
+  <data name="UsageGroup/[using:Windows.UI.Xaml.Automation]AutomationProperties/Name" xml:space="preserve"><value>Uso</value><comment>Accessibility name for the session usage summary in the terminal bottom bar.</comment></data>
+  <data name="Usage_TokensUnit" xml:space="preserve"><value>tokens</value><comment>Unit label for AI context-window token counts. Translate this term using the established AI/LLM terminology for the locale.</comment></data>
+  <data name="Usage_ContextWindowLabel" xml:space="preserve"><value>Janela de contexto</value><comment>Label for the AI agent context-window usage percentage shown in the terminal bottom bar.</comment></data>
 </root>

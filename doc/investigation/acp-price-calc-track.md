@@ -83,6 +83,7 @@ code it describes.
 | 55. Unified billing consumer | C++ must render all billing items identically without knowing ACP/provider origins | Parse display kind/unit text and use one billing selection/formatting branch | Complete |
 | 56. Valid-or-hidden context UX | Invalid context cannot help users judge remaining capacity and must not show N/A or >100% | Filter at projection and C++ boundaries; preserve independent billing | Complete |
 | 57. Provider-neutral Usage copy | UI text must cover context usage plus provider-reported currency or credits without promising token-only monetary cost | Say “usage and billing” in FRE and Settings, then synchronize every existing locale | Complete |
+| 58. Final Usage copy and localization | Copy must not overstate data provenance or availability, and every bundled locale must contain the complete Usage UI vocabulary | Finalize source-neutral copy, localize five strings, and enforce locale parity with Pester | Complete |
 
 ## Completed Steps
 
@@ -92,7 +93,58 @@ code it describes.
 > amount validity and metric isolation remain unchanged. Step 30 supersedes Step 12's fixed
 > PowerShell installation path. **Step 50 supersedes every AIC/AI Units conclusion in Steps 45-49**;
 > those entries remain as an audit trail of the incorrect assumption and its correction. **Step 56
-> supersedes Step 42's zero-size N/A and over-capacity display policy.**
+> supersedes Step 42's zero-size N/A and over-capacity display policy. Step 58 supersedes Step 57's
+> interim visible copy while retaining its provider-neutral UI architecture.**
+
+### Step 58 - Final Usage Copy and Localization
+
+**RED**
+
+- The interim description said “provider-reported,” but standard ACP values may be emitted by an
+  agent or wrapper and may be estimates rather than provider billing records.
+- The title “Show context and billing usage” produced an ambiguous “invoice usage” compound in
+  multiple translated languages.
+- 73 non-English TerminalApp locales still used English fallback text for the two toggle strings.
+- `Usage`, `tokens`, and `Context Window` existed only in en-US, leaving all other 88 TerminalApp
+  locales without the Bottom Bar resources.
+- The current-state design still described a C++ monetary-cost-versus-AIC source priority even
+  though the consumer now selects only semantic `display_kind=context|billing`.
+
+**GREEN**
+
+- Finalized the shared title as “Show context usage and billing” and the description as “When
+  available, show context-window usage and reported cost or credits in the terminal bottom bar.”
+- Translator comments now state that either value may be unavailable, reported cost may be an
+  estimate, credits are non-currency units, and Intelligent Terminal does not calculate or
+  convert values.
+- Localized all five Usage strings for every real TerminalApp locale. English and three
+  pseudo-locales retain the English source; regional variants and RTL scripts remain distinct.
+- Added the three missing Bottom Bar keys to every locale and removed the incorrect lock that
+  forced the word `tokens` to stay in English.
+- Synchronized the final title and description across all 16 Settings Editor locales.
+- Updated the design's current-state sections to describe the unified semantic billing consumer.
+- Added an existing-framework Pester contract that dynamically discovers locale folders and
+  verifies XML/BOM integrity, complete key coverage, translated visible copy, FRE/Settings
+  alignment, and pseudo-locale fallback.
+
+**Validation**
+
+- Focused `UsageLocalization.Unit.Tests.ps1`: 5 passed, 0 failed.
+- Complete ItE2E Unit selftests: 20 passed, 0 failed, 0 skipped.
+- Parsed and compared all 105 resource files against the reviewed translation data; all values,
+  key counts, `xml:space` attributes, XML documents, and exactly-one-BOM checks passed.
+- Resource diff scope: 88 TerminalApp files add exactly the three missing keys and replace two
+  existing strings; all remaining resource changes are confined to the intended Usage nodes.
+- Stale-copy audit found no old token-only, monetary-only, provider-only, or `{Locked="tokens"}`
+  resource text.
+
+**Committed files**
+
+- `src/cascadia/TerminalApp/Resources/*/Resources.resw` (89 locale files)
+- `src/cascadia/TerminalSettingsEditor/Resources/*/Resources.resw` (16 locale files)
+- `test/e2e/selftests/UsageLocalization.Unit.Tests.ps1`
+- `doc/investigation/acp-price-calc.md`
+- `doc/investigation/acp-price-calc-track.md`
 
 ### Step 57 - Provider-Neutral Usage Copy
 

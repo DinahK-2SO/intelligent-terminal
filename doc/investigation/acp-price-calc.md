@@ -37,8 +37,9 @@
   boundary 加一次 release 降级：失败则隐藏 Usage，不影响聊天主流程。
 10. 首版继续支持Gemini CLI的聊天能力，但不解析其private quota，因为它没有遵守本功能采用
   的标准ACP UsageUpdate contract。若未来Gemini发送标准context/cost，通用路径自动生效。
-11. Context-window token usage与monetary cost默认都隐藏。用户可在首次启动FRE或
-  Settings → Agents开启`showTokenUsageAndCost`；该设置不停止Usage接收/缓存。
+11. Context-window usage与billing information默认都隐藏。用户可在首次启动FRE或
+  Settings → Agents开启`showTokenUsageAndCost`；billing可能是reported monetary cost或
+  non-currency credits，且任一数据都可能缺失。该设置不停止Usage接收/缓存。
 12. 内置Copilot在真实user turn前记录同一SessionId的`events.jsonl` offset；turn后读取新追加的
   `session.usage_checkpoint`获取准确AIC，再执行`/context`获取context gauge。只抑制context
   command输出，不再发送`/usage`。checkpoint缺失时宁可省略AIC，绝不回退到request count。
@@ -100,7 +101,7 @@ fixture/记录并重新跑 Claude/Codex E2E mock。
 | Custom selection | Settings 将 `npx ...` 保存为 `custom:npx`；master 对未知 helper ID 回退到 host 已信任的 default command，从不执行 pipe 上传来的 command | 分离 instance/family/reporter；custom 可识别 compatible family，但首版不能启用私有 usage extension |
 | Usage receive | master已可靠按metric coalesce/定向latest value；helper原样保留typed context gauge，无效optional cost只省略cost metric | 保持provider-neutral；按实际agent版本继续维护structured Usage兼容矩阵 |
 | Provider usage layer | `tools/wta/src/usage/providers/`为五个family提供统一typed registry；Copilot为`VerifiedLocalSources`，只接受内置family与精确reporter `Copilot`，解析真实checkpoint和`/context` | 未来provider实现标准ACP无需特殊代码；新增private schema必须重新review |
-| Usage state/UI | Rust按session保存/合并optional context/cost/provider metrics并立即投影；C++按context、monetary cost、AIC fallback顺序最多选择两项。`showTokenUsageAndCost`默认false并控制整个UsageGroup | 不增加平行UI/state route；FRE与Settings共用GlobalAppSettings source of truth |
+| Usage state/UI | Rust按session保存/合并optional context/cost/provider metrics并立即投影；C++只按`display_kind=context|billing`最多选择两项，不区分billing来自标准ACP cost还是provider unit。`showTokenUsageAndCost`默认false并控制整个UsageGroup | 不增加平行UI/state route；FRE与Settings共用GlobalAppSettings source of truth |
 | C++ event route | 现有`agent_state_changed`按`tab_id`路由并消费可选`usage`/null；missing保持、null清除、malformed fail-fast；Rust session-boundary reset沿同一projection发送null；`_UpdateBottomBarState`从active tab cache渲染 | 不新增COM/IDL route或第二个业务异常层 |
 | Rust codegen | [tools/wta/build.rs](../../tools/wta/build.rs) 当前只生成 ETW telemetry metadata | 增加 Agent registry codegen，但保留现有 ETW 生成 |
 | Gemini / Antigravity | Gemini CLI 0.51.0使用官方`--acp`，但private quota不进入Usage产品路径 | 等待标准ACP context/cost；Antigravity另行调查且不预先复用identity |
@@ -917,8 +918,9 @@ Provider 规则：
 
 ## 7. UI 规则（位置/ownership/首版展示已决定）
 
-Usage 位于 C++ window-level Bottom Bar 的右侧（session按钮左边）。按context、monetary cost、
-Copilot AIC fallback顺序渲染最多两个normalized items；monetary cost存在时不显示AIC。
+Usage 位于 C++ window-level Bottom Bar 的右侧（session按钮左边）。按semantic context、billing
+顺序渲染最多两个normalized items；C++不检查metric ID、source或provider，也不区分billing
+来自标准ACP monetary cost还是provider-reported non-currency unit。
 当前实际格式示例：
 
 ```text
@@ -1311,12 +1313,17 @@ Step 5 已在 Rust projection 中实现该 transport shape。最终产品selecto
   `UsageGroup`；
 - XAML：在 Bottom Bar Column 2 增加右对齐的动态 usage presenter。
 
-#### Token usage and cost visibility
+#### Context and billing usage visibility
 
+- FRE与Settings使用相同的source-neutral文案：标题`Show context usage and billing`；说明
+  `When available, show context-window usage and reported cost or credits in the terminal bottom bar.`。
+  “when available”表示context与billing任一项都可能缺失，并不表示remaining context；
+  “reported”不承诺数值来自provider
+  billing API，也不承诺cost是最终发票金额。
 - 全局设置键为`showTokenUsageAndCost`，默认`false`。关闭时整个`UsageGroup`隐藏，
-  `acp.context.window`与`acp.billing.cost`都不渲染。
+  `display_kind=context|billing`都不渲染。
 - 关闭只影响C++ display projection。Rust state、`agent_state_changed`传输和per-tab C++ cache
-  继续接收context/cost，因此重新开启时不需要provider重发Usage。
+  继续接收context/billing，因此重新开启时不需要agent重发Usage。
 - Settings保存或settings.json热更新后，`_RefreshUIForSettingsReload()`调用现有
   `_UpdateBottomBarState()`，立即用active tab cache重算可见items。
 - 两个用户入口写同一`GlobalAppSettings.ShowTokenUsageAndCost`：
@@ -1469,8 +1476,8 @@ ACP 没有“重新查询当前 session usage”的标准 request。Master/agent
 2. 仅 `Session` scope；
 3. cumulative/gauge latest-value 可靠传输；
 4. 内存存储，不跨 App 重启；
-5. C++ Bottom Bar 的右侧`UsageGroup`按context-window、monetary cost、Copilot AIC fallback
-  顺序最多显示两个items；monetary cost存在时不显示AIC；
+5. C++ Bottom Bar 的右侧`UsageGroup`按semantic context、billing顺序最多显示两个items；
+  billing consumer不区分标准ACP monetary cost与Copilot AIC等provider unit；
 6. 数值不进日志/遥测；
 7. custom agent 标准 ACP 自动支持；
 8. provider扩展接口保留；Copilot使用`VerifiedLocalSources`，只允许内置family和精确reporter
@@ -1478,8 +1485,8 @@ ACP 没有“重新查询当前 session usage”的标准 request。Master/agent
   出现则停用private fallback；
 9. Gemini不做private特殊处理；OpenCode标准UsageUpdate按原currency显示，不修正已知上游bug。
 10. `showTokenUsageAndCost`默认false；FRE与Settings → Agents都可开启。
-11. toggle关闭时整个UsageGroup隐藏；开启时按provider实际报告显示context-window、
-  monetary cost或两者。
+11. toggle关闭时整个UsageGroup隐藏；开启时按agent实际报告显示可用的context-window与
+  billing information；billing可以是monetary cost或non-currency credits，任一项都可能缺失。
 12. 设置变更立即从当前active tab的cache重投影，不等待下一条provider消息。
 13. context-window主栏使用`Context Window: <percentage>%`；hover/HelpText显示精确counts。
 14. Copilot `/context`保留provider display strings/reported percentage；AIC只取

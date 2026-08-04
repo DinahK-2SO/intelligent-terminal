@@ -2816,7 +2816,7 @@
     <comment>Subtitle shown beneath the page title on the AI Agents settings page. The hyperlink in AIAgents_PageSubtitlePrivacyLink follows this sentence inline; the trailing period belongs to this prefix.</comment>
   </data>
   <data name="AIAgents_PageSubtitlePrivacyLink" xml:space="preserve">
-    <value>En savoir plus sur l&apos;utilisation des données.</value>
+    <value>En savoir plus sur l'utilisation des données.</value>
     <comment>Inline hyperlink text that follows the AI Agents page subtitle and navigates to the privacy policy page. Includes a trailing period.</comment>
   </data>
   <data name="AIAgents_AcpGroupHeader.Text" xml:space="preserve"><value>Volet de l'agent</value><comment>Section header for the agent pane settings group.</comment></data>
@@ -2829,8 +2829,8 @@
   <data name="AIAgents_DelegateAgent.HelpText" xml:space="preserve"><value>Choisissez l'agent utilisé pour les actions rapides dans la palette de commandes.</value><comment>Supplementary description for the command palette agent setting.</comment></data>
   <data name="AIAgents_AutoFix.Header" xml:space="preserve"><value>Suggérer automatiquement des correctifs pour les commandes en échec</value><comment>Header for the toggle that enables automatic fix suggestions when commands fail.</comment></data>
   <data name="AIAgents_AutoFix.HelpText" xml:space="preserve"><value>Lorsque cette option est activée, l'agent IA analyse automatiquement les commandes en échec et propose un correctif. Lorsqu'elle est désactivée, les commandes en échec affichent une indication cliquable dans la barre d'état — appuyez sur Ctrl+Alt+. ou cliquez sur l'indication pour demander un correctif.</value><comment>Supplementary description for the auto-error-detection setting.</comment></data>
-  <data name="AIAgents_ShowTokenUsageAndCost.Header" xml:space="preserve"><value>Afficher l’utilisation et la facturation</value><comment>Header for the setting that controls whether context-window usage and provider-reported cost or credits appear in the terminal bottom bar.</comment></data>
-  <data name="AIAgents_ShowTokenUsageAndCost.HelpText" xml:space="preserve"><value>Afficher l’utilisation de la fenêtre de contexte et le coût ou les crédits indiqués par le fournisseur dans la barre inférieure du terminal.</value><comment>Supplementary description for the usage and billing visibility setting.</comment></data>
+  <data name="AIAgents_ShowTokenUsageAndCost.Header" xml:space="preserve"><value>Afficher l’utilisation du contexte et la facturation</value><comment>Header for a setting that shows context-window usage and billing information in the terminal bottom bar when available. Billing information may be a reported monetary cost or a non-currency credit unit. The connected AI agent or provider may omit either value; Intelligent Terminal does not calculate or convert them.</comment></data>
+  <data name="AIAgents_ShowTokenUsageAndCost.HelpText" xml:space="preserve"><value>Lorsqu’ils sont disponibles, afficher l’utilisation de la fenêtre de contexte et le coût ou les crédits signalés dans la barre inférieure du terminal.</value><comment>Supplementary description for the usage visibility setting. Cost may be an estimate reported by the connected AI agent or provider; credits are non-currency billing units. Either value may be unavailable. Intelligent Terminal does not calculate or convert these values.</comment></data>
   <data name="AIAgents_PanePosition.Header" xml:space="preserve"><value>Position du volet</value><comment>Header for the setting that controls where the agent pane appears relative to the active pane.</comment></data>
   <data name="AIAgents_PanePosition.HelpText" xml:space="preserve"><value>Détermine où s'ouvre le volet de l'agent par rapport à votre terminal.</value><comment>Supplementary description for the pane position setting.</comment></data>
   <data name="AIAgents_PanePosition_Bottom" xml:space="preserve">
