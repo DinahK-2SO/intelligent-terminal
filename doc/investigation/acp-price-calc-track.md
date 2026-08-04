@@ -85,6 +85,7 @@ code it describes.
 | 57. Provider-neutral Usage copy | UI text must cover context usage plus provider-reported currency or credits without promising token-only monetary cost | Say “usage and billing” in FRE and Settings, then synchronize every existing locale | Complete |
 | 58. Final Usage copy and localization | Copy must not overstate data provenance or availability, and every bundled locale must contain the complete Usage UI vocabulary | Finalize source-neutral copy, localize five strings, and enforce locale parity with Pester | Complete |
 | 59. PR review convergence | Malformed cross-process Usage must not terminate the UI, and spelling fixtures must not block review | Add one C++ containment boundary and preserve test semantics with review-safe fixtures | Complete |
+| 60. Official-source-only Copilot billing | Product billing must not read unsupported user-folder logs; unavailable or nonpositive command values must stay hidden | Delete the local ledger path and restore positive-only `/usage` try-get | Complete |
 
 ## Completed Steps
 
@@ -95,7 +96,61 @@ code it describes.
 > PowerShell installation path. **Step 50 supersedes every AIC/AI Units conclusion in Steps 45-49**;
 > those entries remain as an audit trail of the incorrect assumption and its correction. **Step 56
 > supersedes Step 42's zero-size N/A and over-capacity display policy. Step 58 supersedes Step 57's
-> interim visible copy while retaining its provider-neutral UI architecture.**
+> interim visible copy while retaining its provider-neutral UI architecture. Step 60 supersedes
+> Steps 50-53's user-folder checkpoint implementation; those steps remain investigation history.**
+
+### Step 60 - Official-Source-Only Copilot Billing
+
+**Product decision**
+
+- Usage/cost data that affects billing UX must come from a supported agent/provider interface.
+- Copilot CLI's `%USERPROFILE%\.copilot\session-state\...\events.jsonl` and
+  `session.usage_checkpoint.totalNanoAiu` are unsupported internal files. They remain useful as
+  investigation evidence but are prohibited as product data sources.
+- WTA continues to try `/context` and `/usage` on the existing ACP session. `/usage` produces a
+  billing item only when it directly reports a recognized AI Unit/Credit and a value greater than
+  zero. Nonpositive, missing, malformed, or unknown-unit values are omitted.
+
+**RED**
+
+- Replaced the adapter contract with command-only expectations: no local cursor, ordered
+  `/context` then `/usage`, positive integer/fractional billing, and empty contributions for zero,
+  negative, malformed, or unknown-unit output.
+- Extended the real ACP mock route to require both commands, suppress both outputs from chat, and
+  merge context plus a positive billing item.
+- Focused RED failed because `begin_local_usage("session-1")` still returned the user-folder JSONL
+  cursor.
+
+**GREEN**
+
+- Deleted `ProviderLocalUsageCursor`, `ProviderSessionEvent`, the generic JSONL reader/wait loop,
+  ACP-client cursor state, prompt-time offset capture, and all Copilot checkpoint parsing and
+  nano-AIU conversion.
+- Renamed the policy to `VerifiedCommandProbe`; the usage path contains no user-profile path,
+  `.copilot`, `events.jsonl`, checkpoint field, or local-file IO.
+- Copilot now declares `/context` and `/usage`. The usage parser preserves positive decimal text
+  and the exact recognized AI Unit/Credit label in a unit-neutral
+  `github.copilot.ai_usage` billing metric.
+- Invalid command values return an empty partial contribution, so valid context remains visible
+  while billing stays hidden. Standard ACP Usage still suppresses both fallback commands.
+- Session history/watch code that independently indexes Copilot sessions remains unchanged; it is
+  not a usage/cost source.
+
+**Validation**
+
+- Five focused adapter/routing tests executed and passed, including positive fractional usage,
+  zero/negative omission, two-command ordering, chat suppression, and probe-failure containment.
+- Complete WTA suite: 1,233 passed, 0 failed.
+- Static source audit found no local cursor, session-event usage input, checkpoint field,
+  user-folder path, or `events.jsonl` reference in the Usage/ACP probe path.
+- Patch whitespace and editor diagnostics are clean. Existing whole-file rustfmt drift outside
+  this change remains intentionally untouched.
+
+**Publish/dev split**
+
+- Publish cherry-pick commit `b09841d57` contains the five Rust product/test files only.
+- This Step 60 note and design synchronization remain in a separate dev-only commit because the
+  publish branch excludes `doc/`.
 
 ### Step 59 - PR Review Convergence
 
