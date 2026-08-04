@@ -1,5 +1,16 @@
 我们要做一个feature，
 
+我们有一个publish branch（user/DinahK-2SO/show-usage-calc）用于正式版的代码和 code review，它和我们的dev branch（user/DinahK-2SO/acp-price-calc）几乎完全相同，所有逻辑都是从 当前的 devbranch上 merge过去的。区别在于，the publish branch 不包含以下内容：
+- .\build\scripts\New-LocalMsixInstaller.ps1
+- .\doc\
+- .\test\e2e\selftests\LocalMsixInstaller.Unit.Tests.ps1
+- .\test\e2e\selftests\UsageLocalization.Unit.Tests.ps1
+- .\AGENTS.md
+
+在本workspace中，我们在 dev branch 上开发：
+user/DinahK-2SO/acp-price-calc
+
+
 在开发正式的feature之前，请先确认你能做到以下测试：
 
 1. 完美 mock claude和 codex，
