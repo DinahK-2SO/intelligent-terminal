@@ -49,7 +49,7 @@ enum MockBehavior {
     /// Stream the reply in two `AgentMessageChunk`s (`MOCK_` + `OK`), then end
     /// the turn — exercises streaming coalescing.
     StreamTwoChunks,
-    /// Return verified Copilot CLI text for `/context`.
+    /// Return verified Copilot CLI text for `/context` and `/usage`.
     CopilotUsageProbe,
     /// Complete a normal turn, then serve the verified Copilot context command.
     CopilotTurnAndUsageProbe,
@@ -278,6 +278,7 @@ impl MockAgent {
                 MockBehavior::CopilotUsageProbe | MockBehavior::CopilotTurnAndUsageProbe => {
                     let reply = match text.as_str() {
                         "/context" => "Context Usage\n\nclaude-sonnet-5 · 30k/264k tokens (11%)",
+                        "/usage" => "Session Usage\n\nRequests: 2 AI Credits (1s)",
                         _ => "MOCK_OK:user turn",
                     };
                     tokio::task::spawn_local(async move {
@@ -372,7 +373,6 @@ fn connect_with(
         prompt_timing: Arc::new(PromptTimingState::default()),
         provider_probe_capture: ProviderProbeCapture::default(),
         standard_usage_sessions: Mutex::new(HashSet::new()),
-        provider_usage_cursors: Mutex::new(HashMap::new()),
     });
     let wta = WtaClient { state };
 
@@ -628,7 +628,6 @@ fn connect_for_dispatch(behavior: MockBehavior) -> DispatchHarness {
         prompt_timing: prompt_timing.clone(),
         provider_probe_capture: ProviderProbeCapture::default(),
         standard_usage_sessions: Mutex::new(HashSet::new()),
-        provider_usage_cursors: Mutex::new(HashMap::new()),
     });
     let wta = WtaClient { state };
 
@@ -702,10 +701,15 @@ async fn copilot_usage_probe_captures_commands_without_chat_pollution() {
 
             assert_eq!(
                 harness.seen_prompts.lock().unwrap().as_slice(),
-                &["/context".to_string()]
+                &["/context".to_string(), "/usage".to_string()]
             );
             assert_eq!(snapshot.context.expect("context").used, 30_000);
-            assert!(snapshot.provider_metrics.is_empty());
+            assert_eq!(snapshot.provider_metrics.len(), 1);
+            assert_eq!(snapshot.provider_metrics[0].value_decimal_text, "2");
+            assert_eq!(
+                snapshot.provider_metrics[0].unit_display_text,
+                "AI Credits"
+            );
             while let Ok(event) = harness.event_rx.try_recv() {
                 assert!(
                     !matches!(event, AppEvent::AgentMessageChunk { .. }),
@@ -837,11 +841,16 @@ async fn successful_copilot_turn_automatically_reports_probed_usage_without_chat
 
             let snapshot = usage.expect("usage snapshot");
             assert_eq!(snapshot.context.expect("context").used, 30_000);
-            assert!(snapshot.provider_metrics.is_empty());
+            assert_eq!(snapshot.provider_metrics.len(), 1);
+            assert_eq!(snapshot.provider_metrics[0].value_decimal_text, "2");
+            assert_eq!(
+                snapshot.provider_metrics[0].unit_display_text,
+                "AI Credits"
+            );
             let seen = harness.seen_prompts.lock().unwrap();
-            assert_eq!(seen.len(), 2);
+            assert_eq!(seen.len(), 3);
             assert!(seen[0].contains("hello"));
-            assert_eq!(&seen[1..], &["/context"]);
+            assert_eq!(&seen[1..], &["/context", "/usage"]);
             assert!(in_flight.lock().unwrap().is_empty());
         })
         .await;
@@ -962,9 +971,10 @@ async fn automatic_copilot_probe_failure_preserves_successful_user_turn() {
 
             assert!(saw_reply && saw_end);
             let seen = harness.seen_prompts.lock().unwrap();
-            assert_eq!(seen.len(), 2);
+            assert_eq!(seen.len(), 3);
             assert!(seen[0].contains("hello"));
             assert_eq!(seen[1], "/context");
+            assert_eq!(seen[2], "/usage");
         })
         .await;
 }
@@ -1939,7 +1949,6 @@ fn bare_client() -> (WtaClient, mpsc::UnboundedReceiver<AppEvent>) {
         prompt_timing: Arc::new(PromptTimingState::default()),
         provider_probe_capture: ProviderProbeCapture::default(),
         standard_usage_sessions: Mutex::new(HashSet::new()),
-        provider_usage_cursors: Mutex::new(HashMap::new()),
     });
     (WtaClient { state }, event_rx)
 }

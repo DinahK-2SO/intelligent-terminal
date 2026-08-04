@@ -451,7 +451,7 @@ mod tests {
 
         assert_eq!(
             providers::lookup("copilot").unwrap().private_usage_policy(),
-            PrivateUsagePolicy::VerifiedLocalSources
+            PrivateUsagePolicy::VerifiedCommandProbe
         );
         assert_eq!(
             providers::lookup("claude").unwrap().private_usage_policy(),
@@ -491,7 +491,9 @@ mod tests {
         ];
 
         for provider in providers::all().iter().copied() {
-            if provider.private_usage_policy() == providers::PrivateUsagePolicy::VerifiedLocalSources {
+            if provider.private_usage_policy()
+                == providers::PrivateUsagePolicy::VerifiedCommandProbe
+            {
                 continue;
             }
             assert!(

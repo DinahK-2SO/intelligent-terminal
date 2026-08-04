@@ -1528,8 +1528,6 @@ struct ClientState {
     prompt_timing: Arc<PromptTimingState>,
     provider_probe_capture: ProviderProbeCapture,
     standard_usage_sessions: Mutex<HashSet<String>>,
-    provider_usage_cursors:
-        Mutex<HashMap<String, crate::usage::providers::ProviderLocalUsageCursor>>,
 }
 
 #[derive(Default)]
@@ -2015,12 +2013,6 @@ async fn probe_private_usage(
         .unwrap()
         .contains(&session_id_text)
     {
-        client
-            .state
-            .provider_usage_cursors
-            .lock()
-            .unwrap()
-            .remove(&session_id_text);
         return Ok(None);
     }
     let Some(reporter_id) = identity.reporter_id.as_deref() else {
@@ -2030,50 +2022,13 @@ async fn probe_private_usage(
         return Ok(None);
     };
     if adapter.private_usage_policy()
-        != crate::usage::providers::PrivateUsagePolicy::VerifiedLocalSources
+        != crate::usage::providers::PrivateUsagePolicy::VerifiedCommandProbe
         || !adapter.trusted_reporter_ids().contains(&reporter_id)
     {
         return Ok(None);
     }
 
-    let cursor = client
-        .state
-        .provider_usage_cursors
-        .lock()
-        .unwrap()
-        .remove(&session_id_text);
     let mut snapshot = crate::usage::normalize_provider_contribution(Default::default());
-
-    if let Some(cursor) = cursor {
-        match crate::usage::providers::wait_for_local_usage(
-            adapter,
-            Some(reporter_id),
-            cursor,
-        )
-        .await
-        {
-            Ok(Some(contribution)) => {
-                snapshot.merge(crate::usage::normalize_provider_contribution(contribution));
-            }
-            Ok(None) => {
-                tracing::warn!(
-                    target: "usage",
-                    %family_id,
-                    session_id = %session_id_text,
-                    "provider local usage was not available; omitting local metrics"
-                );
-            }
-            Err(error) => {
-                tracing::warn!(
-                    target: "usage",
-                    %family_id,
-                    session_id = %session_id_text,
-                    error = %error,
-                    "could not read provider local usage; omitting local metrics"
-                );
-            }
-        }
-    }
 
     for command in adapter.post_turn_commands() {
         match capture_provider_command(conn, client, &session_id, command).await {
@@ -2109,37 +2064,6 @@ async fn probe_private_usage(
         return Ok(None);
     }
     Ok(Some(snapshot))
-}
-
-fn record_provider_usage_cursor(
-    client: &WtaClient,
-    identity: &PromptUsageIdentity,
-    session_id: &acp::schema::v1::SessionId,
-) {
-    let Some(family_id) = identity.family_id.as_deref() else {
-        return;
-    };
-    let Some(reporter_id) = identity.reporter_id.as_deref() else {
-        return;
-    };
-    let Some(adapter) = crate::usage::providers::lookup(family_id) else {
-        return;
-    };
-    if adapter.private_usage_policy()
-        != crate::usage::providers::PrivateUsagePolicy::VerifiedLocalSources
-        || !adapter.trusted_reporter_ids().contains(&reporter_id)
-    {
-        return;
-    }
-    let session_id = session_id.to_string();
-    if let Some(cursor) = adapter.begin_local_usage(&session_id) {
-        client
-            .state
-            .provider_usage_cursors
-            .lock()
-            .unwrap()
-            .insert(session_id, cursor);
-    }
 }
 
 /// The helper-mode ACP client loop. Instead of spawning the agent CLI
@@ -2503,7 +2427,6 @@ pub async fn run_acp_client_over_pipe(
         prompt_timing: prompt_timing.clone(),
         provider_probe_capture: ProviderProbeCapture::default(),
         standard_usage_sessions: Mutex::new(HashSet::new()),
-        provider_usage_cursors: Mutex::new(HashMap::new()),
     });
 
     let client = WtaClient {
@@ -4001,11 +3924,6 @@ async fn dispatch_prompt_body(
     // through master → agent CLI verbatim; the agent only receives them if it
     // advertised `promptCapabilities.image` (the UI gates Alt+V on that flag).
     let content = build_prompt_content(&text, &prompt.images);
-    record_provider_usage_cursor(
-        &client_task,
-        &prompt_usage_identity_task,
-        &prompt_session_id,
-    );
     let prompt_fut = conn_task.prompt(acp::schema::v1::PromptRequest::new(
         prompt_session_id.clone(),
         content,
@@ -4994,7 +4912,6 @@ mod tests {
                 prompt_timing: Arc::new(super::super::PromptTimingState::default()),
                 provider_probe_capture: super::super::ProviderProbeCapture::default(),
                 standard_usage_sessions: std::sync::Mutex::new(std::collections::HashSet::new()),
-                provider_usage_cursors: std::sync::Mutex::new(std::collections::HashMap::new()),
             });
             (WtaClient { state }, rx)
         }
