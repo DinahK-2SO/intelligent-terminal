@@ -20,9 +20,7 @@ const MAX_RENDER_LINE_CHARS: usize = 4096;
 pub fn estimated_block_height(app: &App, area_width: u16) -> u16 {
     let tab = app.current_tab();
     let wrap_width = (area_width as usize).max(1);
-    // Fetch once for the pending-height calculation. `pending_render_text`
-    // re-parses the streaming buffer on every call (and allocates on the
-    // JSON-wrapper path via `extract_json_string_field`).
+    // Fetch once for the pending-height calculation.
     let pending_text = pending_render_text(tab);
 
     let messages: usize = tab.messages.iter().map(|m| message_height(m, wrap_width)).sum();
@@ -76,7 +74,22 @@ fn message_height(msg: &ChatMessage, wrap_width: usize) -> usize {
         ChatMessage::Agent(t) | ChatMessage::Error(t) => dot_wrap_count(t, body_width) + 1,
         ChatMessage::User(t) => wrap_count(t, body_width) + 1,
         ChatMessage::System(t) | ChatMessage::AgentEvent(t) => wrap_count(t, wrap_width) + 1,
-        ChatMessage::ToolCall { .. } => 1,
+        ChatMessage::ToolCall { location, location_is_command, .. } => {
+            // Command targets render one line per split statement (see
+            // the render arm below, and `command_format`) — must count
+            // the same number of rows here, or the chat area's height
+            // budget undercounts and clips the scrollback.
+            let command_lines = if *location_is_command {
+                location
+                    .as_deref()
+                    .filter(|l| !l.is_empty())
+                    .map(|l| crate::ui::command_format::command_display_lines(l).len())
+                    .unwrap_or(0)
+            } else {
+                0
+            };
+            1 + command_lines + usize::from(command_lines > 0)
+        }
         ChatMessage::Plan(entries) => 2 + entries.len(), // header + each entry + blank
         // Disclaimer is a single dim row — terminal min-width guarantees the
         // short text fits without wrapping, and no trailing blank is needed.
@@ -342,8 +355,9 @@ fn build_completed_turn_lines<'a>(
 
     // Push a trailing blank only if the last detail (or the prompt header
     // for collapsed turns) didn't already supply one. Agent / Error /
-    // System / Plan / AgentEvent all trail a blank via build_message_lines;
-    // ToolCall does not, and collapsed turns stop at the prompt header.
+    // System / Plan / AgentEvent trail a blank via build_message_lines.
+    // ToolCall only does so when it renders command details; collapsed
+    // turns stop at the prompt header.
     if lines.last().map_or(true, |l| !l.spans.is_empty()) {
         lines.push(Line::default());
     }
@@ -376,128 +390,11 @@ pub fn render_activity(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(Paragraph::new(line), area);
 }
 
-/// Incrementally extracts a JSON string field's decoded value from a
-/// possibly-truncated text. Handles `\"`, `\\`, `\n`, `\t`, `\uXXXX` and
-/// UTF-16 surrogate pairs (e.g. emoji). Returns the partial value if the
-/// closing quote hasn't arrived yet.
-pub(crate) fn extract_json_string_field(text: &str, field: &str) -> Option<String> {
-    let key = format!("\"{field}\"");
-    // Find the occurrence of `"field"` that is actually a *key* (followed by
-    // `:`), not the same token appearing earlier as a string value. Without
-    // this, `{"kind":"explanation","explanation":"real"}` would stop at the
-    // value and return None.
-    let mut search_from = 0;
-    let rest = loop {
-        let rel = text[search_from..].find(&key)?;
-        let abs = search_from + rel;
-        let after = text[abs + key.len()..].trim_start();
-        if let Some(r) = after.strip_prefix(':') {
-            break r.trim_start();
-        }
-        search_from = abs + key.len();
-    };
-    let body = rest.strip_prefix('"')?;
-
-    let mut out = String::with_capacity(body.len());
-    let mut chars = body.chars();
-    while let Some(c) = chars.next() {
-        match c {
-            '"' => return Some(out),
-            '\\' => match chars.next() {
-                None => return Some(out),
-                Some('"') => out.push('"'),
-                Some('\\') => out.push('\\'),
-                Some('/') => out.push('/'),
-                Some('n') => out.push('\n'),
-                Some('r') => out.push('\r'),
-                Some('t') => out.push('\t'),
-                Some('b') => out.push('\u{08}'),
-                Some('f') => out.push('\u{0C}'),
-                Some('u') => {
-                    let hex: String = chars.by_ref().take(4).collect();
-                    if hex.len() < 4 {
-                        return Some(out);
-                    }
-                    let Some(code) = u32::from_str_radix(&hex, 16).ok() else {
-                        continue;
-                    };
-                    match code {
-                        // High surrogate: pair it with the following
-                        // `\uXXXX` low surrogate to recover the non-BMP scalar
-                        // (e.g. emoji). If the low half hasn't streamed in yet
-                        // (or is malformed), drop the lone surrogate — the next
-                        // frame re-runs over the now-complete buffer.
-                        0xD800..=0xDBFF => {
-                            let mut lookahead = chars.clone();
-                            if lookahead.next() == Some('\\')
-                                && lookahead.next() == Some('u')
-                            {
-                                let lo_hex: String = lookahead.by_ref().take(4).collect();
-                                if lo_hex.len() == 4 {
-                                    if let Some(lo @ 0xDC00..=0xDFFF) =
-                                        u32::from_str_radix(&lo_hex, 16).ok()
-                                    {
-                                        let scalar = 0x1_0000
-                                            + ((code - 0xD800) << 10)
-                                            + (lo - 0xDC00);
-                                        if let Some(ch) = char::from_u32(scalar) {
-                                            out.push(ch);
-                                        }
-                                        chars = lookahead; // consume the low half
-                                    }
-                                }
-                            }
-                        }
-                        // Lone low surrogate or any non-scalar: skip. Valid
-                        // scalars get pushed.
-                        _ => {
-                            if let Some(ch) = char::from_u32(code) {
-                                out.push(ch);
-                            }
-                        }
-                    }
-                }
-                Some(other) => out.push(other),
-            },
-            c => out.push(c),
-        }
-    }
-    Some(out)
-}
-
-/// Resolves the user-visible portion of a streaming buffer:
-///
-/// - Buffer starts with a JSON wrapper (autofix): extract the `explanation`
-///   field so the user sees flowing markdown rather than raw JSON syntax.
-///   fix actions lack this field and yield None — the card surfaces on
-///   finalize.
-/// - Buffer is mixed prose followed by a fenced JSON block (planner
-///   terminal-task mode): render only the prose prefix; the recommendation
-///   card replaces it on eager/end-of-turn finalize.
-/// - Pure prose: stream as-is.
-///
-/// Callers outside the render path (e.g. turn-cancel / ignore commits) use
-/// this to record exactly what the user saw during streaming, instead of the
-/// raw buffer (which may contain JSON the UI deliberately hid).
+/// Return non-empty assistant text for streaming and transcript rendering.
+/// Typed proposal payloads travel through the direct Helper channel, so ACP
+/// assistant text is always user-visible chat content.
 pub(crate) fn user_visible_stream_text(text: &str) -> Option<Cow<'_, str>> {
-    let trimmed = text.trim_start();
-    if trimmed.is_empty() {
-        return None;
-    }
-    if trimmed.starts_with("```") || trimmed.starts_with('{') {
-        return extract_json_string_field(text, "explanation")
-            .filter(|s| !s.is_empty())
-            .map(Cow::Owned);
-    }
-    if let Some(fence_pos) = text.find("```") {
-        let prose = text[..fence_pos].trim_end();
-        return if prose.is_empty() {
-            None
-        } else {
-            Some(Cow::Borrowed(prose))
-        };
-    }
-    Some(Cow::Borrowed(text))
+    (!text.trim().is_empty()).then_some(Cow::Borrowed(text))
 }
 
 fn pending_render_text(tab: &crate::app::TabSession) -> Option<Cow<'_, str>> {
@@ -575,6 +472,8 @@ fn build_message_lines<'a>(
             id,
             title,
             status,
+            location,
+            location_is_command,
         } => {
             let (marker, marker_style, detail) = tool_call_presentation(status);
             let marker = if permission_tool_call_id == Some(id.as_str())
@@ -589,6 +488,21 @@ fn build_message_lines<'a>(
                 Span::raw(" "),
                 Span::styled(truncate_render_text(title), theme::TOOL_CALL_TITLE),
             ];
+            let location = location.as_deref().filter(|l| !l.is_empty());
+            // Path hint pulled from the ACP `locations`/`raw_input` fields
+            // (see `client.rs::tool_call_location_hint`) — surfaces *what*
+            // the tool touched, which the agent's `title` alone often
+            // doesn't (e.g. a generic "Access paths outside trusted
+            // directories" permission title). Rendered inline since a
+            // path is normally short enough to fit on the title's line.
+            if !location_is_command {
+                if let Some(location) = location {
+                    spans.push(Span::styled(
+                        format!(" ({})", truncate_render_text(location)),
+                        theme::DIM,
+                    ));
+                }
+            }
             if let Some(detail) = detail.filter(|detail| !detail.is_empty()) {
                 spans.push(Span::styled(
                     format!(" · {}", truncate_render_text(detail)),
@@ -596,6 +510,36 @@ fn build_message_lines<'a>(
                 ));
             }
             lines.push(Line::from(spans));
+            // A command target can be several `;`-chained PowerShell
+            // statements crammed into one `raw_input.command` (agents
+            // commonly batch multiple checks into a single tool call) —
+            // rendering that as one long line, which then wraps at the
+            // terminal edge with no hanging indent, reads as an
+            // unreadable wall of text. Splitting on top-level `;`
+            // restores the sequence of discrete steps, one per code-
+            // styled line (mirrors how `execute`-kind cards look in Zed /
+            // opencode); a long remainder folds into a single "+N more"
+            // row instead of growing the card unboundedly.
+            let mut rendered_command = false;
+            if *location_is_command {
+                if let Some(command) = location {
+                    for entry in crate::ui::command_format::command_display_lines(command) {
+                        rendered_command = true;
+                        let text = match entry {
+                            crate::ui::command_format::CommandLine::Statement(s) => {
+                                format!("    $ {s}")
+                            }
+                            crate::ui::command_format::CommandLine::Folded { remaining } => {
+                                format!("    … (+{remaining} more)")
+                            }
+                        };
+                        lines.push(Line::from(Span::styled(text, theme::CARD_CODE)));
+                    }
+                }
+            }
+            if rendered_command {
+                lines.push(Line::default());
+            }
         }
         ChatMessage::Plan(entries) => {
             lines.push(Line::from(Span::styled(t!("chat.plan_header").into_owned(), theme::PLAN_STYLE)));
@@ -810,6 +754,8 @@ mod tests {
             id: "tool".into(),
             title: "Run: cargo test".into(),
             status: status.into(),
+            location: None,
+            location_is_command: false,
         };
         let lines = build_message_lines(&message, false, false, None, 0, 80);
         let line = &lines[0];
@@ -818,6 +764,105 @@ mod tests {
         assert_eq!(line.spans[0].style, expected_marker_style);
         assert_eq!(line.spans[2].style, theme::TOOL_CALL_TITLE);
         assert_eq!(line.spans.get(3).map(|span| span.style), expected_detail_style);
+    }
+
+    /// A `location` hint renders as a dim `(path)` suffix right after the
+    /// title, before the status detail — guards against the card silently
+    /// dropping the path/command info that `client.rs` now forwards.
+    #[test]
+    fn tool_call_renders_location_hint_between_title_and_status_detail() {
+        let message = ChatMessage::ToolCall {
+            id: "tool".into(),
+            title: "Access paths outside trusted directories".into(),
+            status: "Pending".into(),
+            location: Some(r"C:\src\rust-app".into()),
+            location_is_command: false,
+        };
+        let lines = build_message_lines(&message, false, false, None, 0, 80);
+        let line = &lines[0];
+
+        assert_eq!(
+            line_text(line),
+            r"● Access paths outside trusted directories (C:\src\rust-app)"
+        );
+        assert_eq!(
+            lines.len(),
+            1,
+            "path-only tool calls should remain compact without a paragraph break"
+        );
+        assert_eq!(message_height(&message, 80), 1);
+    }
+
+    /// A command-kind location (`location_is_command`) must NOT be inlined
+    /// as a `(hint)` suffix on the title line — it gets its own
+    /// `CARD_CODE`-styled `$ command` line instead, since commands can be
+    /// long one-liners that would overflow or wrap awkwardly inline.
+    #[test]
+    fn tool_call_command_location_renders_as_separate_code_line() {
+        let message = ChatMessage::ToolCall {
+            id: "tool".into(),
+            title: "Run command".into(),
+            status: "Pending".into(),
+            location: Some("cargo test --workspace".into()),
+            location_is_command: true,
+        };
+        let lines = build_message_lines(&message, false, false, None, 0, 80);
+
+        assert_eq!(
+            lines.len(),
+            3,
+            "expected a title line, command line, and paragraph break"
+        );
+        assert_eq!(line_text(&lines[0]), "● Run command");
+        assert_eq!(line_text(&lines[1]), "    $ cargo test --workspace");
+        assert_eq!(lines[1].spans[0].style, theme::CARD_CODE);
+        assert!(lines[2].spans.is_empty());
+
+        assert_eq!(
+            message_height(&message, 80),
+            3,
+            "the height budget must account for the extra command line"
+        );
+    }
+
+    /// A multi-statement command (`;`-chained, the pattern agents commonly
+    /// emit when batching several checks into one tool call) must render
+    /// as one code-styled line **per statement**, not one giant crammed
+    /// line — this was the exact bug reported: `winget list ...; winget
+    /// list ...` rendered as a single unreadable wrapped line with
+    /// misaligned continuation.
+    #[test]
+    fn tool_call_multi_statement_command_renders_one_line_per_statement() {
+        let message = ChatMessage::ToolCall {
+            id: "tool".into(),
+            title: "Check installed PowerToys and Foundry Local packages".into(),
+            status: "Completed".into(),
+            location: Some(
+                "winget list --name PowerToys 2>$null; winget list --name Foundry 2>$null".into(),
+            ),
+            location_is_command: true,
+        };
+        let lines = build_message_lines(&message, false, false, None, 0, 80);
+
+        assert_eq!(
+            lines.len(),
+            4,
+            "expected a title line, one line per statement, and a paragraph break"
+        );
+        assert_eq!(
+            line_text(&lines[1]),
+            "    $ winget list --name PowerToys 2>$null"
+        );
+        assert_eq!(
+            line_text(&lines[2]),
+            "    $ winget list --name Foundry 2>$null"
+        );
+
+        assert_eq!(
+            message_height(&message, 80),
+            4,
+            "the height budget must count one row per split statement"
+        );
     }
 
     #[test]
@@ -891,90 +936,6 @@ mod tests {
         assert_ne!(theme::TOOL_CALL_CANCELED, theme::DIM);
     }
 
-    // ── extract_json_string_field: escape decoding ──────────────────────────
-
-    #[test]
-    fn json_field_basic_value() {
-        assert_eq!(
-            extract_json_string_field(r#"{"explanation":"hello"}"#, "explanation")
-                .as_deref(),
-            Some("hello")
-        );
-    }
-
-    #[test]
-    fn json_field_decodes_escapes() {
-        // \" \\ \/ \n \r \t all per RFC 8259.
-        let raw = r#"{"explanation":"a\"b\\c\/d\ne\tf"}"#;
-        assert_eq!(
-            extract_json_string_field(raw, "explanation").as_deref(),
-            Some("a\"b\\c/d\ne\tf")
-        );
-    }
-
-    #[test]
-    fn json_field_decodes_bmp_unicode_escape() {
-        // \u0041 = 'A', \u00e9 = 'é'
-        assert_eq!(
-            extract_json_string_field(r#"{"explanation":"\u0041\u00e9"}"#, "explanation")
-                .as_deref(),
-            Some("Aé")
-        );
-    }
-
-    #[test]
-    fn json_field_tolerates_whitespace_around_colon() {
-        assert_eq!(
-            extract_json_string_field("{ \"explanation\" : \"v\" }", "explanation")
-                .as_deref(),
-            Some("v")
-        );
-    }
-
-    #[test]
-    fn json_field_returns_partial_when_unterminated() {
-        // Streaming: the closing quote hasn't arrived yet — show what we have.
-        assert_eq!(
-            extract_json_string_field(r#"{"explanation":"hello world"#, "explanation")
-                .as_deref(),
-            Some("hello world")
-        );
-    }
-
-    #[test]
-    fn json_field_absent_returns_none() {
-        assert_eq!(
-            extract_json_string_field(r#"{"command":"ls"}"#, "explanation"),
-            None
-        );
-    }
-
-    // ── extract_json_string_field: ADVERSARIAL (expected to expose gaps) ─────
-
-    /// A non-BMP character (emoji) encoded as a UTF-16 surrogate pair must
-    /// decode to the actual character. Agents routinely emit emoji in prose.
-    #[test]
-    fn json_field_decodes_surrogate_pair_emoji() {
-        // U+1F600 😀 = \uD83D\uDE00 in UTF-16.
-        assert_eq!(
-            extract_json_string_field(r#"{"explanation":"\uD83D\uDE00"}"#, "explanation")
-                .as_deref(),
-            Some("😀")
-        );
-    }
-
-    /// When the field name also appears earlier as a *value*, extraction must
-    /// still find the real key=value pair, not give up at the first textual
-    /// match.
-    #[test]
-    fn json_field_skips_name_appearing_as_value() {
-        let raw = r#"{"kind":"explanation","explanation":"real"}"#;
-        assert_eq!(
-            extract_json_string_field(raw, "explanation").as_deref(),
-            Some("real")
-        );
-    }
-
     // ── user_visible_stream_text ────────────────────────────────────────────
 
     #[test]
@@ -986,30 +947,19 @@ mod tests {
     }
 
     #[test]
-    fn stream_text_json_wrapper_extracts_explanation() {
-        assert_eq!(
-            user_visible_stream_text(r#"{"explanation":"why blue"}"#).as_deref(),
-            Some("why blue")
-        );
+    fn stream_text_json_passes_through_verbatim() {
+        let text = r#"{"explanation":"why blue","command":"ls"}"#;
+        assert_eq!(user_visible_stream_text(text).as_deref(), Some(text));
     }
 
     #[test]
-    fn stream_text_json_without_explanation_is_hidden() {
-        // A fix-action wrapper (no explanation) must not leak raw JSON.
-        assert_eq!(user_visible_stream_text(r#"{"command":"ls"}"#), None);
+    fn stream_text_prose_then_fence_passes_through_verbatim() {
+        let text = "Here is the plan.\n```json\n{\"choices\":[]}\n```";
+        assert_eq!(user_visible_stream_text(text).as_deref(), Some(text));
     }
 
     #[test]
-    fn stream_text_prose_then_fence_shows_prose_prefix_only() {
-        let buf = "Here is the plan.\n```json\n{\"choices\":[]}\n```";
-        assert_eq!(
-            user_visible_stream_text(buf).as_deref(),
-            Some("Here is the plan.")
-        );
-    }
-
-    #[test]
-    fn stream_text_empty_is_none() {
+    fn stream_text_blank_is_none() {
         assert_eq!(user_visible_stream_text("   \n  "), None);
     }
 
@@ -1020,6 +970,7 @@ mod tests {
                 id: 1,
                 text: "hi".into(),
                 submitted_at_unix_s: 0.0,
+                context: crate::app::TurnContext::default(),
                 autofix: None,
             },
             buf: buf.to_string(),
@@ -1055,11 +1006,15 @@ mod tests {
             id: "tool-2".into(),
             title: "Read Cargo.toml".into(),
             status: "Completed".into(),
+            location: None,
+            location_is_command: false,
         };
         let other = ChatMessage::ToolCall {
             id: "tool-1".into(),
             title: "Find files".into(),
             status: "Completed".into(),
+            location: None,
+            location_is_command: false,
         };
 
         let matching_lines =
@@ -1077,6 +1032,8 @@ mod tests {
                 id: "tool".into(),
                 title: "Find files".into(),
                 status: status.into(),
+                location: None,
+                location_is_command: false,
             };
             let lines = build_message_lines(&message, false, false, None, 9, 80);
             assert_eq!(lines[0].spans[0].content, "·", "{status} should breathe");
@@ -1090,6 +1047,10 @@ mod tests {
             tab.permission.push_back(crate::app::PermissionState {
                 tool_call_id: id.into(),
                 description: "Allow access?".into(),
+                title: "Allow access?".into(),
+                kind_label: None,
+                target: None,
+                target_is_command: false,
                 options: Vec::new(),
                 selected: 0,
                 responder: None,
