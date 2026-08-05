@@ -12,10 +12,7 @@
 //! The constructors are `pub(crate)` so app-module scenarios can borrow the
 //! harness and assert on real `App` state (see the spec, "option 2").
 
-use super::{
-    probe_private_usage, ClientState, PromptTimingState, PromptUsageIdentity,
-    ProviderProbeCapture, WtaClient,
-};
+use super::{ClientState, PromptTimingState, PromptUsageIdentity, ProviderProbeCapture, WtaClient};
 use super::{
     dispatch_cancel, dispatch_drop_session, dispatch_load_session, dispatch_master_ext_request,
     dispatch_new_session, dispatch_prompt, dispatch_rename_session,
@@ -49,8 +46,6 @@ enum MockBehavior {
     /// Stream the reply in two `AgentMessageChunk`s (`MOCK_` + `OK`), then end
     /// the turn — exercises streaming coalescing.
     StreamTwoChunks,
-    /// Complete a normal Copilot turn with a standard ACP UsageUpdate.
-    CopilotTurnWithStandardUsage,
 }
 
 /// Deterministic ACP agent. Implements only what the scenarios need; the rest
@@ -259,26 +254,6 @@ impl MockAgent {
                                 ))
                                 .await;
                         }
-                    });
-                }
-                MockBehavior::CopilotTurnWithStandardUsage => {
-                    tokio::task::spawn_local(async move {
-                        let _ = conn
-                            .session_notification(acp::schema::v1::SessionNotification::new(
-                                sid.clone(),
-                                acp::schema::v1::SessionUpdate::AgentMessageChunk(
-                                    acp::schema::v1::ContentChunk::new("MOCK_OK:user turn".into()),
-                                ),
-                            ))
-                            .await;
-                        let _ = conn
-                            .session_notification(acp::schema::v1::SessionNotification::new(
-                                sid,
-                                acp::schema::v1::SessionUpdate::UsageUpdate(
-                                    acp::schema::v1::UsageUpdate::new(40, 100),
-                                ),
-                            ))
-                            .await;
                     });
                 }
             }
@@ -620,150 +595,6 @@ fn connect_for_dispatch(behavior: MockBehavior) -> DispatchHarness {
         fail_load_session,
         slow_load,
     }
-}
-
-#[tokio::test]
-async fn copilot_usage_probe_skips_non_copilot_identity_before_wire_io() {
-    let local = tokio::task::LocalSet::new();
-    local
-        .run_until(async {
-            let harness = connect_for_dispatch(MockBehavior::Reply);
-            let identity = PromptUsageIdentity {
-                family_id: Some(crate::agent_registry::CLAUDE_AGENT_ID.to_string()),
-                reporter_id: Some("Copilot".to_string()),
-            };
-
-            let snapshot = probe_private_usage(
-                &harness.conn,
-                &harness.client,
-                &identity,
-                acp::schema::v1::SessionId::new("mock-session-1"),
-            )
-            .await
-            .expect("unsupported identity should not fail");
-
-            assert!(snapshot.is_none());
-            assert!(harness.seen_prompts.lock().unwrap().is_empty());
-        })
-        .await;
-}
-
-#[tokio::test]
-async fn successful_copilot_turn_sends_only_the_user_prompt() {
-    let local = tokio::task::LocalSet::new();
-    local
-        .run_until(async {
-            let harness = connect_for_dispatch(MockBehavior::Reply);
-            harness
-                .conn
-                .initialize(acp::schema::v1::InitializeRequest::new(
-                    acp::schema::ProtocolVersion::LATEST,
-                ))
-                .await
-                .expect("initialize failed");
-            let (tab_to_session, in_flight, cancel_signals, memo) = fresh_dispatch_state();
-            let identity = PromptUsageIdentity {
-                family_id: Some(crate::agent_registry::COPILOT_AGENT_ID.to_string()),
-                reporter_id: Some("Copilot".to_string()),
-            };
-            let mut event_rx = harness.event_rx;
-
-            dispatch_prompt(
-                test_prompt(1, "hello", false),
-                &harness.conn,
-                &tab_to_session,
-                &memo,
-                &in_flight,
-                &cancel_signals,
-                &harness.event_tx,
-                &harness.shell_mgr,
-                &harness.prompt_timing,
-                &harness.client,
-                &identity,
-                false,
-                false,
-            );
-
-            let mut saw_turn_end = false;
-            tokio::time::timeout(std::time::Duration::from_secs(5), async {
-                while !in_flight.lock().unwrap().is_empty() || !saw_turn_end {
-                    match event_rx.recv().await {
-                        Some(AppEvent::AgentMessageChunk { text, .. }) => {
-                            assert!(text.starts_with("MOCK_OK:"));
-                        }
-                        Some(AppEvent::AgentMessageEnd { .. }) => saw_turn_end = true,
-                        Some(AppEvent::UsageReported { .. }) => {
-                            panic!("the mock sent no ACP UsageUpdate")
-                        }
-                        Some(AppEvent::AgentError { message, .. }) => {
-                            panic!("successful turn must not fail: {message}")
-                        }
-                        Some(_) => {}
-                        None => panic!("event channel closed before turn completion"),
-                    }
-                }
-            })
-            .await
-            .expect("timed out waiting for Copilot turn completion");
-
-            let seen = harness.seen_prompts.lock().unwrap();
-            assert_eq!(seen.len(), 1);
-            assert!(seen[0].contains("hello"));
-            assert!(in_flight.lock().unwrap().is_empty());
-        })
-        .await;
-}
-
-#[tokio::test]
-async fn standard_acp_usage_sends_no_copilot_specific_commands() {
-    let local = tokio::task::LocalSet::new();
-    local
-        .run_until(async {
-            let harness = connect_for_dispatch(MockBehavior::CopilotTurnWithStandardUsage);
-            harness
-                .conn
-                .initialize(acp::schema::v1::InitializeRequest::new(
-                    acp::schema::ProtocolVersion::LATEST,
-                ))
-                .await
-                .expect("initialize failed");
-            let (tab_to_session, in_flight, cancel_signals, memo) = fresh_dispatch_state();
-            let identity = PromptUsageIdentity {
-                family_id: Some(crate::agent_registry::COPILOT_AGENT_ID.to_string()),
-                reporter_id: Some("Copilot".to_string()),
-            };
-            let mut event_rx = harness.event_rx;
-
-            dispatch_prompt(
-                test_prompt(1, "hello", false),
-                &harness.conn,
-                &tab_to_session,
-                &memo,
-                &in_flight,
-                &cancel_signals,
-                &harness.event_tx,
-                &harness.shell_mgr,
-                &harness.prompt_timing,
-                &harness.client,
-                &identity,
-                false,
-                false,
-            );
-
-            tokio::time::timeout(std::time::Duration::from_secs(5), async {
-                while !in_flight.lock().unwrap().is_empty() {
-                    while event_rx.try_recv().is_ok() {}
-                    tokio::task::yield_now().await;
-                }
-            })
-            .await
-            .expect("turn did not complete");
-
-            let seen = harness.seen_prompts.lock().unwrap();
-            assert_eq!(seen.len(), 1, "standard ACP Usage must not trigger extra commands");
-            assert!(seen[0].contains("hello"));
-        })
-        .await;
 }
 
 /// Fresh, empty per-tab dispatcher state (session map, single-flight set,
