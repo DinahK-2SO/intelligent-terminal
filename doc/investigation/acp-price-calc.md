@@ -765,7 +765,9 @@ trait ProviderUsageAdapter: Sync {
 
 `ProviderUsageContribution`的context、cost和provider metrics相互独立，因此
 可信extension可以只报告其中一部分。未验证adapter仍返回empty contribution。当前没有内置
-provider启用private usage policy；Copilot adapter保留独立module，但返回empty contribution。
+provider启用private usage policy；Copilot adapter保留独立module，当前没有private parser。
+`StandardAcpOnly`描述当前启用的数据源，不是永久禁止Copilot扩展；未来有正式contract并完成
+wire验证后，可修改该provider module与对应contract tests。
 
 | Family module | 当前private policy | 当前行为 |
 |---|---|---|
@@ -782,13 +784,13 @@ CLI凭据或发HTTP请求。unknown/custom family不匹配private adapter，仍�
 
 GitHub Copilot CLI 1.0.78已经在标准ACP `UsageUpdate`中提供context-window usage和size，因此：
 
-1. `usage/providers/copilot.rs`保留独立adapter module，但policy为`StandardAcpOnly`；
-2. adapter不声明trusted reporter或post-turn commands，private extractor恒返回empty contribution；
+1. `usage/providers/copilot.rs`保留独立adapter module，当前policy为`StandardAcpOnly`；
+2. 当前adapter不声明trusted reporter或post-turn commands，也没有private parser；
 3. WTA不发送`/context`或`/usage`，不capture或解析其人类可读输出；
 4. Copilot standard `UsageUpdate`继续沿唯一的AppEvent、TabSession和
   `agent_state_changed.usage`路径投影，无Copilot专属COM/IDL事件；
-5. Copilot尚未报告标准ACP cost时billing保持缺失。未来CLI加入cost后，通用normalizer自动消费，
-  重新启用private处理必须另做真实wire调查、TDD和review。
+5. Copilot尚未报告标准ACP cost时billing保持缺失。未来CLI加入标准cost后，通用normalizer自动
+  消费；若未来需要正式private contract，则在完成真实wire调查、TDD和review后正常扩展该module。
 
 通用provider orchestration和`ProviderUsageAdapter`接口继续保留，以备其他provider或未来经过验证
 的官方扩展使用；本步骤不删除framework或建立第二套状态route。

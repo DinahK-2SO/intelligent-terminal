@@ -114,7 +114,7 @@ code it describes.
   supported ACP contract and that wire behavior is tested locally.
 - The five-family provider registry, `ProviderUsageAdapter` boundary, and generic private-source
   orchestration remain available for future reviewed provider needs. Copilot's module stays in the
-  registry but declares `StandardAcpOnly`.
+  registry and currently declares `StandardAcpOnly`; this is not a permanent extension ban.
 
 **RED**
 
@@ -141,8 +141,19 @@ code it describes.
 - Provider registry policy contract: 1 passed, 0 failed.
 - Complete WTA suite: 1,229 passed, 0 failed.
 - Editor diagnostics are clean. Static source audit finds no Copilot command constant, reporter
-  allowlist, private metric ID, or parser in the product path; command literals remain only in the
-  tests that assert they are ignored.
+  allowlist, private metric ID, or parser in the product path.
+
+**Review correction**
+
+- Removed adapter tests that treated `/context` and `/usage` inputs as permanently forbidden. They
+  duplicated the current registry policy and would have unnecessarily frozen a future implementation.
+- Removed the direct “private probe is disabled” test and permanent-disable wording. Retained
+  behavior-level coverage that the current Copilot configuration sends only the user prompt, plus
+  the registry contract that records today's `StandardAcpOnly` policy.
+- Focused corrected contracts: 2 passed, 0 failed. All remaining Rust tests matching `copilot`:
+  49 passed, 0 failed.
+- Publish test-correction commit `a09e32776` removes only the over-constrained Rust tests; it does
+  not change the Copilot adapter implementation or generic provider framework.
 
 **Publish/dev split**
 
