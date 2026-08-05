@@ -10,7 +10,7 @@ use anyhow::Result;
 use std::collections::{HashMap, HashSet};
 use std::sync::{
     atomic::{AtomicU64, Ordering},
-    Arc,
+    Arc, Mutex,
 };
 use tokio::sync::mpsc;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
@@ -19,6 +19,7 @@ use crate::app_contracts::{AcpModelInfo, AppEvent, PermOption, PlanEntry, PlanEn
 use crate::pane_context::PaneContext;
 use crate::shell::{ShellManager, TerminalConfig};
 
+const ACP_SESSION_USAGE_SCHEMA: &str = "acp.v1.session_usage";
 // Normal helper startup can race a slow wta-master cold start: master opens its
 // pipe only after spawning and initializing the agent CLI (up to 60s for npx
 // adapters), so keep a long budget there.
@@ -83,6 +84,21 @@ pub struct PromptSubmission {
     /// the agent advertised `promptCapabilities.image`). Empty for the common
     /// text-only and all auto-fix prompts.
     pub images: Vec<crate::clipboard_image::PastedImage>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct PromptUsageIdentity {
+    family_id: Option<String>,
+    reporter_id: Option<String>,
+}
+
+fn is_redundant_startup_model_error(
+    identity: &PromptUsageIdentity,
+    error: &acp::Error,
+) -> bool {
+    identity.family_id.as_deref() == Some(crate::agent_registry::GEMINI_AGENT_ID)
+        && identity.reporter_id.as_deref() == Some("gemini-cli")
+        && error.code == acp::ErrorCode::MethodNotFound
 }
 
 /// User-initiated cancel of an in-flight prompt. The App emits one of
@@ -341,9 +357,44 @@ struct ClientState {
     event_tx: mpsc::UnboundedSender<AppEvent>,
     shell_mgr: Arc<ShellManager>,
     prompt_timing: Arc<PromptTimingState>,
+    provider_probe_capture: ProviderProbeCapture,
+    standard_usage_sessions: Mutex<HashSet<String>>,
     proposal_channels:
         Arc<crate::agent_tools::action_proposal::channel::ProposalChannelManager>,
     hidden_tool_calls: std::sync::Mutex<HashSet<(String, String)>>,
+}
+
+#[derive(Default)]
+struct ProviderProbeCapture {
+    active: Mutex<HashMap<String, String>>,
+}
+
+impl ProviderProbeCapture {
+    fn begin(&self, session_id: &str) -> bool {
+        let mut active = self.active.lock().unwrap();
+        if active.contains_key(session_id) {
+            return false;
+        }
+        active.insert(session_id.to_string(), String::new());
+        true
+    }
+
+    fn capture_text(&self, session_id: &str, text: &str) -> bool {
+        let mut active = self.active.lock().unwrap();
+        let Some(output) = active.get_mut(session_id) else {
+            return false;
+        };
+        output.push_str(text);
+        true
+    }
+
+    fn is_active(&self, session_id: &str) -> bool {
+        self.active.lock().unwrap().contains_key(session_id)
+    }
+
+    fn finish(&self, session_id: &str) -> Option<String> {
+        self.active.lock().unwrap().remove(session_id)
+    }
 }
 
 /// Our Client trait implementation — handles incoming agent requests and notifications.
@@ -497,6 +548,7 @@ fn session_update_kind(update: &acp::schema::v1::SessionUpdate) -> &'static str 
         acp::schema::v1::SessionUpdate::ToolCall(_) => "tool_call",
         acp::schema::v1::SessionUpdate::ToolCallUpdate(_) => "tool_call_update",
         acp::schema::v1::SessionUpdate::Plan(_) => "plan",
+        acp::schema::v1::SessionUpdate::UsageUpdate(_) => "usage_update",
         _ => "other",
     }
 }
@@ -588,6 +640,30 @@ fn looks_like_proposal_command(command: &str) -> bool {
 }
 
 impl WtaClient {
+    async fn dispatch_session_notification(&self, args: acp::schema::v1::SessionNotification) {
+        let usage_session_id = matches!(
+            &args.update,
+            acp::schema::v1::SessionUpdate::UsageUpdate(_)
+        )
+        .then(|| args.session_id.0.to_string());
+
+        if self.session_notification(args).await.is_err() {
+            if let Some(session_id) = usage_session_id {
+                tracing::warn!(
+                    target: "usage",
+                    schema = ACP_SESSION_USAGE_SCHEMA,
+                    source = "acp_standard",
+                    outcome = "rejected",
+                    "usage update rejected"
+                );
+                let _ = self
+                    .state
+                    .event_tx
+                    .send(AppEvent::UsageCleared { session_id });
+            }
+        }
+    }
+
     fn hide_proposal_tool_call(&self, session_id: &str, tool_call_id: &str) {
         self.state
             .hidden_tool_calls
@@ -775,14 +851,32 @@ impl WtaClient {
         args: acp::schema::v1::SessionNotification,
     ) -> acp::Result<()> {
         let kind = session_update_kind(&args.update);
+        let sid = args.session_id.0.to_string();
+        if self.state.provider_probe_capture.is_active(&sid) {
+            if let acp::schema::v1::SessionUpdate::AgentMessageChunk(chunk) = &args.update {
+                if let acp::schema::v1::ContentBlock::Text(text_content) = &chunk.content {
+                    self.state
+                        .provider_probe_capture
+                        .capture_text(&sid, &text_content.text);
+                }
+                return Ok(());
+            }
+            if !matches!(args.update, acp::schema::v1::SessionUpdate::UsageUpdate(_)) {
+                return Ok(());
+            }
+        }
         // Per-streamed-chunk; trace-only (not via acp_log's debug) so default
         // debug logs aren't flooded with one line per token chunk.
         tracing::trace!(target: "acp", "session_notification: kind={}", kind);
         // The full update carries agent message/thought text, tool-call
         // content, plan bodies, and replayed user-message chunks — trace only.
-        acp_trace_content(&format!("session_notification update: {:?}", args.update));
-        let sid = args.session_id.0.to_string();
-        self.state.prompt_timing.observe_session_update(&sid, kind);
+        // Usage values remain redacted even at trace level.
+        if kind != "usage_update" {
+            acp_trace_content(&format!("session_notification update: {:?}", args.update));
+        }
+        self.state
+            .prompt_timing
+            .observe_session_update(&sid, kind);
         match args.update {
             acp::schema::v1::SessionUpdate::UserMessageChunk(chunk) => {
                 // Replayed historical user prompt from `session/load`.
@@ -926,6 +1020,18 @@ impl WtaClient {
                 let _ = self.state.event_tx.send(AppEvent::Plan {
                     session_id: sid,
                     entries,
+                });
+            }
+            acp::schema::v1::SessionUpdate::UsageUpdate(update) => {
+                self.state
+                    .standard_usage_sessions
+                    .lock()
+                    .unwrap()
+                    .insert(sid.clone());
+                let snapshot = crate::usage::normalize_standard_usage(&update);
+                let _ = self.state.event_tx.send(AppEvent::UsageReported {
+                    session_id: sid,
+                    snapshot,
                 });
             }
             acp::schema::v1::SessionUpdate::ConfigOptionUpdate(update) => {
@@ -1115,6 +1221,110 @@ impl WtaClient {
         }
         Ok(())
     }
+}
+
+async fn capture_provider_command(
+    conn: &conn::ClientLink,
+    client: &WtaClient,
+    session_id: &acp::schema::v1::SessionId,
+    command: &'static str,
+) -> Result<String> {
+    const PROVIDER_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+    let session_id_text = session_id.to_string();
+    if !client.state.provider_probe_capture.begin(&session_id_text) {
+        anyhow::bail!("provider probe already active for session");
+    }
+    let result = tokio::time::timeout(
+        PROVIDER_PROBE_TIMEOUT,
+        conn.prompt(acp::schema::v1::PromptRequest::new(
+            session_id.clone(),
+            vec![command.to_string().into()],
+        )),
+    )
+    .await;
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    let output = client
+        .state
+        .provider_probe_capture
+        .finish(&session_id_text)
+        .unwrap_or_default();
+
+    match result {
+        Ok(Ok(_)) => Ok(output),
+        Ok(Err(error)) => anyhow::bail!("{} probe failed: {}", command, error),
+        Err(_) => anyhow::bail!("{} probe timed out", command),
+    }
+}
+
+async fn probe_private_usage(
+    conn: &conn::ClientLink,
+    client: &WtaClient,
+    identity: &PromptUsageIdentity,
+    session_id: acp::schema::v1::SessionId,
+) -> Result<Option<crate::usage::UsageSnapshot>> {
+    let Some(family_id) = identity.family_id.as_deref() else {
+        return Ok(None);
+    };
+    let session_id_text = session_id.to_string();
+    if client
+        .state
+        .standard_usage_sessions
+        .lock()
+        .unwrap()
+        .contains(&session_id_text)
+    {
+        return Ok(None);
+    }
+    let Some(reporter_id) = identity.reporter_id.as_deref() else {
+        return Ok(None);
+    };
+    let Some(adapter) = crate::usage::providers::lookup(family_id) else {
+        return Ok(None);
+    };
+    if adapter.private_usage_policy()
+        != crate::usage::providers::PrivateUsagePolicy::VerifiedCommandProbe
+        || !adapter.trusted_reporter_ids().contains(&reporter_id)
+    {
+        return Ok(None);
+    }
+
+    let mut snapshot = crate::usage::normalize_provider_contribution(Default::default());
+
+    for command in adapter.post_turn_commands() {
+        match capture_provider_command(conn, client, &session_id, command).await {
+            Ok(output) => {
+                let contribution = adapter.extract_private_usage(
+                    crate::usage::providers::ProviderUsageRequest {
+                        reporter_id: Some(reporter_id),
+                        input: crate::usage::providers::ProviderUsageInput::ProviderCommandOutput {
+                            command,
+                            text: &output,
+                        },
+                    },
+                )?;
+                snapshot.merge(crate::usage::normalize_provider_contribution(contribution));
+            }
+            Err(error) => {
+                tracing::warn!(
+                    target: "usage",
+                    %family_id,
+                    session_id = %session_id_text,
+                    %command,
+                    error = %error,
+                    "optional provider usage command failed"
+                );
+            }
+        }
+    }
+
+    if snapshot.context.is_none()
+        && snapshot.cost.is_none()
+        && snapshot.provider_metrics.is_empty()
+    {
+        return Ok(None);
+    }
+    Ok(Some(snapshot))
 }
 
 /// The helper-mode ACP client loop. Instead of spawning the agent CLI
@@ -1376,6 +1586,10 @@ pub async fn run_acp_client_over_pipe(
         Arc<crate::agent_tools::action_proposal::channel::ProposalChannelManager>,
 ) -> Result<()> {
     let startup_probe = StartupProbe::new();
+    let usage_family_id = agent_id.as_deref().and_then(|agent_id| {
+        let family_id = agent_id.trim().to_ascii_lowercase();
+        crate::agent_registry::is_known_id(&family_id).then_some(family_id)
+    });
     startup_probe.log(&format!(
         "run_acp_client_over_pipe task start pipe={} acp_model={:?} wt_connected={}",
         pipe_name, acp_model_override, wt_connected
@@ -1476,6 +1690,8 @@ pub async fn run_acp_client_over_pipe(
         event_tx: event_tx.clone(),
         shell_mgr: shell_mgr.clone(),
         prompt_timing: prompt_timing.clone(),
+        provider_probe_capture: ProviderProbeCapture::default(),
+        standard_usage_sessions: Mutex::new(HashSet::new()),
         proposal_channels: Arc::clone(&proposal_channels),
         hidden_tool_calls: std::sync::Mutex::new(std::collections::HashSet::new()),
     });
@@ -1538,12 +1754,8 @@ pub async fn run_acp_client_over_pipe(
                     async move {
             use acp::schema::v1::AgentNotification as N;
             match notif {
-                            N::SessionNotification(n) => {
-                                let _ = c.session_notification(n).await;
-                            }
-                            N::ExtNotification(n) => {
-                                let _ = c.ext_notification(n).await;
-                            }
+                N::SessionNotification(n) => c.dispatch_session_notification(n).await,
+                N::ExtNotification(n) => { let _ = c.ext_notification(n).await; }
                 _ => {}
             }
             Ok(())
@@ -1621,11 +1833,10 @@ pub async fn run_acp_client_over_pipe(
                 // "unknown selection" warn on every connect and then fall back
                 // to the default anyway. Sending `None` makes that fallback
                 // silent (master applies its own `--agent` default).
-                agent_id: agent_id.and_then(|s| {
-                    let id = s.trim().to_ascii_lowercase();
-                    crate::agent_registry::is_known_id(&id).then_some(id)
-                }),
-                model: acp_model_override.clone().filter(|s| !s.trim().is_empty()),
+                agent_id: usage_family_id.clone(),
+                model: acp_model_override
+                    .clone()
+                    .filter(|s| !s.trim().is_empty()),
                 agent_source: Some(agent_source.kind().to_string()),
                 wsl_distro: agent_source.distro().map(str::to_string),
                 ..Default::default()
@@ -1659,6 +1870,10 @@ pub async fn run_acp_client_over_pipe(
             );
             anyhow::anyhow!("initialize over master pipe failed: {}", e)
         })?;
+    let prompt_usage_identity = PromptUsageIdentity {
+        family_id: usage_family_id,
+        reporter_id: init_resp.agent_info.as_ref().map(|info| info.name.clone()),
+    };
     // Connection milestone at info so a clean handshake is visible in release.
     tracing::info!(
         target: "helper",
@@ -1933,19 +2148,36 @@ pub async fn run_acp_client_over_pipe(
                 "Setting ACP session model to {} (over pipe)",
                 requested_model
             ));
-            crate::protocol::acp::model_select::apply_session_model(
+            let model_result = crate::protocol::acp::model_select::apply_session_model(
                 &conn,
                 session_id.clone(),
                 requested_model.clone(),
             )
-            .await
-            .map_err(|e| {
-                anyhow::anyhow!("failed to set requested model {}: {}", requested_model, e)
-            })?;
-            startup_probe.log(&format!(
-                "ACP session model set to {} (over pipe)",
-                requested_model
-            ));
+            .await;
+            match model_result {
+                Ok(()) => startup_probe.log(&format!(
+                    "ACP session model set to {} (over pipe)",
+                    requested_model
+                )),
+                Err(error) if is_redundant_startup_model_error(&prompt_usage_identity, &error) => {
+                    tracing::warn!(
+                        target: "helper",
+                        model = %requested_model,
+                        "Gemini CLI does not implement session/set_model; using the model already supplied on its launch command"
+                    );
+                    startup_probe.log(&format!(
+                        "Gemini startup model {} already applied by launch command",
+                        requested_model
+                    ));
+                }
+                Err(error) => {
+                    return Err(anyhow::anyhow!(
+                        "failed to set requested model {}: {}",
+                        requested_model,
+                        error
+                    ));
+                }
+            }
         }
     }
 
@@ -2119,6 +2351,8 @@ pub async fn run_acp_client_over_pipe(
                     &event_tx,
                     &shell_mgr,
                     &prompt_timing,
+                    &client,
+                    &prompt_usage_identity,
                     wt_connected,
                     is_agent_pane,
                     proposal_commands_supported,
@@ -2791,6 +3025,8 @@ fn dispatch_prompt(
     event_tx: &mpsc::UnboundedSender<AppEvent>,
     shell_mgr: &Arc<ShellManager>,
     prompt_timing: &Arc<PromptTimingState>,
+    client: &WtaClient,
+    prompt_usage_identity: &PromptUsageIdentity,
     wt_connected: bool,
     is_agent_pane: bool,
     proposal_commands_supported: bool,
@@ -2821,6 +3057,8 @@ fn dispatch_prompt(
     let event_tx_task = event_tx.clone();
     let shell_mgr_task = Arc::clone(shell_mgr);
     let prompt_timing_task = Arc::clone(prompt_timing);
+    let client_task = client.clone();
+    let prompt_usage_identity_task = prompt_usage_identity.clone();
     let proposal_channels_task = Arc::clone(proposal_channels);
     let tab_key_task = tab_key.clone();
 
@@ -2834,6 +3072,8 @@ fn dispatch_prompt(
         event_tx_task,
         shell_mgr_task,
         prompt_timing_task,
+        client_task,
+        prompt_usage_identity_task,
         tab_key_task,
         wt_connected,
         is_agent_pane,
@@ -2856,6 +3096,8 @@ async fn dispatch_prompt_body(
     event_tx_task: mpsc::UnboundedSender<AppEvent>,
     shell_mgr_task: Arc<ShellManager>,
     prompt_timing_task: Arc<PromptTimingState>,
+    client_task: WtaClient,
+    prompt_usage_identity_task: PromptUsageIdentity,
     tab_key_task: String,
     wt_connected: bool,
     is_agent_pane: bool,
@@ -3041,7 +3283,7 @@ async fn dispatch_prompt_body(
     ));
     tokio::pin!(prompt_fut);
 
-    let cancelled = tokio::select! {
+    let completed_successfully = tokio::select! {
         result = &mut prompt_fut => {
             // Peek the successful turn's stop_reason (the response is consumed
             // by `complete_prompt_request`). A soft stop is not an error; the
@@ -3050,6 +3292,7 @@ async fn dispatch_prompt_body(
                 .as_ref()
                 .ok()
                 .and_then(|resp| SoftStopReason::from_stop_reason(resp.stop_reason));
+            let successful = result.is_ok();
             complete_prompt_request(
                 result,
                 soft_stop,
@@ -3058,7 +3301,7 @@ async fn dispatch_prompt_body(
                 prompt_session_id_str.clone(),
             )
             .await;
-            false
+            successful
         }
         _ = cancel_rx => {
             // The user cancelled. Synthesize an AgentMessageEnd
@@ -3073,13 +3316,39 @@ async fn dispatch_prompt_body(
             let _ = event_tx_task.send(AppEvent::AgentMessageEnd {
                 session_id: prompt_session_id_str.clone(),
             });
-            true
+            false
         }
     };
     // Drop the in-flight prompt future eagerly when cancelled to
     // release the connection slot for the next prompt on this tab.
     drop(prompt_fut);
-    let _ = cancelled;
+
+    if completed_successfully {
+        match probe_private_usage(
+            &conn_task,
+            &client_task,
+            &prompt_usage_identity_task,
+            prompt_session_id.clone(),
+        )
+        .await
+        {
+            Ok(Some(snapshot)) => {
+                let _ = event_tx_task.send(AppEvent::UsageReported {
+                    session_id: prompt_session_id_str.clone(),
+                    snapshot,
+                });
+            }
+            Ok(None) => {}
+            Err(error) => {
+                tracing::warn!(
+                    target: "usage",
+                    session_id = %prompt_session_id_str,
+                    error = %error,
+                    "optional provider usage probe failed"
+                );
+            }
+        }
+    }
 
     cancel_signals_task
         .lock()
@@ -3093,8 +3362,9 @@ mod tests {
     use super::acp;
     use super::{
         acp_result_failure_fields, complete_prompt_request, inject_wta_pane_meta,
-        post_login_authenticate_error, timeout_result_failure_fields, tool_call_kind_label,
-        ClientState, PromptTimingState, SoftStopReason, WtaClient,
+        is_redundant_startup_model_error, post_login_authenticate_error,
+        timeout_result_failure_fields, tool_call_kind_label, ClientState, PromptTimingState,
+        PromptUsageIdentity, SoftStopReason, WtaClient,
     };
     use crate::app_contracts::AppEvent;
     use crate::protocol::acp::failure::{AgentFailure, HandshakeStage};
@@ -3136,6 +3406,8 @@ mod tests {
             event_tx,
             shell_mgr: Arc::new(ShellManager::new()),
             prompt_timing: Arc::new(PromptTimingState::default()),
+            provider_probe_capture: super::ProviderProbeCapture::default(),
+            standard_usage_sessions: Mutex::new(HashSet::new()),
             proposal_channels: manager,
             hidden_tool_calls: Mutex::new(HashSet::new()),
         });
@@ -3393,6 +3665,37 @@ mod tests {
         );
     }
 
+    #[test]
+    fn gemini_method_not_found_is_a_redundant_startup_model_error() {
+        let identity = PromptUsageIdentity {
+            family_id: Some("gemini".to_string()),
+            reporter_id: Some("gemini-cli".to_string()),
+        };
+
+        assert!(is_redundant_startup_model_error(
+            &identity,
+            &acp::Error::method_not_found(),
+        ));
+        assert!(!is_redundant_startup_model_error(
+            &PromptUsageIdentity {
+                family_id: Some("copilot".to_string()),
+                reporter_id: Some("gemini-cli".to_string()),
+            },
+            &acp::Error::method_not_found(),
+        ));
+        assert!(!is_redundant_startup_model_error(
+            &PromptUsageIdentity {
+                family_id: Some("gemini".to_string()),
+                reporter_id: Some("impostor-gemini".to_string()),
+            },
+            &acp::Error::method_not_found(),
+        ));
+        assert!(!is_redundant_startup_model_error(
+            &identity,
+            &acp::Error::internal_error(),
+        ));
+    }
+
     #[tokio::test]
     async fn successful_prompt_completion_emits_message_end_only() {
         let (event_tx, mut event_rx) = mpsc::unbounded_channel();
@@ -3612,6 +3915,8 @@ mod tests {
                 event_tx: tx,
                 shell_mgr: Arc::new(ShellManager::new()),
                 prompt_timing: Arc::new(super::super::PromptTimingState::default()),
+                provider_probe_capture: super::super::ProviderProbeCapture::default(),
+                standard_usage_sessions: std::sync::Mutex::new(std::collections::HashSet::new()),
                 proposal_channels: Arc::new(
                     crate::agent_tools::action_proposal::channel::ProposalChannelManager::new(),
                 ),

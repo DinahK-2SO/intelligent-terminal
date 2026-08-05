@@ -1095,7 +1095,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
 
         if (lower == "claude")
         {
-            return L"npx -y @agentclientprotocol/claude-agent-acp";
+            return L"npx -y @agentclientprotocol/claude-agent-acp@0.59.0";
         }
         if (lower == "codex")
         {
@@ -1113,7 +1113,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         }
         else if (lower == "gemini")
         {
-            cmd += L" --experimental-acp";
+            cmd += L" --acp";
         }
 
         if (lower == "copilot" || lower == "gemini")

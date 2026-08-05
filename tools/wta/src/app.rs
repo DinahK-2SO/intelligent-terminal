@@ -3515,6 +3515,8 @@ impl App {
             AppEvent::ConnectionStage(_) => "connection_stage",
             AppEvent::AgentConnected { .. } => "agent_connected",
             AppEvent::SessionAttached { .. } => "session_attached",
+            AppEvent::UsageReported { .. } => "usage_reported",
+            AppEvent::UsageCleared { .. } => "usage_cleared",
             AppEvent::ModelConfigUpdated { .. } => "model_config_updated",
             AppEvent::TabError { .. } => "tab_error",
             AppEvent::TabSystemMessage { .. } => "tab_system_message",
@@ -4396,6 +4398,8 @@ impl App {
         }
         let tab = self.current_tab_mut();
         tab.clear_chat_history();
+        tab.usage = None;
+        tab.usage_staleness = crate::usage::UsageStaleness::default();
         tab.completed_turns.clear();
         tab.selected_completed_turn_idx = None;
         tab.session_id = None;
@@ -4586,6 +4590,8 @@ impl App {
         self.session_id.clear();
         for (_, tab) in self.tab_sessions.iter_mut() {
             tab.clear_chat_history();
+            tab.usage = None;
+            tab.usage_staleness = crate::usage::UsageStaleness::default();
             tab.completed_turns.clear();
             tab.selected_completed_turn_idx = None;
             tab.session_id = None;
@@ -4997,6 +5003,8 @@ impl App {
         if let Some(tab) = self.tab_sessions.get_mut(tab_id) {
             removed_session_id = tab.session_id.take();
             tab.clear_chat_history();
+            tab.usage = None;
+            tab.usage_staleness = crate::usage::UsageStaleness::default();
             tab.completed_turns.clear();
             tab.selected_completed_turn_idx = None;
             tab.scroll_to_bottom();

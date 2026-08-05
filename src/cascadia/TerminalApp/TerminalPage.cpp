@@ -1069,7 +1069,7 @@ namespace winrt::TerminalApp::implementation
         // Adapter-style launches: claude/codex CLIs don't speak ACP themselves.
         if (lower == "claude")
         {
-            return winrt::hstring{ L"npx -y @agentclientprotocol/claude-agent-acp" };
+            return winrt::hstring{ L"npx -y @agentclientprotocol/claude-agent-acp@0.59.0" };
         }
         if (lower == "codex")
         {
@@ -1087,7 +1087,7 @@ namespace winrt::TerminalApp::implementation
         }
         else if (lower == "gemini")
         {
-            cmd += L" --experimental-acp";
+            cmd += L" --acp";
         }
 
         if (lower == "copilot" || lower == "gemini")
@@ -2789,6 +2789,38 @@ namespace winrt::TerminalApp::implementation
                 detectedSummary = impl->GetDetectedSummary();
                 agentConnected = impl->IsAgentConnected();
             }
+        }
+
+        if (const auto usageGroup = UsageGroup())
+        {
+            usageGroup.Children().Clear();
+            bool usageVisible = false;
+            if (activeAgent)
+            {
+                const auto impl = winrt::get_self<winrt::TerminalApp::implementation::AgentPaneContent>(activeAgent);
+                const auto display = ::TerminalApp::AgentUsage::BuildPrimaryDisplay(
+                    impl->GetAgentUsage(),
+                    RS_(L"Usage_TokensUnit"),
+                    _settings && _settings.GlobalSettings().ShowTokenUsageAndCost(),
+                    RS_(L"Usage_ContextWindowLabel"));
+                usageVisible = display.visible;
+                for (const auto& item : display.items)
+                {
+                    TextBlock block;
+                    block.Text(item.text);
+                    block.FontSize(12);
+                    block.VerticalAlignment(VerticalAlignment::Center);
+                    block.TextTrimming(TextTrimming::CharacterEllipsis);
+                    block.MaxWidth(180);
+                    if (!item.fullText.empty())
+                    {
+                        ToolTipService::SetToolTip(block, box_value(item.fullText));
+                        Automation::AutomationProperties::SetHelpText(block, item.fullText);
+                    }
+                    usageGroup.Children().Append(block);
+                }
+            }
+            usageGroup.Visibility(usageVisible ? Visibility::Visible : Visibility::Collapsed);
         }
 
         if (auto diagBtn = DiagnosticsButton())
@@ -4894,6 +4926,15 @@ namespace winrt::TerminalApp::implementation
                 logSuffix += " pane_position=global";
             }
         }
+        std::optional<Json::Value> usage;
+        if (params.isMember("usage"))
+        {
+            const auto& value = params["usage"];
+            usage = value;
+            logSuffix += value.isNull()   ? " usage=null" :
+                         value.isObject() ? " usage=present" :
+                                            " usage=invalid";
+        }
         _agentPaneLog(std::string{ "OnAgentStateChanged:" } + logSuffix);
 
         // Apply view to the existing AgentPaneContent if any.
@@ -5008,6 +5049,17 @@ namespace winrt::TerminalApp::implementation
                             });
                         }
                     }
+                }
+            }
+        }
+
+        if (usage.has_value())
+        {
+            if (const auto agentContent = targetTab->FindAgentPaneContent())
+            {
+                if (!winrt::get_self<implementation::AgentPaneContent>(agentContent)->ApplyAgentUsage(*usage))
+                {
+                    _agentPaneLog("OnAgentStateChanged: invalid usage hidden");
                 }
             }
         }
@@ -8395,6 +8447,10 @@ namespace winrt::TerminalApp::implementation
         // recreate the affected layers so the new values take effect
         // without a terminal restart.
         _RebuildAgentStack();
+
+        // Re-project cached per-tab status after settings-only presentation
+        // changes, including showTokenUsageAndCost.
+        _UpdateBottomBarState();
     }
 
     void TerminalPage::_updateAllTabCloseButtons()
