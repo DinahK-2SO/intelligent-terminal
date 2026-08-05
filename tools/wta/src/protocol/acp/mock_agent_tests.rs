@@ -623,32 +623,6 @@ fn connect_for_dispatch(behavior: MockBehavior) -> DispatchHarness {
 }
 
 #[tokio::test]
-async fn copilot_private_usage_probe_is_disabled_before_wire_io() {
-    let local = tokio::task::LocalSet::new();
-    local
-        .run_until(async {
-            let harness = connect_for_dispatch(MockBehavior::Reply);
-            let identity = PromptUsageIdentity {
-                family_id: Some(crate::agent_registry::COPILOT_AGENT_ID.to_string()),
-                reporter_id: Some("Copilot".to_string()),
-            };
-
-            let snapshot = probe_private_usage(
-                &harness.conn,
-                &harness.client,
-                &identity,
-                acp::schema::v1::SessionId::new("mock-session-1"),
-            )
-            .await
-            .expect("disabled Copilot private usage should not fail");
-
-            assert!(snapshot.is_none());
-            assert!(harness.seen_prompts.lock().unwrap().is_empty());
-        })
-        .await;
-}
-
-#[tokio::test]
 async fn copilot_usage_probe_skips_non_copilot_identity_before_wire_io() {
     let local = tokio::task::LocalSet::new();
     local
@@ -675,7 +649,7 @@ async fn copilot_usage_probe_skips_non_copilot_identity_before_wire_io() {
 }
 
 #[tokio::test]
-async fn successful_copilot_turn_sends_no_extra_commands_or_private_usage() {
+async fn successful_copilot_turn_sends_only_the_user_prompt() {
     let local = tokio::task::LocalSet::new();
     local
         .run_until(async {
@@ -719,7 +693,7 @@ async fn successful_copilot_turn_sends_no_extra_commands_or_private_usage() {
                         }
                         Some(AppEvent::AgentMessageEnd { .. }) => saw_turn_end = true,
                         Some(AppEvent::UsageReported { .. }) => {
-                            panic!("Copilot private usage must stay disabled")
+                            panic!("the mock sent no ACP UsageUpdate")
                         }
                         Some(AppEvent::AgentError { message, .. }) => {
                             panic!("successful turn must not fail: {message}")

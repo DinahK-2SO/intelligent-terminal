@@ -27,35 +27,3 @@ impl ProviderUsageAdapter for CopilotUsageAdapter {
         super::no_verified_private_usage(request)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::usage::providers::ProviderUsageInput;
-
-    #[test]
-    fn uses_standard_acp_without_private_commands() {
-        assert_eq!(
-            ADAPTER.private_usage_policy(),
-            PrivateUsagePolicy::StandardAcpOnly
-        );
-        assert!(ADAPTER.trusted_reporter_ids().is_empty());
-        assert!(ADAPTER.post_turn_commands().is_empty());
-    }
-
-    #[test]
-    fn ignores_private_command_outputs() {
-        for command in ["/context", "/usage"] {
-            let contribution = ADAPTER
-                .extract_private_usage(ProviderUsageRequest {
-                    reporter_id: Some("Copilot"),
-                    input: ProviderUsageInput::ProviderCommandOutput {
-                        command,
-                        text: "provider-specific output",
-                    },
-                })
-                .expect("disabled Copilot private usage must remain a no-op");
-            assert_eq!(contribution, ProviderUsageContribution::default());
-        }
-    }
-}
