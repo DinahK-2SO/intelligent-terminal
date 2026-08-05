@@ -147,13 +147,19 @@ code it describes.
 
 - Removed adapter tests that treated `/context` and `/usage` inputs as permanently forbidden. They
   duplicated the current registry policy and would have unnecessarily frozen a future implementation.
-- Removed the direct “private probe is disabled” test and permanent-disable wording. Retained
-  behavior-level coverage that the current Copilot configuration sends only the user prompt, plus
-  the registry contract that records today's `StandardAcpOnly` policy.
-- Focused corrected contracts: 2 passed, 0 failed. All remaining Rust tests matching `copilot`:
-  49 passed, 0 failed.
+- Removed the direct “private probe is disabled” test and permanent-disable wording.
+- A final publish-surface review removed the remaining two Copilot-specific no-extra-command tests,
+  the older non-Copilot identity probe test, and their dedicated standard-Usage mock behavior. The
+  publish mock harness now contains no Copilot usage/probe/command history; standard ACP usage is
+  covered by provider-neutral tests instead.
+- Generic provider orchestration and the registry contract that records today's
+  `StandardAcpOnly` policy remain available for future provider work.
+- Final mock ACP module: 31 passed, 0 failed. Static scans found no Copilot usage/probe/command or
+  `/context`/`/usage` references in the publish mock harness or Copilot adapter.
 - Publish test-correction commit `a09e32776` removes only the over-constrained Rust tests; it does
   not change the Copilot adapter implementation or generic provider framework.
+- Final publish cleanup commit `75143849e` removes the remaining Copilot-specific probe history
+  from the mock harness. Complete WTA suite after cleanup: 1,223 passed, 0 failed.
 
 **Publish/dev split**
 
