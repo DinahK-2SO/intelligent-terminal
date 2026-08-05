@@ -64,9 +64,13 @@ After talked with the team, 我们决定只显示这两个usage/cost相关的数
 关于GitHub Copilot:
 我们联系了GitHubCopilot的开发者，他们同意在未来的版本中加入符合ACP contract的 usage/cost数据。
 
-对此，我们的manager对我们提出要求：
+我们现在的代码为GitHubCopilot CLI做了一个特殊处理：通过 发送 "/context" command 来拿到context data，还发送 "/usage" command来拿到usage/cost data，我们想用这些data将context window usage和 AIC(现在usage command返回的单位是 AI Credit 而不是 货币符号) cost 显示出来。我们能够这样做的前提是："/usage" 这个command 不消耗 用户的tokens。然而，后续的测试发现 "/usage" command is broken, it cannot give valid cost data. As for the "/context", the lastest version of GitHub Copilot CLI has already given the context windows usage data in its acp response.
 
-我们不能等GitHub Copilot CIL 去implement usage/cost in ACP之后再显示这个。既然我们有了能对每个provider做特殊处理的框架，让我们为GitHubCopilot CLI做一个特殊处理：通过 发送 "/usage" command来拿到usage，将context window usage和 AIC(现在usage command返回的单位是 AI Credit 而不是 货币符号) cost 显示出来。我们这样做的前提是："/usage" 这个command 不消耗 用户的tokens。
+Therefore, 我们就不需要发送 "/context" 那个command的额外处理了。
+
+考虑到GitHub Copilot CLI还无法在 "/usage" command中返回有效的data，我们打算把 发送 "/context" command 和 发送 "/usage" command 这些特殊的处理步骤都去掉。我们已经在GitHub上给copilot cli开了一个新的feature request，希望他们能在acp里返回 cost related data. 未来等他们做好之后，我在本地测试了再决定要不要额外做什么处理。
+
+in short, 目前我们不为 GitHub Copilot Cli 做额外的处理。当然了，我们的 per provider的框架保留，以备未来需要。
 
 
 关于Gemini：
