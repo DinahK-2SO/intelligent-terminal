@@ -87,6 +87,7 @@ code it describes.
 | 60. Official-source-only Copilot billing | Product billing must not read unsupported user-folder logs; unavailable or nonpositive command values must stay hidden | Delete the local ledger path and restore positive-only `/usage` try-get | Complete |
 | 61. Neutral session-cost UI copy | FRE and Settings must describe optional context usage and cost without naming billing or a unit | Replace both visible strings and translator guidance across every existing locale | Complete |
 | 62. Standard-ACP-only Copilot usage | Successful Copilot turns must send no extra command prompts or private Usage | Set Copilot to `StandardAcpOnly` and remove its command parsers while retaining the provider framework | Complete |
+| 63. Suppressed review cleanup | Low-confidence comments must be verified against actual ownership and launch commands | Remove one duplicate refresh and align one executable documentation example | Complete |
 
 ## Completed Steps
 
@@ -102,6 +103,42 @@ code it describes.
 > Step 61 supersedes Step 58's visible toggle wording while retaining its locale coverage and
 > internal provider-neutral billing projection. Step 62 supersedes the Copilot-specific runtime
 > behavior in Steps 44-60; those entries remain investigation history.**
+
+### Step 63 - Suppressed Review Cleanup
+
+**Review triage**
+
+- Accepted the duplicate-refresh comment after verifying `ApplyAgentUsage` has exactly one runtime
+  caller: `TerminalPage::OnAgentStateChanged`. That caller already performs the active-tab
+  `_UpdateBottomBarState` catch-all immediately after applying Usage, while background tabs should
+  not refresh the window-level bar. Raising synchronous `StateChanged` inside `ApplyAgentUsage`
+  therefore refreshed an active tab twice.
+- Partially accepted the Claude documentation comment. The product launch command is pinned to
+  `@agentclientprotocol/claude-agent-acp@0.59.0` in C++ and Rust. The Node.js overview contained an
+  unpinned executable example and was corrected; descriptive package names and the npm hyperlink
+  remain naturally versionless.
+
+**GREEN**
+
+- `ApplyAgentUsage` now only updates/contains the cache and returns its success flag. Other
+  `AgentPaneContent::StateChanged` producers remain unchanged for state that independently drives
+  the bottom bar.
+- Both executable Claude wrapper examples in `installing-dependencies.md` now use `@0.59.0`.
+
+**Validation**
+
+- Static ownership contract: one runtime `ApplyAgentUsage` caller, no internal `StateChanged`
+  raise, and one active-tab catch-all refresh in `OnAgentStateChanged`.
+- Claude documentation contract: 2 executable examples, both pinned; 0 unpinned examples.
+- TerminalApp UnitTests x64 Debug build: 0 errors, 39 existing warnings.
+- Complete `AgentUsageTests`: 23 passed, 0 failed.
+- Editor diagnostics and CRLF-aware whitespace checks: clean.
+
+**Publish/dev split**
+
+- Publish cherry-pick commit `d6d47ac8a` contains only the C++ refresh ownership fix.
+- The documentation consistency fix and this tracking note remain dev-only because the publish
+  branch excludes `doc/`.
 
 ### Step 62 - Standard-ACP-Only Copilot Usage
 
