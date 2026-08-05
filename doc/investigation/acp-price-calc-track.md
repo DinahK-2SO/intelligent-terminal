@@ -7,8 +7,7 @@ code it describes.
 ## Scope Guardrails
 
 - The shared path displays standard ACP v1 `SessionUpdate::UsageUpdate` context-window data and
-  optional monetary cost. The approved Copilot fallback may additionally report its verified
-  context command and provider-owned AI usage unit without treating that unit as currency.
+  optional monetary cost. All built-in providers currently use this standard path only.
 - No end-turn input/output display, private Gemini quota parsing, local price conversion,
   credential access, billing API calls, or currency correction.
 - Rust owns validation, normalization, state, coalescing, and projection. C++/XAML only cache and
@@ -87,6 +86,7 @@ code it describes.
 | 59. PR review convergence | Malformed cross-process Usage must not terminate the UI, and spelling fixtures must not block review | Add one C++ containment boundary and preserve test semantics with review-safe fixtures | Complete |
 | 60. Official-source-only Copilot billing | Product billing must not read unsupported user-folder logs; unavailable or nonpositive command values must stay hidden | Delete the local ledger path and restore positive-only `/usage` try-get | Complete |
 | 61. Neutral session-cost UI copy | FRE and Settings must describe optional context usage and cost without naming billing or a unit | Replace both visible strings and translator guidance across every existing locale | Complete |
+| 62. Standard-ACP-only Copilot usage | Successful Copilot turns must send no extra command prompts or private Usage | Set Copilot to `StandardAcpOnly` and remove its command parsers while retaining the provider framework | Complete |
 
 ## Completed Steps
 
@@ -100,7 +100,55 @@ code it describes.
 > interim visible copy while retaining its provider-neutral UI architecture. Step 60 supersedes
 > Steps 50-53's user-folder checkpoint implementation; those steps remain investigation history.
 > Step 61 supersedes Step 58's visible toggle wording while retaining its locale coverage and
-> internal provider-neutral billing projection.**
+> internal provider-neutral billing projection. Step 62 supersedes the Copilot-specific runtime
+> behavior in Steps 44-60; those entries remain investigation history.**
+
+### Step 62 - Standard-ACP-Only Copilot Usage
+
+**Product decision**
+
+- GitHub Copilot CLI 1.0.78 reports context-window token usage and size through standard ACP
+  `UsageUpdate`, so WTA no longer sends `/context`.
+- `/usage` does not currently provide valid cost data, so WTA no longer sends it or parses its
+  human-readable output. Copilot cost remains hidden until a future CLI reports it through a
+  supported ACP contract and that wire behavior is tested locally.
+- The five-family provider registry, `ProviderUsageAdapter` boundary, and generic private-source
+  orchestration remain available for future reviewed provider needs. Copilot's module stays in the
+  registry but declares `StandardAcpOnly`.
+
+**RED**
+
+- Changed the registry and Copilot adapter contracts to require `StandardAcpOnly`, no trusted
+  reporter, no post-turn commands, and empty contributions for `/context` or `/usage` input.
+- Changed the in-process ACP mock contract so a successful Copilot turn without standard Usage must
+  send exactly one user prompt, produce no private Usage event, and perform no additional wire IO.
+- Focused RED failed at the unchanged adapter policy: actual `VerifiedCommandProbe`, expected
+  `StandardAcpOnly`.
+
+**GREEN**
+
+- Removed Copilot's command constants, context/usage text parsers, private metric construction, and
+  reporter allowlist. The adapter now reuses the common no-private-usage implementation.
+- Deleted the obsolete command-response and probe-failure mock behaviors/tests. Standard ACP
+  `UsageUpdate` continues through the existing provider-neutral normalizer and projection path.
+- Left the generic command-probe trait hook, capture orchestration, provider registry, and other
+  provider modules intact.
+
+**Validation**
+
+- Focused adapter RED/GREEN contract: 1 passed, 0 failed after implementation.
+- All Rust tests matching `copilot`: 52 passed, 0 failed.
+- Provider registry policy contract: 1 passed, 0 failed.
+- Complete WTA suite: 1,229 passed, 0 failed.
+- Editor diagnostics are clean. Static source audit finds no Copilot command constant, reporter
+  allowlist, private metric ID, or parser in the product path; command literals remain only in the
+  tests that assert they are ignored.
+
+**Publish/dev split**
+
+- Publish cherry-pick commit `6b7f4b27d` contains the three Rust product/test files only.
+- This Step 62 note and design synchronization remain in a separate dev-only commit because the
+  publish branch excludes `doc/`.
 
 ### Step 61 - Neutral Session-Cost UI Copy
 
