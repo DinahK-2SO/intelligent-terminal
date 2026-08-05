@@ -451,7 +451,7 @@ mod tests {
 
         assert_eq!(
             providers::lookup("copilot").unwrap().private_usage_policy(),
-            PrivateUsagePolicy::VerifiedCommandProbe
+            PrivateUsagePolicy::StandardAcpOnly
         );
         assert_eq!(
             providers::lookup("claude").unwrap().private_usage_policy(),

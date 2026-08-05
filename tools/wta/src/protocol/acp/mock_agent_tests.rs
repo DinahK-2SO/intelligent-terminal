@@ -49,16 +49,8 @@ enum MockBehavior {
     /// Stream the reply in two `AgentMessageChunk`s (`MOCK_` + `OK`), then end
     /// the turn — exercises streaming coalescing.
     StreamTwoChunks,
-    /// Return verified Copilot CLI text for `/context` and `/usage`.
-    CopilotUsageProbe,
-    /// Complete a normal turn, then serve the verified Copilot context command.
-    CopilotTurnAndUsageProbe,
     /// Complete a normal Copilot turn with a standard ACP UsageUpdate.
     CopilotTurnWithStandardUsage,
-    /// Complete a normal turn, then reject the first Copilot usage command.
-    CopilotTurnUsageProbeFails,
-    /// Reject the first Copilot usage command to exercise capture cleanup.
-    CopilotUsageProbeFails,
 }
 
 /// Deterministic ACP agent. Implements only what the scenarios need; the rest
@@ -131,12 +123,6 @@ impl MockAgent {
     async fn prompt(&self, args: acp::schema::v1::PromptRequest) -> acp::Result<acp::schema::v1::PromptResponse> {
         let text = first_text(&args.prompt);
         self.seen_prompts.lock().unwrap().push(text.clone());
-        if matches!(self.behavior, MockBehavior::CopilotUsageProbeFails)
-            || (matches!(self.behavior, MockBehavior::CopilotTurnUsageProbeFails)
-                && text == "/context")
-        {
-            return Err(acp::Error::internal_error().data("mock Copilot probe failure".to_string()));
-        }
         let images: Vec<(String, String)> = args
             .prompt
             .iter()
@@ -275,23 +261,6 @@ impl MockAgent {
                         }
                     });
                 }
-                MockBehavior::CopilotUsageProbe | MockBehavior::CopilotTurnAndUsageProbe => {
-                    let reply = match text.as_str() {
-                        "/context" => "Context Usage\n\nclaude-sonnet-5 · 30k/264k tokens (11%)",
-                        "/usage" => "Session Usage\n\nRequests: 2 AI Credits (1s)",
-                        _ => "MOCK_OK:user turn",
-                    };
-                    tokio::task::spawn_local(async move {
-                        let _ = conn
-                            .session_notification(acp::schema::v1::SessionNotification::new(
-                                sid,
-                                acp::schema::v1::SessionUpdate::AgentMessageChunk(
-                                    acp::schema::v1::ContentChunk::new(reply.into()),
-                                ),
-                            ))
-                            .await;
-                    });
-                }
                 MockBehavior::CopilotTurnWithStandardUsage => {
                     tokio::task::spawn_local(async move {
                         let _ = conn
@@ -312,19 +281,6 @@ impl MockAgent {
                             .await;
                     });
                 }
-                MockBehavior::CopilotTurnUsageProbeFails => {
-                    tokio::task::spawn_local(async move {
-                        let _ = conn
-                            .session_notification(acp::schema::v1::SessionNotification::new(
-                                sid,
-                                acp::schema::v1::SessionUpdate::AgentMessageChunk(
-                                    acp::schema::v1::ContentChunk::new("MOCK_OK:user turn".into()),
-                                ),
-                            ))
-                            .await;
-                    });
-                }
-                MockBehavior::CopilotUsageProbeFails => unreachable!(),
             }
         }
 
@@ -667,23 +623,11 @@ fn connect_for_dispatch(behavior: MockBehavior) -> DispatchHarness {
 }
 
 #[tokio::test]
-async fn copilot_usage_probe_captures_commands_without_chat_pollution() {
+async fn copilot_private_usage_probe_is_disabled_before_wire_io() {
     let local = tokio::task::LocalSet::new();
     local
         .run_until(async {
-            let mut harness = connect_for_dispatch(MockBehavior::CopilotUsageProbe);
-            harness
-                .conn
-                .initialize(acp::schema::v1::InitializeRequest::new(
-                    acp::schema::ProtocolVersion::LATEST,
-                ))
-                .await
-                .expect("initialize failed");
-            let session = harness
-                .conn
-                .new_session(acp::schema::v1::NewSessionRequest::new("/test"))
-                .await
-                .expect("new_session failed");
+            let harness = connect_for_dispatch(MockBehavior::Reply);
             let identity = PromptUsageIdentity {
                 family_id: Some(crate::agent_registry::COPILOT_AGENT_ID.to_string()),
                 reporter_id: Some("Copilot".to_string()),
@@ -693,29 +637,13 @@ async fn copilot_usage_probe_captures_commands_without_chat_pollution() {
                 &harness.conn,
                 &harness.client,
                 &identity,
-                session.session_id,
+                acp::schema::v1::SessionId::new("mock-session-1"),
             )
             .await
-            .expect("verified Copilot probe should succeed")
-            .expect("Copilot identity should enable the probe");
+            .expect("disabled Copilot private usage should not fail");
 
-            assert_eq!(
-                harness.seen_prompts.lock().unwrap().as_slice(),
-                &["/context".to_string(), "/usage".to_string()]
-            );
-            assert_eq!(snapshot.context.expect("context").used, 30_000);
-            assert_eq!(snapshot.provider_metrics.len(), 1);
-            assert_eq!(snapshot.provider_metrics[0].value_decimal_text, "2");
-            assert_eq!(
-                snapshot.provider_metrics[0].unit_display_text,
-                "AI Credits"
-            );
-            while let Ok(event) = harness.event_rx.try_recv() {
-                assert!(
-                    !matches!(event, AppEvent::AgentMessageChunk { .. }),
-                    "probe command output must not enter chat"
-                );
-            }
+            assert!(snapshot.is_none());
+            assert!(harness.seen_prompts.lock().unwrap().is_empty());
         })
         .await;
 }
@@ -747,47 +675,11 @@ async fn copilot_usage_probe_skips_non_copilot_identity_before_wire_io() {
 }
 
 #[tokio::test]
-async fn copilot_usage_probe_failure_releases_capture_for_later_chat() {
+async fn successful_copilot_turn_sends_no_extra_commands_or_private_usage() {
     let local = tokio::task::LocalSet::new();
     local
         .run_until(async {
-            let mut harness = connect_for_dispatch(MockBehavior::CopilotUsageProbeFails);
-            let identity = PromptUsageIdentity {
-                family_id: Some(crate::agent_registry::COPILOT_AGENT_ID.to_string()),
-                reporter_id: Some("Copilot".to_string()),
-            };
-            let session_id = acp::schema::v1::SessionId::new("mock-session-1");
-
-            assert!(
-                probe_private_usage(&harness.conn, &harness.client, &identity, session_id.clone())
-                    .await
-                    .expect("optional context failure should be contained")
-                    .is_none()
-            );
-            harness
-                .client
-                .dispatch_session_notification(acp::schema::v1::SessionNotification::new(
-                    session_id,
-                    acp::schema::v1::SessionUpdate::AgentMessageChunk(
-                        acp::schema::v1::ContentChunk::new("later chat".into()),
-                    ),
-                ))
-                .await;
-
-            assert!(matches!(
-                harness.event_rx.try_recv(),
-                Ok(AppEvent::AgentMessageChunk { text, .. }) if text == "later chat"
-            ));
-        })
-        .await;
-}
-
-#[tokio::test]
-async fn successful_copilot_turn_automatically_reports_probed_usage_without_chat_pollution() {
-    let local = tokio::task::LocalSet::new();
-    local
-        .run_until(async {
-            let harness = connect_for_dispatch(MockBehavior::CopilotTurnAndUsageProbe);
+            let harness = connect_for_dispatch(MockBehavior::Reply);
             harness
                 .conn
                 .initialize(acp::schema::v1::InitializeRequest::new(
@@ -818,46 +710,38 @@ async fn successful_copilot_turn_automatically_reports_probed_usage_without_chat
                 false,
             );
 
-            let mut usage = None;
             let mut saw_turn_end = false;
             tokio::time::timeout(std::time::Duration::from_secs(5), async {
-                while usage.is_none() || !saw_turn_end {
+                while !in_flight.lock().unwrap().is_empty() || !saw_turn_end {
                     match event_rx.recv().await {
                         Some(AppEvent::AgentMessageChunk { text, .. }) => {
-                            assert_eq!(text, "MOCK_OK:user turn");
+                            assert!(text.starts_with("MOCK_OK:"));
                         }
                         Some(AppEvent::AgentMessageEnd { .. }) => saw_turn_end = true,
-                        Some(AppEvent::UsageReported { snapshot, .. }) => usage = Some(snapshot),
+                        Some(AppEvent::UsageReported { .. }) => {
+                            panic!("Copilot private usage must stay disabled")
+                        }
                         Some(AppEvent::AgentError { message, .. }) => {
                             panic!("successful turn must not fail: {message}")
                         }
                         Some(_) => {}
-                        None => panic!("event channel closed before usage report"),
+                        None => panic!("event channel closed before turn completion"),
                     }
                 }
             })
             .await
-            .expect("timed out waiting for automatic Copilot usage");
+            .expect("timed out waiting for Copilot turn completion");
 
-            let snapshot = usage.expect("usage snapshot");
-            assert_eq!(snapshot.context.expect("context").used, 30_000);
-            assert_eq!(snapshot.provider_metrics.len(), 1);
-            assert_eq!(snapshot.provider_metrics[0].value_decimal_text, "2");
-            assert_eq!(
-                snapshot.provider_metrics[0].unit_display_text,
-                "AI Credits"
-            );
             let seen = harness.seen_prompts.lock().unwrap();
-            assert_eq!(seen.len(), 3);
+            assert_eq!(seen.len(), 1);
             assert!(seen[0].contains("hello"));
-            assert_eq!(&seen[1..], &["/context", "/usage"]);
             assert!(in_flight.lock().unwrap().is_empty());
         })
         .await;
 }
 
 #[tokio::test]
-async fn standard_acp_usage_disables_copilot_fallback_for_the_session() {
+async fn standard_acp_usage_sends_no_copilot_specific_commands() {
     let local = tokio::task::LocalSet::new();
     local
         .run_until(async {
@@ -902,79 +786,8 @@ async fn standard_acp_usage_disables_copilot_fallback_for_the_session() {
             .expect("turn did not complete");
 
             let seen = harness.seen_prompts.lock().unwrap();
-            assert_eq!(seen.len(), 1, "standard ACP Usage must suppress fallback commands");
+            assert_eq!(seen.len(), 1, "standard ACP Usage must not trigger extra commands");
             assert!(seen[0].contains("hello"));
-        })
-        .await;
-}
-
-#[tokio::test]
-async fn automatic_copilot_probe_failure_preserves_successful_user_turn() {
-    let local = tokio::task::LocalSet::new();
-    local
-        .run_until(async {
-            let harness = connect_for_dispatch(MockBehavior::CopilotTurnUsageProbeFails);
-            harness
-                .conn
-                .initialize(acp::schema::v1::InitializeRequest::new(
-                    acp::schema::ProtocolVersion::LATEST,
-                ))
-                .await
-                .expect("initialize failed");
-            let (tab_to_session, in_flight, cancel_signals, memo) = fresh_dispatch_state();
-            let identity = PromptUsageIdentity {
-                family_id: Some(crate::agent_registry::COPILOT_AGENT_ID.to_string()),
-                reporter_id: Some("Copilot".to_string()),
-            };
-            let mut event_rx = harness.event_rx;
-
-            dispatch_prompt(
-                test_prompt(1, "hello", false),
-                &harness.conn,
-                &tab_to_session,
-                &memo,
-                &in_flight,
-                &cancel_signals,
-                &harness.event_tx,
-                &harness.shell_mgr,
-                &harness.prompt_timing,
-                &harness.client,
-                &identity,
-                false,
-                false,
-            );
-
-            let mut saw_reply = false;
-            let mut saw_end = false;
-            tokio::time::timeout(std::time::Duration::from_secs(5), async {
-                while !in_flight.lock().unwrap().is_empty() || !saw_end {
-                    match event_rx.try_recv() {
-                        Ok(AppEvent::AgentMessageChunk { text, .. }) => {
-                            assert_eq!(text, "MOCK_OK:user turn");
-                            saw_reply = true;
-                        }
-                        Ok(AppEvent::AgentMessageEnd { .. }) => saw_end = true,
-                        Ok(AppEvent::AgentError { message, .. }) => {
-                            panic!("optional probe must not fail the turn: {message}")
-                        }
-                        Ok(_) | Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {
-                            tokio::task::yield_now().await;
-                        }
-                        Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
-                            panic!("event channel closed")
-                        }
-                    }
-                }
-            })
-            .await
-            .expect("turn did not complete after probe failure");
-
-            assert!(saw_reply && saw_end);
-            let seen = harness.seen_prompts.lock().unwrap();
-            assert_eq!(seen.len(), 3);
-            assert!(seen[0].contains("hello"));
-            assert_eq!(seen[1], "/context");
-            assert_eq!(seen[2], "/usage");
         })
         .await;
 }
