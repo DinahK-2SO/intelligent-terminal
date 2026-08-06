@@ -13,9 +13,8 @@
 - dev branch：`user/DinahK-2SO/usage-calc-fix-display`
 - publish branch：`user/DinahK-2SO/usage-calc-fix-display-publish`
 
-因为PR是squash merge，旧publish branch不一定会显示为`main`的ancestor，但产品代码已经进入
-`main`。下一阶段不要继续基于这两个历史branch开发：请从最新`origin/main`开一个新的dev
-branch，把本文件copy过去，并在这里记录新branch名称。
+这两个branch都从`main@51e136a7a`创建。当前follow-up完成后，再下一阶段不要继续基于它们开发：
+请从最新`origin/main`开新的dev branch，把本文件copy过去，并在这里记录新branch名称。
 
 如果下一阶段仍使用dev/publish双branch：publish branch用于正式产品代码和code review，dev
 branch还可以包含调查、tracking和本地workflow。上一个publish branch不包含：
@@ -29,6 +28,39 @@ branch还可以包含调查、tracking和本地workflow。上一个publish branc
 
 新的branch可以根据任务调整清单，但继续遵守同一个原则：publish只表达当前产品行为，dev可以
 保留历史背景和本地workflow。
+
+========================
+
+## 当前follow-up：跨tab切换后Usage消失
+
+稳定repro：Tab A收到valid Usage后，打开Tab B并切回Tab A，再在Bottom Bar的Sessions和Chat按钮
+之间切换。修复前context与cost会被清空。
+
+Root cause：`set_agent_state`按window广播，同一window中的每个pre-warmed helper都会处理发给
+目标tab的命令。Owner helper投影真实Usage；non-owner helper为同一个目标tab投影空state和
+`usage:null`，两条C++更新的到达顺序造成概率性消失。
+
+当前fix在`tools/wta/src/app_events.rs`的`set_agent_state`入口按`owner_tab_id`过滤，并在任何
+state mutation或projection之前忽略其他tab。`owner_tab_id == None`的legacy fallback不变。
+现有framework regression test是
+`set_agent_state_ignored_when_target_tab_differs_from_owner`。
+
+2026-08-06 validation：
+
+- Focused RED：non-owner helper错误创建`OTHER-TAB` state；
+- Focused GREEN：owner guard后同一个test通过；
+- `app::tests`：288 passed，0 failed；
+- full WTA：1,397 passed，0 failed；
+- x64 Release完整local MSIX flow通过：restore、release WTA、Terminal package、sign和ZIP validation；
+- installer ZIP：`intelligent-terminal-0.8.0.2-x64-msix.zip`，20,774,094 bytes，SHA-256
+  `88EBB9F4C799E661665400901CCCEB5E17D4E2D661461F101DEC8E322E949F1F`；
+- deployed Debug `wta.exe`与通过测试的explicit-target binary SHA-256一致；
+- ignored live E2E `test/e2e/artifacts/usage-tab-switch-repro/Verify-Usage-Tab-Switch.ps1`跑3轮：
+  Sessions和Chat中的context/cost全部保持可见，Tab B不显示Tab A Usage，记录7次non-owner guard；
+- live截图确认修复前状态和第3轮后窗口visible、nonblank，Bottom Bar Usage仍可见。
+
+Publish branch只接收`app_events.rs`和`app_tests.rs`的产品commit。`AGENTS.md`、
+`build/scripts/New-LocalMsixInstaller.ps1`、本地E2E脚本、日志和截图只保留在dev/local。
 
 ========================
 
