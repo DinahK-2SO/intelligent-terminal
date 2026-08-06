@@ -1,286 +1,301 @@
 # ACP Usage / Session Cost Feature Handoff
 
-> Last synchronized: 2026-08-05
+> Last synchronized: 2026-08-06
 >
-> This file is the self-contained handoff for the Intelligent Terminal ACP usage/session-cost
-> feature. It is meant to be copied into a fresh follow-up development branch. A reader should not
-> need the old investigation documents to understand the current product, the decisions behind it,
-> or the remaining work. The current code is always the final source of truth if this file drifts.
+> 这个文件只描述 ACP usage / session cost feature。它应该可以直接复制到新的 dev branch，
+> 让下一阶段不需要重新翻阅旧调查记录。实际代码始终是最终 source of truth。
 
-## 1. Current Status
+我们已经完成这个feature的第一版，并通过 squash commit `a6e1f4c5b`
+(`Show the token usage and cost (#512)`) 合并到 `main`。
 
-The first production version is complete and landed in `main` through squash commit
-`a6e1f4c5b` (`Show the token usage and cost (#512)`). Because GitHub used a squash merge, the old
-publish branch is not necessarily an ancestor of `main` even though its product changes landed.
+历史branch：
 
-Historical branches:
+- dev branch：`user/DinahK-2SO/acp-price-calc`
+- publish branch：`user/DinahK-2SO/show-usage-calc`
 
-- Development: `user/DinahK-2SO/acp-price-calc`
-- Review/publish: `user/DinahK-2SO/show-usage-calc`
+因为PR是squash merge，旧publish branch不一定会显示为`main`的ancestor，但产品代码已经进入
+`main`。下一阶段不要继续基于这两个历史branch开发：请从最新`origin/main`开一个新的dev
+branch，把本文件copy过去，并在这里记录新branch名称。
 
-Do not use either historical branch as the base for the next phase. Start the next development
-branch from current `origin/main`, copy this file into it, and record the new dev/publish branch
-names here before changing product code.
+如果下一阶段仍使用dev/publish双branch：publish branch用于正式产品代码和code review，dev
+branch还可以包含调查、tracking和本地workflow。上一个publish branch不包含：
 
-The feature currently:
+- `AGENTS.md`
+- `doc/`
+- `build/scripts/New-LocalMsixInstaller.ps1`
+- `test/e2e/selftests/LocalMsixInstaller.Unit.Tests.ps1`
+- `test/e2e/selftests/UsageLocalization.Unit.Tests.ps1`
+- 本地E2E framework、wire、provider config和未明确选入review evidence的截图
 
-- consumes stable ACP session `UsageUpdate` data;
-- can display context-window occupancy and session cost independently;
-- is hidden by default behind one shared FRE/Settings toggle;
-- stores Usage per agent tab/session in memory;
-- does not calculate prices, convert currencies, or infer billing units;
-- does not use any provider-specific private Usage source today;
-- contains a provider adapter framework for future verified needs;
-- degrades to hidden Usage on malformed data without breaking chat.
+新的branch可以根据任务调整清单，但继续遵守同一个原则：publish只表达当前产品行为，dev可以
+保留历史背景和本地workflow。
 
-## 2. User Experience Contract
+========================
 
-### 2.1 Visible data
+## 在开始下一阶段正式开发前
 
-Show at most two items in the Terminal Bottom Bar, in this order:
+如果下一阶段会改变provider launch、package、agent routing、Bottom Bar、Usage显示或session
+管理，请先确认这些live acceptance仍然可以完成：
 
-1. Context-window usage, when a valid context gauge is available.
-2. Session cost, when a valid cost is available.
+1. 使用遵守真实ACP wire contract的deterministic Claude和Codex mock；
+2. build/deploy existing Intelligent Terminal并launch；
+3. 截图并确认Terminal窗口visible且nonblank；
+4. 点击Bottom Bar按钮展开agent窗口，截图并确认agent对话UI可见；
+5. 选择Claude，截图并确认active agent确实切换为Claude；
+6. 选择Codex，截图并确认active agent确实切换为Codex；
+7. 回到Terminal，打开Session view，截图并确认session UI可见；
+8. 若改变Usage功能，验证context-only、cost-only、both、absent、stale、malformed状态，以及
+   tooltip、Automation HelpText和窄窗口布局。
 
-Do not show:
+Try to reuse existing tests. 现有framework无法覆盖真实用户操作时，可以在本地开发新的test
+framework，但不要把大型新framework放进feature commit。做好modularization，使它未来可以
+独立成为新的PR。
 
-- per-turn input/output/cache/reasoning token breakdown;
-- account quota, remaining credits, reset time, or plan allowance;
-- locally calculated token cost;
-- guessed provider credits or model multipliers;
-- `N/A`, fake zero, or placeholder values for unavailable data.
+本地E2E framework、scripts、wire、provider configs和screenshots不要删除，即使它们被ignore。
+需要commit的截图必须复制到非ignored的指定review-evidence目录，否则只在tracking中记录路径和
+验证结果。
 
-Either item may appear by itself. Missing cost must not hide valid context. Invalid context must not
-hide valid cost.
+用PATH中解析到的`pwsh`（PowerShell 7+）做E2E。需要启动同一个host的子进程时，复用：
 
-### 2.2 Current English UI copy
+```powershell
+(Get-Process -Id $PID).Path
+```
 
-Title:
+不要硬编码本机PowerShell安装目录。
+
+========================
+
+## Strict Test Driven Development workflow
+
+每一个behavior change必须按以下顺序：
+
+1. 在现有framework中增加或修改最小test，建立RED；
+2. 运行focused test，确认它因为预期原因失败；
+3. 做最小GREEN implementation；
+4. 立即重跑同一个focused validation；
+5. 更新新branch的self-contained tracking note；
+6. commit产品代码、合适的现有framework tests和tracking；
+7. push dev branch；
+8. 确认remote同步后才能开始下一个RED步骤。
+
+若push失败、branch分叉或出现无法安全合并的远端提交，停止下一步，先解决同步问题。
+
+注意做好modularization并reuse existing code。若现有架构在多个位置重复定义同类功能，feature
+branch先follow existing ownership；大型架构refactoring留到独立branch。不要为了这个feature
+创建平行的Usage state/event/UI route。
+
+关于tests是否commit：现有framework能自然cover的tests应该commit；新的本地桌面E2E framework
+只保留本地，未来另开framework PR。
+
+========================
+
+## 最终产品设计
+
+### 用户看到什么
+
+当agent提供数据、且用户打开setting时，Terminal Bottom Bar最多显示两个items，顺序固定：
+
+1. Context-window usage；
+2. Session cost。
+
+两项互相独立：
+
+- missing cost不能隐藏valid context；
+- invalid context不能隐藏valid cost；
+- 两项都不存在时整个Usage group隐藏。
+
+不要显示：
+
+- per-turn input/output/cache/reasoning token breakdown；
+- account quota、remaining credits、reset time或plan allowance；
+- 客户端自己计算的token price；
+- 猜测的provider credits/model multiplier；
+- unavailable数据的`N/A`、假`0`或placeholder。
+
+### 当前英文copy
+
+Title：
 
 ```text
 Show context usage and session cost
 ```
 
-Description:
+Description：
 
 ```text
 When available, show context-window usage and session cost in the terminal bottom bar.
 ```
 
-`session cost` is deliberately generic and unit-neutral UI wording. Do not change it to
-`billing`, `monetary cost`, `credits`, `AIC`, or a provider name without a new product decision and
-full localization update.
+`session cost`是故意保持generic和unit-neutral的用户文案。除非有新的产品决定和完整localization，
+不要改回`billing`、`monetary cost`、`credits`、`AIC`或provider名称。
 
-Internal identifiers remain historical for compatibility:
+内部identifier由于兼容性继续保留旧名字：
 
-- setting/API name: `ShowTokenUsageAndCost`;
-- JSON key: `showTokenUsageAndCost`;
-- projection kinds: `context` and `billing`.
+- setting/API：`ShowTokenUsageAndCost`
+- JSON key：`showTokenUsageAndCost`
+- projection kinds：`context`、`billing`
 
-Do not rename these merely to match newer display copy unless a migration is designed.
+不要只为了匹配display copy而rename这些identifier，除非同时设计migration。
 
-### 2.3 Toggle behavior
+### Toggle behavior
 
-- Default: `false`.
-- FRE and Settings -> AI Agents write the same `GlobalAppSettings.ShowTokenUsageAndCost` value.
-- The toggle controls the entire Usage group: context and cost are both hidden when off.
-- Turning the toggle off does not stop ingestion or clear the cache.
-- Turning it back on immediately re-projects cached data; the agent need not report again.
-- Settings save/reload directly calls `_UpdateBottomBarState()`. This path does not depend on
-  `AgentPaneContent::ApplyAgentUsage` raising `StateChanged`.
+- Default：`false`。
+- FRE和Settings -> AI Agents写同一个`GlobalAppSettings.ShowTokenUsageAndCost`。
+- Toggle off隐藏context和cost，但不停止ingestion，也不清除cache。
+- Toggle on立即从cache重新project，不要求agent重发Usage。
+- Settings save/reload直接调用`_UpdateBottomBarState()`，不依赖
+  `AgentPaneContent::ApplyAgentUsage` raise `StateChanged`。
 
-### 2.4 Formatting and accessibility
+### Context formatting
 
-Context main text:
+主栏显示：
 
 ```text
 Context Window: <integer>%
 ```
 
-- Use the latest valid `used / size` gauge.
-- Percentage is rounded to the nearest integer with `.5` rounded up.
-- Tooltip and Automation HelpText preserve exact counts and the percentage.
-- Provider display strings may be retained when supplied by a future verified adapter.
-- Hide context when `size == 0`, `used > size`, the count is malformed, or required data is absent.
+规则：
 
-Cost main text:
+- 使用最新`used / size` gauge，不跨turn相加；
+- percentage取最近整数，`.5`向上；
+- tooltip和Automation HelpText保留exact counts和percentage；
+- `size == 0`、`used > size`、malformed或缺字段时隐藏context；
+- gauge在compaction后可以下降；model/config变化后`size`也可以变化；
+- context usage不是account quota，也不是session累计消耗。
+
+### Cost formatting
+
+主栏显示：
 
 ```text
 <amount rounded half-up to 2 decimals> <reported unit>
 ```
 
-- Preserve full reported precision in tooltip and Automation HelpText.
-- A positive value below `0.01` displays as `<0.01 <unit>`.
-- Exact zero is valid and displays as `0.00 <unit>`.
-- Do not validate, uppercase, correct, or convert a provider-reported currency string.
+规则：
 
-All visible states must remain usable on narrow layouts and must not rely only on color.
+- tooltip和Automation HelpText保留完整精度；
+- 正数但小于`0.01`显示`<0.01 <unit>`；
+- exact zero合法，显示`0.00 <unit>`；
+- currency/unit按agent报告原样保留，不uppercase、不纠正、不转换；
+- 不把reported value称为invoice或final bill。
 
-## 3. Data Semantics
+### Snapshot merge语义
 
-### 3.1 Context window
+Context、cost和未来provider metrics是独立optional fields：
 
-ACP `UsageUpdate.used` and `UsageUpdate.size` form a current context-window gauge.
+- 新context只替换context；
+- 新cost只替换cost；
+- missing field不擦除另一个valid field；
+- session boundary清除该session的全部Usage；
+- transport loss把已存在metric标记stale；stale保留在state但UI隐藏。
 
-- Replace the previous gauge; never add gauges across turns.
-- The gauge may decrease after compaction.
-- `size` may change after a model/config change.
-- `used` can include system instructions, tools, history, and provider-managed context.
-- It is not account quota and not cumulative lifetime token consumption.
+========================
 
-### 3.2 Cost
+## Feature内部数据流与ownership
 
-ACP cost is optional. Treat the reported amount and currency as provider/agent-owned data.
-
-- Never derive cost from token counts or a local price table.
-- Never convert one unit to another.
-- Never claim the value is an invoice or final provider bill.
-- Claude captures established session-cumulative cost behavior.
-- OpenCode's captured zero cost does not establish whether its cost field is per-call or cumulative.
-
-### 3.3 Snapshot merge
-
-Context, cost, and future provider metrics are independent optional fields.
-
-- A newly reported context replaces context only.
-- A newly reported cost replaces cost only.
-- Missing fields do not erase other valid fields.
-- Session-boundary operations clear all Usage for that session.
-- Transport loss marks present metrics stale; stale metrics stay in state but are hidden from UI.
-
-## 4. Current Architecture
-
-### 4.1 End-to-end flow
+只需要理解这条feature route：
 
 ```text
-ACP agent
-  -> wta-master forwards SessionNotification to the owning helper
-  -> helper WtaClient handles SessionUpdate::UsageUpdate
-  -> normalize_standard_usage()
-  -> AppEvent::UsageReported { session_id, snapshot }
-  -> owning TabSession merges UsageSnapshot and UsageStaleness
-  -> app_status_projection builds agent_state_changed.usage
+ACP SessionUpdate::UsageUpdate
+  -> Rust normalize_standard_usage()
+  -> AppEvent::UsageReported / UsageCleared
+  -> owning TabSession merge + UsageStaleness
+  -> agent_state_changed.usage JSON projection
   -> TerminalPage::OnAgentStateChanged routes by tab id
-  -> AgentPaneContent caches through AgentUsage::TryUpdateCache
+  -> AgentPaneContent / AgentUsage::TryUpdateCache
   -> TerminalPage::_UpdateBottomBarState renders active-tab Usage
 ```
 
-The master has a bounded notification channel. When a helper is slow, pending Usage is coalesced by
-session/metric so the latest context does not erase an undelivered cost.
+Rust ownership：
 
-### 4.2 Rust ownership
+- `tools/wta/src/usage.rs`：domain model、standard normalization、validity filtering、projection；
+- `tools/wta/src/usage/providers/`：per-provider adapter framework；
+- `tools/wta/src/protocol/acp/client.rs`：ACP ingestion和outer Usage event boundary；
+- `tools/wta/src/master/mod.rs`：per-session forwarding和pending Usage coalescing；
+- `tools/wta/src/app/tab_state.rs`、`app_events.rs`：per-tab cache、merge、clear、staleness；
+- `tools/wta/src/app_status_projection.rs`：cross-process JSON projection。
 
-- `tools/wta/src/usage.rs`
-  - `UsageSnapshot`, `UsageContext`, `UsageCost`, `UsageProjection`, `UsageStaleness`;
-  - standard normalization;
-  - context validity filtering;
-  - provider-neutral projection.
-- `tools/wta/src/usage/providers/mod.rs`
-  - provider adapter trait and registry;
-  - dormant private-input shapes and policies.
-- `tools/wta/src/usage/providers/{copilot,claude,codex,gemini,opencode}.rs`
-  - one module per built-in family;
-  - all currently return no private contribution and declare `StandardAcpOnly`.
-- `tools/wta/src/protocol/acp/client.rs`
-  - standard `UsageUpdate` ingestion;
-  - invalid update containment into `UsageCleared`;
-  - generic future provider orchestration.
-- `tools/wta/src/master/mod.rs`
-  - reliable per-session routing and pending Usage coalescing.
-- `tools/wta/src/app_contracts/event.rs`
-  - `UsageReported` and `UsageCleared` events.
-- `tools/wta/src/app/tab_state.rs`
-  - per-tab `usage` and `usage_staleness`.
-- `tools/wta/src/app_events.rs`
-  - merge, clear, lifecycle, and transport-staleness handling.
-- `tools/wta/src/app_status_projection.rs`
-  - cross-process JSON projection.
+C++ ownership：
 
-Current WTA dependency:
+- `AgentUsage.{h,cpp}`：strict JSON parser、containment、display formatting；
+- `AgentPaneContent.{h,cpp}`：per-tab C++ Usage cache；
+- `TerminalPage.cpp`：tab routing、settings refresh、active-tab Bottom Bar rendering；
+- `TerminalPage.xaml`：`UsageGroup` slot；
+- `MTSMSettings.h` / `GlobalAppSettings.idl`：persisted setting；
+- `AIAgents.*`和`FreOverlay.*`：两个toggle entry points。
 
-```toml
-agent-client-protocol = "1.3.0"
-```
+`ApplyAgentUsage`只有一个runtime caller：`TerminalPage::OnAgentStateChanged`。Caller在apply后负责
+active-tab catch-all `_UpdateBottomBarState()`。不要重新在`ApplyAgentUsage`里raise
+`StateChanged`，否则一个Usage event会同步刷新Bottom Bar两次。其他真正独立驱动Bottom Bar的
+`StateChanged` producers继续有效。
 
-### 4.3 C++ ownership
+========================
 
-- `src/cascadia/TerminalApp/AgentUsage.{h,cpp}`
-  - strict JSON parser;
-  - cache update/containment;
-  - pure primary-display selection and formatting.
-- `src/cascadia/TerminalApp/AgentPaneContent.{h,cpp}`
-  - per-tab Usage cache;
-  - `ApplyAgentUsage` updates the cache but does not raise `StateChanged`.
-- `src/cascadia/TerminalApp/TerminalPage.cpp`
-  - routes `agent_state_changed` by stable tab id;
-  - logs fixed diagnostics only;
-  - owns the active-tab Bottom Bar refresh;
-  - directly re-renders after settings reload.
-- `src/cascadia/TerminalApp/TerminalPage.xaml`
-  - owns the `UsageGroup` slot.
-- `src/cascadia/TerminalSettingsModel/MTSMSettings.h`
-  - persisted setting, default `false`.
-- `src/cascadia/TerminalSettingsEditor/AIAgents.*`
-  - Settings toggle projection.
-- `src/cascadia/TerminalApp/FreOverlay.*`
-  - FRE toggle initialization and save.
+## Error handling、privacy与lifecycle
 
-### 4.4 Refresh ownership
+### Standard ACP normalization
 
-`ApplyAgentUsage` has one runtime caller: `TerminalPage::OnAgentStateChanged`. That caller performs
-the active-tab catch-all `_UpdateBottomBarState()` after applying Usage. Do not re-add a
-`StateChanged.raise()` inside `ApplyAgentUsage`; it causes two synchronous Bottom Bar refreshes for
-one update. Other `AgentPaneContent::StateChanged` producers remain valid for states that drive the
-bar independently.
+ACP context counts是typed integers，不需要字符串解析。Optional cost只有finite且non-negative才
+接受：
 
-## 5. Error Handling and Privacy
+- invalid optional cost被省略；
+- valid context继续保留；
+- zero cost合法；
+- chat turn保持成功。
 
-### 5.1 Standard ACP normalization
+### Future private parser errors
 
-Typed context counts do not require string parsing. Optional cost is accepted only when finite and
-non-negative.
+当前没有active private provider parser。未来新增时，parser error必须：
 
-- Invalid optional cost is omitted.
-- Valid context survives.
-- Zero cost is valid.
-- The chat turn remains successful.
+- 只省略该optional contribution；
+- 只记录不含value/payload的schema-level warning；
+- 不把已经成功的user turn变成error；
+- 不泄漏credentials、billing data、prompt或raw payload。
 
-### 5.2 Future private parser errors
+Inner parser在tests里保持fail-fast；containment放在明确的feature boundary，不要散落try/catch。
 
-No private provider parser is active today. If one is added later, a provider parsing error must:
+### C++ cross-process containment
 
-- omit that optional contribution;
-- emit only a schema-level warning without values;
-- not turn a completed user turn into an error;
-- not leak payloads, credentials, or billing data to logs.
+`AgentUsage::Parse`和`UpdateCache`是strict的，可以throw。唯一C++ containment boundary是
+`TryUpdateCache(... ) noexcept`：
 
-Inner parser/normalizer code should remain fail-fast in tests. Containment belongs at explicit outer
-feature boundaries, not in many scattered catches.
+1. catch parser exception；
+2. clear旧Usage cache，避免显示stale数据；
+3. return `false`；
+4. `OnAgentStateChanged` caller只log固定文字`invalid usage hidden`；
+5. caller继续refresh Bottom Bar并隐藏Usage；
+6. chat和agent connection继续运行。
 
-### 5.3 C++ cross-process containment
+下一条valid update会重新填充cache。
 
-`AgentUsage::Parse` and `UpdateCache` are strict and may throw on malformed schema.
-`TryUpdateCache(... ) noexcept` is the one C++ containment boundary:
+### Privacy
 
-1. catch any parser exception;
-2. clear the old Usage cache so stale data is not shown;
-3. return `false`;
-4. log only `invalid usage hidden`;
-5. refresh the Bottom Bar, which hides Usage;
-6. leave chat and the agent connection running.
+- Usage数值不能进入normal logs或telemetry；
+- full ACP content只允许trace级，Usage values仍应redact；
+- 不为这个feature读取provider credentials；
+- raw provider logs、prompts、tokens、account info不能进入commit。
 
-The next valid update repopulates the cache.
+### Lifecycle
 
-### 5.4 Logging and sensitive data
+Clear Usage on：
 
-- Usage numeric values must not enter normal logs or telemetry.
-- Full ACP content is trace-only, and Usage values remain redacted even there where implemented.
-- Never read provider credentials for this feature.
-- Never copy raw provider logs, user prompts, tokens, or account information into committed files.
+- fresh `/new` session；
+- helper/agent restart；
+- explicit per-tab session reset；
+- new/load identity boundary；
+- invalid cross-process replacement payload。
 
-## 6. Provider Matrix and Decisions
+Local chat-history clear在ACP session不变时不要清Usage。Model display变化也不清Usage，除非provider
+报告replacement gauge。
 
-All five built-in provider modules currently declare:
+Background-tab update只更新那个tab的cache；用户切到该tab时再刷新window-level Bottom Bar。
+
+========================
+
+## Provider decisions
+
+我们调查过五个provider的真实response。最终产品只接受标准ACP直接报告的context/cost；当前五个
+built-in provider modules全部是：
 
 ```text
 PrivateUsagePolicy::StandardAcpOnly
@@ -288,253 +303,167 @@ trusted_reporter_ids = []
 post_turn_commands = []
 ```
 
-This describes current enabled behavior, not a permanent ban. If a provider later supplies a
-supported private contract, its adapter and tests may be extended after real wire validation and
-review.
+这描述当前实现，不是永久禁止private extension。未来若出现正式、machine-readable、经过真实
+wire验证的contract，可以扩展对应provider module和tests。
 
-| Provider | Verified data | Current product behavior | Follow-up |
-|---|---|---|---|
-| Claude | Standard context gauge and cumulative USD cost | Display both through the common path | Validate and upgrade the pinned adapter explicitly |
-| Codex | Standard context gauge; no cost in captures | Display context only | Re-capture against current adapter pin |
-| GitHub Copilot | Current CLI 1.0.78 reports standard context; no trusted cost | Display context only; no special handling | Wait for supported ACP cost, then test locally |
-| Gemini | Private per-call token metadata, no accepted standard Usage/cost in investigation | Display nothing; do not parse private quota | Wait for standard ACP context/cost |
-| OpenCode | Standard context and cost; captured free model reported `0 USD` | Display provider-reported values unchanged | Upgrade package after upstream currency fix |
+### Claude
 
-Provider versions and upstream issue status in this section are an external compatibility snapshot
-verified on 2026-08-05, not values derived from the repository. Re-check them before acting on a
-follow-up. Product launch pins and current code behavior remain repository facts.
+Verified behavior：标准ACP context gauge和session-cumulative USD cost。产品通过common path显示
+两项。
 
-### 6.1 Claude
-
-The original verified capture used:
+当前产品launch在三个live owners中exact pin到：
 
 ```text
 @agentclientprotocol/claude-agent-acp@0.59.0
 ```
 
-Current product launch is pinned to `0.59.0` in three live owners:
+三个owners：TerminalApp launch mapping、Settings model-probe mapping、Rust agent registry。
 
-- Terminal app launch mapping;
-- Settings model-probe launch mapping;
-- Rust agent registry.
+Pin是故意的：不写版本会让`npx`每天执行npm当天的`latest`，同一个IT版本在不同机器上可能运行
+不同adapter，难以复现和review。不要仅为了升级而删除pin。
 
-The exact pin is intentional: an unversioned `npx` command executes whatever npm calls `latest`
-that day, causing the same Intelligent Terminal version to behave differently across machines and
-making failures difficult to reproduce.
+2026-08-05 external snapshot：
 
-As of 2026-08-05:
+- Microsoft npm feed的`latest`是`0.63.0`；
+- upstream GitHub latest release是`0.64.2`；
+- `0.63.0`把ACP SDK从`1.2.1`升级到`1.3.0`，Claude Agent SDK从`0.3.207`
+  升级到`0.3.220`；
+- Node requirement仍是`>=22`；
+- 新版包含context initialization、session/model latency、tool progress、terminal、permission和
+  ExitPlanMode相关修复。
 
-- the configured Microsoft npm feed reports `0.63.0` as `latest`;
-- upstream GitHub reports `0.64.2` as the latest release;
-- `0.63.0` upgrades ACP SDK `1.2.1 -> 1.3.0` and Claude Agent SDK
-  `0.3.207 -> 0.3.220`;
-- Node requirement remains `>=22`;
-- newer versions include context initialization, session/model latency, tool-progress, terminal,
-  permission, and ExitPlanMode fixes.
+Follow-up应该先做完整compatibility test，再统一更新三个live owners、current docs和expectations。
+历史capture确实使用`0.59.0`，不要全局替换历史文件。
 
-Do not remove the pin merely to get updates. Follow up by testing an approved newer version, then
-update all live launch owners, current docs, and expectations in one focused change. Do not rewrite
-historical captures that genuinely used `0.59.0`.
+External package inspection on 2026-08-05显示：adapter默认使用其exact Claude Agent SDK dependency
+携带的平台Claude executable。用户全局安装的Claude/ACP adapter不会覆盖IT的pin；显式external
+override是`CLAUDE_CODE_EXECUTABLE`。升级时应重新验证这个upstream behavior。离线且未cache exact
+package时launch可能失败。
 
-External package inspection on 2026-08-05 showed that the adapter normally uses the
-platform-specific Claude executable shipped with its exact Claude Agent SDK dependency. A user's
-globally installed Claude or ACP adapter version does not override the product pin;
-`CLAUDE_CODE_EXECUTABLE` is the adapter's explicit external override. Thus a user's global 0.57 or
-0.63 adapter can coexist with IT's 0.59 adapter; IT still launches 0.59 and does not upgrade or
-downgrade the global installation. Re-verify this upstream behavior during an adapter upgrade.
-Offline launch can fail when the exact pinned package is not cached.
+### Codex
 
-### 6.2 Codex
+Verified behavior：标准ACP context gauge；capture中没有monetary cost，因此当前只显示context。
 
-Historical provider captures used adapter `1.1.2`; current product launch is pinned to `1.1.4`.
-Do not globally replace `1.1.2` in historical result files. New compatibility evidence must use and
-record the current product pin.
+Historical provider captures使用`1.1.2`；当前产品pin是`1.1.4`。不要把历史result文件里的
+`1.1.2`全局替换。新的capture必须使用并记录current product pin。
 
-### 6.3 GitHub Copilot
+### GitHub Copilot
 
-Final decision: no Copilot-specific Usage processing.
+GitHub Copilot CLI 1.0.78已经通过标准ACP报告context usage，但还没有trusted standard cost。
+当前只显示context，不做任何Copilot-specific Usage处理。
 
-Do not:
+Do not：
 
-- send `/context`;
-- send `/usage`;
-- parse command output;
-- read `%USERPROFILE%/.copilot` session logs;
-- read `events.jsonl`, checkpoints, `totalNanoAiu`, or local ledgers;
-- infer AIC/AI Credits from request counts or model metadata.
+- send `/context`；
+- send `/usage`；
+- parse command output；
+- 把`%USERPROFILE%/.copilot`、`events.jsonl`、checkpoint或`totalNanoAiu`当作usage/cost source；
+- 根据request count、model metadata或multiplier推算AIC/AI Credits。
 
-Background: earlier prototypes tried command probes and user-folder checkpoints. `/usage` did not
-return valid cost for the product, `/context` became unnecessary after standard ACP context support,
-and user-folder schemas were unsupported internal details. All product handling was removed.
+背景：我们早期验证过command不消耗额外tokens，也做过command/local-ledger prototype。但
+`/usage`不能给产品可信cost，`/context`在标准ACP context出现后不再需要，而user-folder schema
+不是supported usage/cost contract，所以这些usage/cost product paths已经全部删除。Session
+history/watcher代码可能仍为独立的session-management功能读取Copilot文件；不要误删，也不要把它
+复用为Usage source。
 
-The generic provider framework remains. Publish code and tests should look like the superseded
-special behavior was never introduced. This is review-load reduction, not concealment: historical
-rationale belongs in dev-only notes, while publish code should express only current behavior.
-Do not add tests that permanently force or ban hypothetical future Copilot extensions. If a real
-supported contract arrives, add its implementation and tests together.
+Per-provider framework保留。Publish code应该看起来像这些superseded特殊处理从未引入过。这不是
+隐瞒历史，而是降低reviewer认知负担。不要用tests/comments永久force或ban未来hypothetical
+Copilot extension。若未来有正式contract，把contract、implementation和focused tests一起提交。
 
-### 6.4 Gemini
+### Gemini
 
-Gemini's investigated private `_meta.quota` data represents per-call token counts, not an account
-allowance. It does not satisfy this feature's accepted contract. Do not parse it. Standard ACP data
-should work automatically if Gemini adopts it later.
+调查中的private `_meta.quota`是per-call token data，不是account allowance，也不满足本feature
+接受的contract。当前不解析。未来Gemini发送标准ACP context/cost时，common path应自动支持。
 
-### 6.5 OpenCode
+### OpenCode
 
-Assume the currency supplied by OpenCode is authoritative and pass it through unchanged. Do not add
-a local correction for anomalyco/opencode issue `#38667` (non-USD cost mislabeled as USD). Upgrade
-OpenCode after the upstream package contains the fix.
+Verified behavior：标准ACP context和cost；captured free model报告`0 USD`。
 
-The local provider fixture using OpenCode 1.18.3 is not special product behavior. It proves a real
-standard ACP payload (`used`, `size`, `cost`) can be deserialized by the common normalizer.
+我们知道OpenCode upstream issue `#38667`：non-USD cost可能错误标成USD。产品不做本地修正，假设
+provider报告的currency是authoritative并原样传递。等upstream package修复后升级package，不为
+这个bug增删client workaround。
 
-## 7. Localization Contract
+OpenCode 1.18.3的local fixture不是特殊处理；它只是证明真实标准ACP payload
+`used/size/cost`能被common normalizer反序列化。
 
-Resource folders are authoritative; never hardcode locale counts in new tooling. At feature
-completion the relevant sets were:
+========================
 
-- 89 TerminalApp locale folders;
-- 16 TerminalSettingsEditor locale folders;
-- 85 real translated non-source locales;
-- 3 pseudo-locales using English fallback.
+## Localization contract
 
-The shared FRE/Settings title and description must match in every shared locale. Preserve:
+Resource folders是authoritative locale set；新tooling不要hardcode数量。Feature完成时基线是：
 
-- valid XML;
-- exactly one UTF-8 BOM;
-- `xml:space="preserve"`;
-- existing line endings and unrelated resources;
-- English fallback for `qps-ploc`, `qps-ploca`, and `qps-plocm`.
+- 89个TerminalApp locale folders；
+- 16个TerminalSettingsEditor locale folders；
+- 85个真实翻译的non-source locales；
+- 3个pseudo-locales使用English fallback。
 
-Use an XML-aware updater with `XmlDocument.PreserveWhitespace = true`; do not bulk-edit `.resw`
-with ordinary text output commands. Translator comments are developer/translator guidance and are
-not shown to users.
+FRE和Settings的title/description在shared locales中必须一致。Preserve：
 
-Bottom Bar keys:
+- valid XML；
+- exactly one UTF-8 BOM；
+- `xml:space="preserve"`；
+- existing line endings和unrelated resources；
+- `qps-ploc`、`qps-ploca`、`qps-plocm`的English fallback。
 
-- `UsageGroup/[using:Windows.UI.Xaml.Automation]AutomationProperties/Name`
-- `Usage_TokensUnit`
-- `Usage_ContextWindowLabel`
+使用`XmlDocument.PreserveWhitespace = true`之类的XML-aware updater；不要用普通text output批量改
+`.resw`。`<comment>`是developer/translator guidance，不会显示给用户。
 
-FRE keys:
+Feature keys：
 
-- `FreOverlay_ShowTokenUsageAndCostLabel.Text`
-- `FreOverlay_ShowTokenUsageAndCostDescription.Text`
+- Bottom Bar：`UsageGroup/.../Name`、`Usage_TokensUnit`、`Usage_ContextWindowLabel`
+- FRE：`FreOverlay_ShowTokenUsageAndCostLabel.Text`、
+  `FreOverlay_ShowTokenUsageAndCostDescription.Text`
+- Settings：`AIAgents_ShowTokenUsageAndCost.Header`、
+  `AIAgents_ShowTokenUsageAndCost.HelpText`
 
-Settings keys:
+========================
 
-- `AIAgents_ShowTokenUsageAndCost.Header`
-- `AIAgents_ShowTokenUsageAndCost.HelpText`
+## Validation baseline与commands
 
-## 8. Lifecycle Rules
+Current committed test ownership：
 
-Usage belongs to an ACP session and active tab.
+- Rust normalization/policy：`tools/wta/src/usage.rs`
+- ACP routing：`tools/wta/src/protocol/acp/mock_agent_tests.rs`
+- Master coalescing：`tools/wta/src/master/tests.rs`
+- Per-tab merge/lifecycle/staleness：`tools/wta/src/app_tests.rs`
+- C++ parse/cache/display：`src/cascadia/ut_app/AgentUsageTests.cpp`
+- Localization parity：`test/e2e/selftests/UsageLocalization.Unit.Tests.ps1`
+- Settings/FRE/provider/session E2E：现有`test/e2e/tests/Feature.*` suites
 
-Clear Usage on:
+Latest known baseline（只是历史reference，不是永久固定总数）：
 
-- a fresh `/new` session;
-- helper/agent restart;
-- explicit per-tab session reset;
-- new/load identity boundaries where old session data no longer applies;
-- invalid cross-process replacement payload.
+- Full WTA suite：1,348 passed，0 failed；
+- Terminal x64 Debug build：0 errors，210 existing warnings；
+- TerminalApp UnitTests build：0 errors，39 existing warnings；
+- `AgentUsageTests`：23 passed，0 failed；
+- `UsageLocalization.Unit.Tests.ps1`：5 passed，0 failed；
+- Unit-tagged E2E selftests：20 passed，0 failed，19 not selected；
+- original PR required checks passed。
 
-Do not clear Usage on local chat-history clearing when the underlying ACP session is unchanged.
-Model display changes preserve Usage unless the provider reports a replacement gauge.
+每次验证都报告current run counts，不要假设总数必须等于baseline。
 
-Background-tab updates change that tab's cache but do not refresh the window-level Bottom Bar until
-the tab becomes active. Active-tab `OnAgentStateChanged` owns the immediate refresh.
-
-## 9. Testing and Validation
-
-### 9.1 Current committed test ownership
-
-- Rust normalization/policy: `tools/wta/src/usage.rs`
-- Standard ACP routing: `tools/wta/src/protocol/acp/mock_agent_tests.rs`
-- Master coalescing/routing: `tools/wta/src/master/tests.rs`
-- Per-tab merge/lifecycle/staleness: `tools/wta/src/app_tests.rs`
-- C++ parse/cache/display: `src/cascadia/ut_app/AgentUsageTests.cpp`
-- Localization parity: `test/e2e/selftests/UsageLocalization.Unit.Tests.ps1`
-- Settings toggle: `test/e2e/tests/Feature.SettingsUi.Tests.ps1`
-- FRE toggle: `test/e2e/tests/Feature.FreAgentSetup.Tests.ps1`
-- Provider switching/connectivity: `test/e2e/tests/Feature.AgentMatrix.Tests.ps1`
-- Session view: `test/e2e/tests/Feature.SessionList.Tests.ps1`
-
-### 9.2 Latest known validation baseline
-
-These counts are historical baselines, not permanent expected totals:
-
-- Full WTA suite after the latest `main` merge: 1,348 passed, 0 failed.
-- Terminal x64 Debug build after that merge: 0 errors, 210 existing warnings.
-- TerminalApp UnitTests build: 0 errors, 39 existing warnings.
-- `AgentUsageTests`: 23 passed, 0 failed.
-- `UsageLocalization.Unit.Tests.ps1`: 5 passed, 0 failed.
-- Unit-tagged E2E selftests: 20 passed, 0 failed, 19 not selected by the filter.
-- The original PR's required checks passed before merge.
-
-Always report current counts from the run; do not assert that totals must stay equal to these.
-
-### 9.3 Useful commands
-
-Use the explicit Rust target consistently so packaging does not pick up a stale binary:
+Useful commands：
 
 ```powershell
 cargo test --target x86_64-pc-windows-msvc --manifest-path tools/wta/Cargo.toml
-```
 
-Build TerminalApp unit tests from a razzle environment:
-
-```powershell
 cmd.exe /d /c "tools\razzle.cmd && cd src\cascadia\ut_app && bx"
-```
 
-Run AgentUsage TAEF tests:
-
-```powershell
 cmd.exe /d /c "tools\razzle.cmd && cd bin\x64\Debug\UnitTests_TerminalApp && te.exe Terminal.App.Unit.Tests.dll /name:*AgentUsageTests*"
-```
 
-Run localization/selftests with PowerShell 7+ resolved from `PATH`:
-
-```powershell
 Import-Module Pester -MinimumVersion 5.0.0 -Force
 Invoke-Pester -Path test/e2e/selftests/UsageLocalization.Unit.Tests.ps1
 Invoke-Pester -Path test/e2e/selftests -Tag Unit
 ```
 
-For all E2E work:
+========================
 
-- run under the current `pwsh` resolved from `PATH`;
-- when a child needs the same host, reuse `(Get-Process -Id $PID).Path`;
-- do not hardcode a machine-specific PowerShell installation path.
+## Local evidence必须保留
 
-### 9.4 Minimum packaged/live acceptance
+Local desktop orchestration、provider configs、credentials、wire captures、screenshots和custom
+mock frameworks不进入feature product commits。不要因为它们被ignore就删除。
 
-The original feature passed the following live desktop preflight. Re-run the affected portions for
-follow-ups that change provider launch, package contents, agent routing, Bottom Bar rendering, or
-session management:
-
-1. Use deterministic Claude and Codex mocks that speak the real ACP wire contract.
-2. Build and deploy the existing Intelligent Terminal package, then launch it.
-3. Capture a screenshot and verify the Terminal window is visible and nonblank.
-4. Open the agent pane from the Bottom Bar; capture a screenshot and verify the conversation UI.
-5. Select Claude; capture evidence that the active agent actually changed to Claude.
-6. Select Codex; capture evidence that the active agent actually changed to Codex.
-7. Return to the terminal, open the Session view from the Bottom Bar, and capture evidence that the
-  session UI is visible.
-8. For Usage changes, inject or obtain context-only, cost-only, both, absent, stale, and malformed
-  states; verify visibility, tooltip, accessibility text, and no overlap on desktop/mobile-sized
-  windows where applicable.
-
-Prefer existing E2E helpers. If they cannot express a required interaction, build the new harness
-locally and modularly, keep it ignored, and reserve framework publication for a separate PR.
-
-## 10. Local E2E Evidence
-
-Local desktop orchestration, provider configs, credentials, wire captures, screenshots, and custom
-mock frameworks are intentionally not part of this feature's product commits. Preserve them; do
-not delete them merely because they are ignored.
-
-Known local artifact families include:
+Known local artifact families包括：
 
 - `test/e2e/artifacts/real-copilot-usage-ui/`
 - `test/e2e/artifacts/copilot-usage-command/`
@@ -546,299 +475,100 @@ Known local artifact families include:
 - `test/e2e/artifacts/step9-usage/`
 - `test/e2e/artifacts/usage-localization/`
 - `test/e2e/artifacts/session-cost-localization/`
-- local ACP mock launchers and provider bridge configs.
 
-Before transferring or committing any capture, inspect it for prompts, credentials, local paths,
-account identifiers, tokens, and provider logs. Screenshots remain local unless deliberately copied
-to a non-ignored review-evidence directory.
+分享或commit任何capture前，检查并清除prompts、credentials、local paths、account identifiers、
+tokens和provider logs。
 
-## 11. Development Workflow for the Next Branch
+========================
 
-### 11.1 Branch setup
+## Review hygiene与历史guardrails
 
-1. Fetch `origin/main`.
-2. Confirm `origin/main` contains `a6e1f4c5b` or a later equivalent feature landing.
-3. Create a fresh follow-up dev branch from `origin/main`.
-4. Copy this file into that branch.
-5. Record the new dev branch and optional publish branch near the top of this file.
-6. Do not silently continue work on the historical branches.
+Publish code只表达当前behavior：
 
-If the next phase again uses a dev/publish split, keep publish review-focused. The previous publish
-branch intentionally excluded:
+- 不保留force/ban superseded provider-specific behavior的tests/comments；
+- 这是为了降低review cognitive load，不是隐瞒历史；
+- 历史原因保留在dev-only handoff/tracking；
+- 未来有正式特殊处理时，把verified contract、implementation和tests一起提交；
+- 对low-confidence review comment先沿owning code path验证，不直接接受或拒绝。
 
-- `AGENTS.md`;
-- all of `doc/`;
-- `build/scripts/New-LocalMsixInstaller.ps1`;
-- `test/e2e/selftests/LocalMsixInstaller.Unit.Tests.ps1`;
-- `test/e2e/selftests/UsageLocalization.Unit.Tests.ps1`;
-- local-only E2E framework files, wire captures, and screenshots not intended for that product PR.
+本PR的review经验：
 
-Adapt the exclusion list to the new PR, but preserve the principle: publish contains current
-product behavior and existing-framework tests; dev may also contain investigation history and local
-workflow material.
+- low-confidence duplicate-refresh comment经过sole caller tracing后确认有效，删除了重复
+  `StateChanged`；
+- `<cstddef>`建议有效，因为header直接用`size_t`；删除`<string_view>`建议无效，因为public API
+  直接用`std::wstring_view`；
+- spelling不认识`USD`时应加allowlist，不应修改合法currency fixture。
 
-### 11.2 Strict TDD loop
+Do not accidentally reintroduce：
 
-For every behavioral step:
+- per-turn token breakdown UI；
+- Gemini private quota parsing；
+- Copilot `/context`、`/usage` probing或user-folder log parsing；
+- inferred AIC/credits；
+- local token-to-price calculation；
+- invalid context的`N/A`/over-100%显示；
+- visible copy中的`billing`/provider credit wording；
+- Usage apply和caller同时refresh Bottom Bar。
 
-1. Add or change the smallest existing-framework test to establish RED.
-2. Run the focused test and confirm it fails for the intended reason.
-3. Make the smallest GREEN implementation.
-4. Immediately rerun the same focused validation.
-5. Update the branch's self-contained tracking section or dev-only tracking document.
-6. Commit the product code, appropriate existing-framework tests, and tracking note.
-7. Push the dev branch.
-8. Confirm the remote is synchronized before starting another RED step.
+========================
 
-If push fails, branches diverge, or remote commits cannot be safely integrated, stop before the
-next step and resolve synchronization first.
-
-Do not introduce a large new E2E framework into a feature commit. Keep new local framework code
-modular and ignored for a later dedicated PR. Existing repository test frameworks should be
-committed when they naturally cover the behavior.
-
-### 11.3 Engineering scope
-
-- Reuse the existing ACP route, provider registry, per-tab state, projection, and Bottom Bar.
-- Do not create a parallel Usage state/event/UI architecture.
-- Follow main's current module ownership after refactors.
-- Avoid broad architectural cleanup in a feature follow-up; record real debt for a separate branch.
-- Do not revert unrelated user changes in a dirty worktree.
-
-### 11.4 Review hygiene
-
-Publish code should express current behavior only.
-
-- Do not retain comments/tests that force or ban superseded provider-specific behavior.
-- This is to reduce reviewer cognitive load, not to hide history.
-- Keep historical rationale in this dev-only handoff/tracking material.
-- If special handling becomes necessary later, introduce the verified contract, implementation,
-  and tests together so reviewers evaluate one coherent change.
-- Treat low-confidence review comments as hypotheses: trace the owning code path before accepting
-  or declining them.
-
-Examples from the completed PR:
-
-- A low-confidence duplicate-refresh comment was valid after tracing the sole caller; the redundant
-  `StateChanged` raise was removed.
-- A suggestion to add `<cstddef>` was valid because the header directly used `size_t`; deleting
-  `<string_view>` was not valid because the public API directly uses `std::wstring_view`.
-- `USD` was added to the spelling allowlist instead of altering legitimate currency fixtures.
-
-## 12. Historical Decisions That Must Not Reappear Accidentally
-
-The following approaches were explored and then superseded:
-
-- displaying per-turn input/output/cache/reasoning token breakdown;
-- parsing Gemini private quota metadata;
-- sending Copilot `/context` and `/usage` after user turns;
-- interpreting `/usage Requests` as AI Credits/AIC;
-- reading Copilot user-folder logs or usage checkpoints;
-- locally calculating provider price from tokens or model metadata;
-- presenting invalid context as `N/A` or over 100%;
-- using visible copy such as `token usage and cost`, `usage and billing`, or provider-specific
-  credit wording;
-- raising Usage `StateChanged` and then refreshing the Bottom Bar again in the caller.
-
-Historical tests/captures may mention these, but new publish code must not restore them without a
-new explicit decision.
-
-## 13. Follow-up Backlog
-
-### Priority follow-ups
+## Future follow-ups
 
 1. **Claude adapter upgrade**
-   - Keep an exact pin.
-   - Test the newest version available in the approved npm feed (currently `0.63.0`) or wait for
-     upstream `0.64.2` to synchronize.
-   - Validate initialize, authentication, session/new/load, model config, chat, cancellation,
-     tools, permissions, terminal updates, context, cost, and packaging cache behavior.
-   - Update all live launch owners and current docs together; preserve historical `0.59.0` captures.
+   - 保留exact pin；
+   - 测试approved feed最新版本（2026-08-05为`0.63.0`），或等待upstream `0.64.2`同步；
+   - 验证initialize、auth、session/new/load、model config、chat、cancel、tools、permissions、
+     terminal、context、cost和offline/package cache；
+   - 同时更新三个live launch owners和current docs；保留历史`0.59.0`capture。
 
 2. **Eliminate launch metadata duplication**
-   - Claude/Codex commands are duplicated in TerminalApp, Settings, and Rust.
-   - Move toward one generated/shared source with drift tests in a separate architecture PR.
+   - Claude/Codex command当前在TerminalApp、Settings和Rust分别定义；
+   - 在独立architecture PR中改成single generated/shared source，并加drift tests。
 
 3. **GitHub Copilot standard cost**
-   - Track the upstream request for ACP cost data.
-   - When available, capture real wire data first.
-   - Prefer the common standard normalizer; add special handling only if an official contract
-     requires it.
+   - 跟踪upstream feature request；
+   - 可用后先抓真实wire；
+   - 优先使用common standard normalizer，只有official contract确实需要时才做special handling。
 
 4. **Gemini standard Usage**
-   - Re-test when Gemini emits standard ACP context/cost.
-   - Do not promote private `_meta.quota` token counts into this product surface.
+   - Gemini发送标准ACP context/cost后重新验证；
+   - 不把private `_meta.quota`提升为本产品数据。
 
 5. **OpenCode currency fix**
-   - Monitor anomalyco/opencode `#38667`.
-   - Upgrade the package rather than adding/removing a client workaround.
+   - 跟踪anomalyco/opencode `#38667`；
+   - 升级package，不增加/删除client workaround。
 
 6. **Dedicated E2E framework PR**
-   - Preserve and modularize local desktop automation.
-   - Move it into a separate PR that can test real user interactions without bloating feature diffs.
+   - 保留并modularize本地desktop automation；
+   - 未来在独立PR中发布，不扩大usage feature diff。
 
 7. **Documentation freshness**
-   - Historical captures may legitimately name old versions.
-   - Current-state docs must track live pins (for example, Codex product pin is now `1.1.4`, while
-     old captures used `1.1.2`).
+   - current-state docs跟随live pin；
+   - historical captures保留当时真实版本，例如Codex历史`1.1.2`与当前`1.1.4`。
 
-### Future provider extension rules
+Future private provider source必须满足：
 
-Before enabling any private provider source, require:
+- official/supported machine-readable contract；
+- exact family/reporter/schema identity；
+- sanitized real wire fixtures和version evidence；
+- malformed/missing/partial tests；
+- no credentials或unsupported local files；
+- standard ACP存在时不duplicate；
+- failure containment不影响chat；
+- focused publish diff不编码speculative future behavior。
 
-- an official or explicitly supported machine-readable contract;
-- exact family/reporter/schema identity;
-- sanitized real wire fixtures;
-- version/compatibility evidence;
-- malformed/missing/partial-value tests;
-- no credentials or unsupported local files;
-- no duplicate reporting when standard ACP data exists;
-- failure containment that preserves chat;
-- a focused publish diff that does not encode speculative future behavior.
+========================
 
-## 14. Repository Runtime Context for Follow-up Work
+## Definition of Done for next follow-up
 
-### 14.1 Product process model
+一个follow-up step完成必须满足：
 
-Intelligent Terminal is a Windows Terminal fork with three relevant integration layers:
-
-- **WTA**: Rust orchestrator. A shared `wta-master` owns agent CLI processes; one pre-warmed
-  `wta-helper` runs inside each tab's stashed agent pane.
-- **ACP**: JSON-RPC between helper <-> master over a named pipe and master <-> agent CLI over stdio.
-- **WT Protocol / wtcli**: package-identity COM surface used by agents and WTA to inspect or control
-  Terminal panes.
-
-Simplified layout:
-
-```text
-WindowsTerminal package
-  -> SharedWta starts one wta-master
-       -> agent CLI(s) over ACP/stdio
-  -> each tab owns a stashed agent pane
-       -> ConptyConnection starts one wta-helper
-       -> helper connects to master over ACP/named pipe
-  -> wtcli activates the packaged Terminal Protocol COM server
-```
-
-The hidden agent pane is stashed, not destroyed. Its helper, ACP session, chat history, and Usage
-cache survive pane toggle. The pane is destroyed on tab close or the explicit TUI close sequence.
-
-Every helper is anchored to an owner tab id and window id. Inbound state updates carry routing ids;
-outbound events carry `tab_id`. Usage must remain on this existing per-tab route and must never be
-fanned out globally.
-
-### 14.2 Package identity
-
-`wta.exe` and `wtcli.exe` need the Terminal package identity to activate the COM server. The package
-build copies `wta.exe` beside `WindowsTerminal.exe`. Running a Cargo-output `wta.exe` directly can
-fail COM activation with `0x80073D54` (`APPMODEL_ERROR_NO_PACKAGE`).
-
-For package/COM/UI changes, deploy the packaged Debug layout. For a `wta.exe`-only change, build the
-normal host-target binary at `tools/wta/target/debug/wta.exe` and use the repository's WTA
-hot-refresh flow rather than a full app deployment. Static assets and hook bundles are not
-WTA-only changes.
-
-Safe Debug deployment after a build:
-
-```powershell
-./build/scripts/Invoke-IntelligentTerminalDebugDeployment.ps1 `
-    -AppxRecipePath src/cascadia/CascadiaPackage/bin/x64/Debug/CascadiaPackage.build.appxrecipe
-```
-
-The wrapper targets only processes running from the dev layout. Never kill every
-`WindowsTerminal.exe` by name. Use `-WhatIf -Verbose` when process selection is uncertain.
-
-### 14.3 Build order
-
-For normal WTA-only iteration, use the host target expected by the WTA hot-refresh flow:
-
-```powershell
-Get-Process wta -ErrorAction SilentlyContinue | Stop-Process -Force
-cargo build --manifest-path tools/wta/Cargo.toml
-```
-
-For a packaged validation cycle, an explicit target is also supported:
-
-```powershell
-Get-Process wta -ErrorAction SilentlyContinue | Stop-Process -Force
-cargo build --target x86_64-pc-windows-msvc --manifest-path tools/wta/Cargo.toml
-```
-
-Choose one WTA output convention for the cycle and stay consistent. The package project searches
-the explicit-target binary first, then the host-target binary. A stale explicit-target binary can
-therefore shadow a fresh host-target build during packaging.
-
-Then build Terminal:
-
-```powershell
-cmd.exe /d /c "tools\razzle.cmd && bcz no_clean"
-```
-
-For Visual Studio debugging, use `CascadiaPackage` as the startup project.
-
-### 14.4 Runtime data and logs
-
-Packaged state and cache are package-family-private:
-
-```text
-%LOCALAPPDATA%/Packages/<PFN>/LocalState/IntelligentTerminal/
-%LOCALAPPDATA%/Packages/<PFN>/LocalCache/Local/IntelligentTerminal/
-```
-
-Logs live under the cache root in `logs/<package-version>/`. Important files:
-
-- `wta-main_master.log`: agent spawn, helper routing, session ownership;
-- `wta-main_helper-<pid>.log`: helper pipe, ACP session, prompt/UI lifecycle;
-- `wta-cli.log`: short-lived WTA CLI commands;
-- `wta-delegate.log`: `?<prompt>` delegation;
-- `wta-probe.log`: provider probes;
-- `wta-install-hooks.log`: hooks installation;
-- `wta-ensure-host.log`: SharedWta/background-host lifecycle;
-- `wta-acp-debug.log`: low-level ACP trace;
-- `terminal-agent-pane.log`: C++ agent-pane path;
-- `hook-trace.log`: PowerShell hook path.
-
-Unpackaged Cargo runs and tests have no package identity. Their state/cache roots collapse to:
-
-```text
-%LOCALAPPDATA%/IntelligentTerminal/
-%LOCALAPPDATA%/IntelligentTerminal/logs/
-```
-
-Unpackaged logs are flat rather than grouped under a package-version subdirectory.
-
-Set `WTA_LOG` or `RUST_LOG` to control Rust log level. Debug builds default to `debug`; release
-builds default to `info`. Usage values must remain absent from normal diagnostics even when tracing
-other ACP flow.
-
-### 14.5 Current relevant settings
-
-```jsonc
-{
-    "acpAgent": "copilot",
-    "acpModel": "",
-    "acpCustomCommand": "",
-    "agentPanePosition": "bottom",
-    "delegateAgent": "copilot",
-    "delegateModel": "",
-    "delegateCustomCommand": "",
-    "showTokenUsageAndCost": false
-}
-```
-
-Use setting-model APIs rather than editing JSON ad hoc in product code. Respect GPO-filtered agent
-lists and custom-agent policy.
-
-## 15. Definition of Done for a Follow-up Step
-
-A follow-up step is done only when:
-
-- the behavior matches this product contract or an explicitly recorded new decision;
-- focused RED and GREEN evidence exists;
-- the relevant full test/build surface passes;
-- logs and telemetry contain no Usage values;
-- localization/accessibility are updated when UI copy or controls change;
-- local E2E evidence is preserved but sensitive/ignored artifacts are not accidentally committed;
-- dev and publish scopes are correct;
-- commits are pushed and the branch is synchronized;
-- this handoff is updated so the next branch can continue without reconstructing the history.
+- behavior符合本contract或明确记录的新decision；
+- 有focused RED/GREEN evidence；
+- relevant full tests/build通过；
+- logs/telemetry不包含Usage values；
+- UI copy变化时完成localization/accessibility；
+- local E2E evidence保留且敏感/ignored artifacts不误commit；
+- dev/publish scope正确；
+- commit已push且branch同步；
+- 本handoff更新完成，下一branch无需重新调查。
