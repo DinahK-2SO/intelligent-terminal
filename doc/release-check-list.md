@@ -132,6 +132,7 @@ Net effect: UT shrinks the manual matrix to "did the wiring and UI connect", not
 - [ ] `C052` `[E2E]` **Hotkey hides pane:** `Ctrl+Shift+.` hides/stashes the agent pane without killing the session.
 - [ ] `C053` `[UT✓]` `[E2E]` **Focus hotkey works:** `Ctrl+Shift+I` focuses the agent pane when available. _(UT: `DefaultAgentKeybindings` binding; focus behavior E2E.)_
 - [ ] `C054` `[E2E]` **Different positions work:** Open/hide/focus works for bottom, right, left, and top pane positions.
+- [ ] `C252` `[new]` `[E2E]` **Agent pane move is isolated per tab and preserves input focus:** `/move` changes only the current tab's runtime pane position, leaves the global setting and sibling tabs unchanged, and returns keyboard focus to the moved agent input. _(#429; E2E: `Feature.AgentPaneMove`.)_
 - [ ] `C055` `[E2E]` **Stash preserves chat:** Hiding and restoring the pane preserves helper process, connection state, and chat history.
 - [ ] `C056` `[E2E]` **Tab close cleans up:** Closing the owning tab cleans up the helper and does not leave a broken pane.
 - [ ] `C247` `[new]` `[E2E]` **Closing a tab mid-turn leaves sibling agent tabs working:** When one tab closes with a prompt in flight, its orphaned result is discarded without terminating the shared agent CLI, and another tab can continue chatting without a restart. _(#419/#425; E2E: `Feature.SharedAgentLifecycle`.)_
@@ -166,6 +167,7 @@ Net effect: UT shrinks the manual matrix to "did the wiring and UI connect", not
 - [ ] `C068` `[UT✓]` `[E2E]` **Streaming output renders correctly:** Agent response chunks, tool calls, plans, status lines, and literal JSON render without corruption. _(UT: `streaming_two_chunks_coalesce_in_app_chat`, `tool_call_surfaces_card_in_chat`, `tool_call_completion_updates_card_status` (in-place, no dup), `plan_surfaces_card_in_chat`, `render_chat_all_message_variants`; Assistant JSON remains ordinary chat text.)_
 - [x] `C069` `[UT✓]` `[E2E]` **Permission UI works:** When the agent requests a command/tool permission, the user can allow or reject it. _(UT: `permission_allow_round_trips_to_agent`, `permission_reject_round_trips_to_agent`, `permission_quick_allow/reject_key_round_trips_to_agent`, `render_permission_card_shows_options`, `render_permission_compact_shows_hint`; the `y`/`n` quick-key case-match bug was fixed here.)_
 - [ ] `C070` `[E2E]` **Insert into pane works:** A validated Direct Helper Proposal can be inserted into the target terminal pane without running.
+- [ ] `C253` `[new]` `[E2E]` **Insert returns keyboard focus to the target shell pane:** After Insert delivers a command without running it, normal window keyboard input continues in that target pane. _(#533; E2E: `Feature.AgentProposalFocus`.)_
 - [ ] `C071` `[E2E]` **Run in pane works:** A validated Direct Helper Proposal can be run in the target terminal pane.
 - [ ] `C072` `[E2E]` **Command target is correct:** The Helper-injected trusted target routes Insert/Run to the intended active pane, not the agent pane itself or another tab.
 
@@ -276,6 +278,7 @@ Net effect: UT shrinks the manual matrix to "did the wiring and UI connect", not
 ### Session-management scope and custom agents
 
 - [x] `C130` `[UT✓]` `[E2E]` **Built-in agents tracked:** Copilot, Claude, Codex, and Gemini sessions are tracked when hooks/session support is enabled. _(UT: `CliSource::parse`/`from_agent_id` recognize all four agents — agent_sessions.rs:35-68; `session_registry::registry_assigns_codex_cli_source_when_session_started_via_agent_id` + `agent_sessions::iter_sorted_filtered_keeps_only_matching_cli_source` exercise cli_source tracking/filtering.)_
+- [ ] `C251` `[new]` `[E2E]` **OpenCode shell sessions are tracked by installed hooks:** The packaged installer lands the managed OpenCode plugin; a real shell-hosted session crosses the plugin/PowerShell/WT protocol boundary into the session picker, while OpenCode ACP mode suppresses duplicate plugin events. _(#476; E2E: `Feature.OpenCodeHooks`.)_
 - [x] `C131` `[UT✓]` `[E2E]` **Custom agent safe behavior:** Custom agents do not crash session management and do not show strange/broken UI. _(UT: `session_mgmt::unknown_cli_not_resumable_in_either_direction` — an unknown/custom CLI degrades to a safe NotResumable(UnknownCli) in both Enter and Shift+Enter directions rather than crashing.)_
 - [x] `C132` `[UT✓]` **Custom agent limitation is acceptable:** Session management is not expected to fully restore custom-agent sessions unless the custom agent provides compatible session metadata.
 - [x] `C133` `[UT✓]` **MVP origin filter is understood:** If the release keeps the MVP filter, the picker shows shell-pane sessions only while debug/CLI listing can still inspect all origins. _(UT: `OriginFilter` + cli_tests.)_
