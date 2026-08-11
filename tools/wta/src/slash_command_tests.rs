@@ -6,7 +6,7 @@
 //! of the crate root, so it can reach `App`'s private dispatch methods —
 //! exactly like the inline `app::tests` module it borrows `test_app` from.
 
-use super::tests::test_app;
+use super::tests::{test_app, test_app_with_master_rx};
 use super::*;
 
 /// Dispatch a zero-arg slash command by name through the real
@@ -17,6 +17,28 @@ fn run_slash(app: &mut App, name: &str) {
         kind: spec.kind,
         spec,
         rest: String::new(),
+    });
+}
+
+fn complete_yolo_request(
+    app: &mut App,
+    master_rx: &mut tokio::sync::mpsc::UnboundedReceiver<
+        crate::protocol::acp::client::MasterExtRequest,
+    >,
+    result: Result<(), &str>,
+) {
+    let request = master_rx.try_recv().expect("a yolo request was queued");
+    let crate::protocol::acp::client::MasterExtRequest::SetSessionAllowAll {
+        session_id,
+        enabled,
+    } = request
+    else {
+        panic!("expected SetSessionAllowAll");
+    };
+    app.handle_event(AppEvent::YoloModeChangeCompleted {
+        session_id: session_id.to_string(),
+        enabled,
+        result: result.map_err(str::to_string),
     });
 }
 
@@ -140,11 +162,13 @@ fn slash_new_when_idle_resets_session() {
 
 #[test]
 fn slash_yolo_sets_current_session_and_uses_low_emphasis_status() {
-    let mut app = test_app();
+    let (mut app, mut master_rx) = test_app_with_master_rx();
     app.current_tab_mut().session_id = Some("sid-yolo".into());
 
     run_slash_args(&mut app, "yolo", "on");
 
+    assert!(!app.yolo_sessions.lock().unwrap().contains("sid-yolo"));
+    complete_yolo_request(&mut app, &mut master_rx, Ok(()));
     assert!(app.yolo_sessions.lock().unwrap().contains("sid-yolo"));
     assert_eq!(
         app.current_tab().messages.last(),
@@ -157,6 +181,8 @@ fn slash_yolo_sets_current_session_and_uses_low_emphasis_status() {
 
     run_slash_args(&mut app, "yolo", "off");
 
+    assert!(app.yolo_sessions.lock().unwrap().contains("sid-yolo"));
+    complete_yolo_request(&mut app, &mut master_rx, Ok(()));
     assert!(!app.yolo_sessions.lock().unwrap().contains("sid-yolo"));
     assert_eq!(
         app.current_tab().messages.last(),
@@ -170,12 +196,18 @@ fn slash_yolo_sets_current_session_and_uses_low_emphasis_status() {
 
 #[test]
 fn slash_yolo_can_disable_a_globally_enabled_session() {
-    let mut app = test_app();
+    let (mut app, mut master_rx) = test_app_with_master_rx();
     app.global_auto_approve_tools = true;
     app.current_tab_mut().session_id = Some("sid-global-yolo".into());
 
     run_slash_args(&mut app, "yolo", "off");
 
+    assert!(!app
+        .yolo_sessions
+        .lock()
+        .unwrap()
+        .contains("sid-global-yolo"));
+    complete_yolo_request(&mut app, &mut master_rx, Ok(()));
     assert!(app
         .yolo_sessions
         .lock()
@@ -189,11 +221,12 @@ fn slash_yolo_can_disable_a_globally_enabled_session() {
 
 #[test]
 fn slash_yolo_without_state_enables_current_session() {
-    let mut app = test_app();
+    let (mut app, mut master_rx) = test_app_with_master_rx();
     app.current_tab_mut().session_id = Some("sid-bare-yolo".into());
 
     run_slash(&mut app, "yolo");
 
+    complete_yolo_request(&mut app, &mut master_rx, Ok(()));
     assert!(app
         .yolo_sessions
         .lock()
@@ -202,6 +235,30 @@ fn slash_yolo_without_state_enables_current_session() {
     assert!(matches!(
         app.current_tab().messages.last(),
         Some(ChatMessage::Status(message)) if message.starts_with("● /yolo on — ")
+    ));
+}
+
+#[test]
+fn slash_yolo_off_failure_keeps_local_state_enabled() {
+    let (mut app, mut master_rx) = test_app_with_master_rx();
+    app.current_tab_mut().session_id = Some("sid-yolo".into());
+    app.yolo_sessions
+        .lock()
+        .unwrap()
+        .insert("sid-yolo".into());
+
+    run_slash_args(&mut app, "yolo", "off");
+    complete_yolo_request(
+        &mut app,
+        &mut master_rx,
+        Err("session/set_config_option failed"),
+    );
+
+    assert!(app.yolo_sessions.lock().unwrap().contains("sid-yolo"));
+    assert!(matches!(
+        app.current_tab().messages.last(),
+        Some(ChatMessage::Error(message))
+            if message == "/yolo off: session/set_config_option failed"
     ));
 }
 

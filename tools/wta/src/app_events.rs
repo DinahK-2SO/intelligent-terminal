@@ -355,6 +355,13 @@ impl App {
                     self.publish_agent_status();
                 }
             }
+            AppEvent::YoloModeChangeCompleted {
+                session_id,
+                enabled,
+                result,
+            } => {
+                self.complete_yolo_change(session_id, enabled, result);
+            }
             AppEvent::TabError { tab_id, message } => {
                 // Scoped error for a specific tab. Bypasses the global
                 // auth-fallback / ConnectionState::Failed flip in

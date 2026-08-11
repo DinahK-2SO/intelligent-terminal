@@ -953,6 +953,9 @@ pub struct App {
     /// `session/new`/`session/load`) so a reused or stale `session_id` can
     /// never inherit a prior session's auto-approve state.
     yolo_sessions: Arc<Mutex<HashSet<String>>>,
+    /// Native permission-mode changes awaiting an ACP acknowledgement.
+    /// The tab id keeps completion messages scoped if focus changes.
+    pending_yolo_changes: HashMap<String, (bool, String)>,
     /// True when org policy (`AllowYoloMode` GPO, surfaced via
     /// `--yolo-command-blocked`) forbids the per-session `/yolo` override —
     /// independent of `global_auto_approve_tools`, which the C++ side never
@@ -1273,6 +1276,7 @@ impl App {
             restart_tx,
             master_request_tx,
             debug_capture_enabled,
+            pending_yolo_changes: HashMap::new(),
             help_overlay_visible: false,
             transport_lost: false,
             debug_messages: Vec::new(),
@@ -3827,6 +3831,7 @@ impl App {
             AppEvent::UsageReported { .. } => "usage_reported",
             AppEvent::UsageCleared { .. } => "usage_cleared",
             AppEvent::ModelConfigUpdated { .. } => "model_config_updated",
+            AppEvent::YoloModeChangeCompleted { .. } => "yolo_mode_change_completed",
             AppEvent::TabError { .. } => "tab_error",
             AppEvent::TabSystemMessage { .. } => "tab_system_message",
             AppEvent::AgentPasteTextReady { .. } => "agent_paste_text_ready",
@@ -4732,6 +4737,7 @@ impl App {
         // the user wants auto-approve for the new conversation.
         if let Some(old_sid) = old_sid {
             self.yolo_sessions.lock().unwrap().remove(&old_sid);
+            self.pending_yolo_changes.remove(&old_sid);
         }
     }
 
@@ -4928,40 +4934,35 @@ impl App {
         };
         let session_id = self.current_tab().session_id.clone();
         if let Some(sid) = session_id {
-            let enabled = option.enabled;
-            let toggled_from_global = enabled != self.global_auto_approve_tools;
-            let mut sessions = self.yolo_sessions.lock().unwrap();
-            if toggled_from_global {
-                sessions.insert(sid.clone());
-            } else {
-                sessions.remove(&sid);
+            if self.pending_yolo_changes.contains_key(&sid) {
+                return;
             }
-            drop(sessions);
-            // Best-effort: if the connected agent advertises a native
+            let enabled = option.enabled;
+            let tab_id = self.active_tab_key().to_string();
+            self.pending_yolo_changes
+                .insert(sid.clone(), (enabled, tab_id.clone()));
+            // If the connected agent advertises a native
             // per-session allow-all permission config (currently confirmed
             // for Copilot CLI's ACP server — see `permission_select` module
-            // docs), apply it immediately so the agent itself stops
-            // sending `session/request_permission` for this session,
-            // rather than relying solely on WTA intercepting and
-            // auto-answering each one. A no-op on agents without the
-            // native channel; the client-side interception above already
-            // covers those unconditionally.
-            let _ = self.master_request_tx.send(
-                crate::protocol::acp::client::MasterExtRequest::SetSessionAllowAll {
-                    session_id: agent_client_protocol::schema::v1::SessionId::new(sid),
-                    enabled,
-                },
-            );
-            let marker = if enabled { "●" } else { "○" };
-            let confirmation = format!(
-                "{} /yolo {} — {}",
-                marker,
-                option.name,
-                t!("commands.yolo.summary")
-            );
-            let tab = self.current_tab_mut();
-            tab.messages.push(ChatMessage::Status(confirmation));
-            tab.scroll_to_bottom();
+            // docs), wait for it to succeed before committing the local
+            // fallback state. This is essential for `/yolo off`: if native
+            // disable fails, the agent still suppresses permission requests.
+            if self
+                .master_request_tx
+                .send(
+                    crate::protocol::acp::client::MasterExtRequest::SetSessionAllowAll {
+                        session_id: agent_client_protocol::schema::v1::SessionId::new(sid.clone()),
+                        enabled,
+                    },
+                )
+                .is_err()
+            {
+                self.pending_yolo_changes.remove(&sid);
+                let tab = self.tab_mut(&tab_id);
+                tab.messages
+                    .push(ChatMessage::Error(t!("connection.lost").into_owned()));
+                tab.scroll_to_bottom();
+            }
         }
         // If there's no session yet (pane still connecting), `/yolo` is a
         // no-op beyond nothing above running: this tab's session_id isn't
@@ -4973,6 +4974,59 @@ impl App {
         // typed before the session exists retroactively apply once it does.
         // Only a successfully updated live session gets the confirmation
         // above; don't claim success when there was no session to update.
+    }
+
+    fn complete_yolo_change(
+        &mut self,
+        session_id: String,
+        enabled: bool,
+        result: Result<(), String>,
+    ) {
+        let Some((pending_enabled, tab_id)) = self.pending_yolo_changes.remove(&session_id) else {
+            return;
+        };
+        if pending_enabled != enabled {
+            return;
+        }
+        if self
+            .tab_sessions
+            .get(&tab_id)
+            .and_then(|tab| tab.session_id.as_deref())
+            != Some(session_id.as_str())
+        {
+            return;
+        }
+
+        match result {
+            Ok(()) => {
+                let toggled_from_global = enabled != self.global_auto_approve_tools;
+                let mut sessions = self.yolo_sessions.lock().unwrap();
+                if toggled_from_global {
+                    sessions.insert(session_id);
+                } else {
+                    sessions.remove(&session_id);
+                }
+                drop(sessions);
+
+                let marker = if enabled { "●" } else { "○" };
+                let state = if enabled { "on" } else { "off" };
+                self.tab_mut(&tab_id)
+                    .messages
+                    .push(ChatMessage::Status(format!(
+                        "{} /yolo {} — {}",
+                        marker,
+                        state,
+                        t!("commands.yolo.summary")
+                    )));
+            }
+            Err(error) => {
+                let state = if enabled { "on" } else { "off" };
+                self.tab_mut(&tab_id)
+                    .messages
+                    .push(ChatMessage::Error(format!("/yolo {}: {}", state, error)));
+            }
+        }
+        self.tab_mut(&tab_id).scroll_to_bottom();
     }
 
     /// `/restart` — reset the agent CLI subprocess. Behavior depends on which
@@ -5012,6 +5066,7 @@ impl App {
         // `/yolo` overrides so a reused session_id (unlikely, but not
         // impossible) can't inherit stale auto-approve state.
         self.yolo_sessions.lock().unwrap().clear();
+        self.pending_yolo_changes.clear();
         let _ = self.restart_tx.send(RestartRequest { agent_cmd: None });
         self.publish_agent_status();
     }

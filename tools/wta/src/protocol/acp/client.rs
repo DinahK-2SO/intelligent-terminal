@@ -172,12 +172,11 @@ pub enum MasterExtRequest {
     },
     /// Retroactively apply the agent-native allow-all permission config
     /// (see `permission_select`) to an *already-connected* session, for the
-    /// `/yolo on|off` slash command: `App::cmd_yolo` has already updated
-    /// `yolo_sessions` (so the client-side `request_permission` fallback
-    /// changes immediately), and this mirrors the effective state into the
-    /// agent's native channel when one is advertised.
-    /// A no-op (logged, not fatal) when the current agent doesn't advertise
-    /// the native config — the client-side fallback still covers it.
+    /// `/yolo on|off` slash command. The result is acknowledged through
+    /// `YoloModeChangeCompleted`; `App` only commits its local fallback state
+    /// after native allow-all has changed successfully. Agents without a
+    /// native config return success because client-side interception is
+    /// sufficient for them.
     SetSessionAllowAll {
         session_id: acp::schema::v1::SessionId,
         enabled: bool,
@@ -3020,33 +3019,47 @@ fn dispatch_master_ext_request(
                 session_id,
                 enabled,
             } => {
-                match crate::protocol::acp::permission_select::set_native_allow_all(
+                let result = match crate::protocol::acp::permission_select::set_native_allow_all(
                     &conn,
                     session_id.clone(),
                     enabled,
                 )
                 .await
                 {
-                    Ok(true) => tracing::info!(
-                        target: "acp",
-                        session_id = %session_id.0,
-                        enabled,
-                        "native allow-all hot-updated for live /yolo session"
-                    ),
-                    Ok(false) => tracing::debug!(
-                        target: "acp",
-                        session_id = %session_id.0,
-                        "agent has no native allow-all channel; \
-                         request_permission interception covers this /yolo session"
-                    ),
-                    Err(err) => tracing::warn!(
-                        target: "acp",
-                        session_id = %session_id.0,
-                        error = ?err,
-                        enabled,
-                        "native allow-all hot-update failed"
-                    ),
-                }
+                    Ok(true) => {
+                        tracing::info!(
+                            target: "acp",
+                            session_id = %session_id.0,
+                            enabled,
+                            "native allow-all hot-updated for live /yolo session"
+                        );
+                        Ok(())
+                    }
+                    Ok(false) => {
+                        tracing::debug!(
+                            target: "acp",
+                            session_id = %session_id.0,
+                            "agent has no native allow-all channel; \
+                             request_permission interception covers this /yolo session"
+                        );
+                        Ok(())
+                    }
+                    Err(err) => {
+                        tracing::warn!(
+                            target: "acp",
+                            session_id = %session_id.0,
+                            error = ?err,
+                            enabled,
+                            "native allow-all hot-update failed"
+                        );
+                        Err(err.to_string())
+                    }
+                };
+                let _ = event_tx.send(AppEvent::YoloModeChangeCompleted {
+                    session_id: session_id.to_string(),
+                    enabled,
+                    result,
+                });
             }
         }
     });

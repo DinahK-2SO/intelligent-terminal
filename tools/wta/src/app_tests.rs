@@ -818,7 +818,7 @@ fn helper_agent_event_with_real_agent_session_id_still_publishes_to_master() {
     );
 }
 
-fn test_app_with_master_rx() -> (
+pub(super) fn test_app_with_master_rx() -> (
     App,
     tokio::sync::mpsc::UnboundedReceiver<crate::protocol::acp::client::MasterExtRequest>,
 ) {
