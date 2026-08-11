@@ -4953,7 +4953,12 @@ impl App {
                 },
             );
             let marker = if enabled { "●" } else { "○" };
-            let confirmation = format!("{} {}", marker, t!("commands.yolo.summary"));
+            let confirmation = format!(
+                "{} /yolo {} — {}",
+                marker,
+                option.name,
+                t!("commands.yolo.summary")
+            );
             let tab = self.current_tab_mut();
             tab.messages.push(ChatMessage::Status(confirmation));
             tab.scroll_to_bottom();

@@ -149,7 +149,7 @@ fn slash_yolo_sets_current_session_and_uses_low_emphasis_status() {
     assert_eq!(
         app.current_tab().messages.last(),
         Some(&ChatMessage::Status(format!(
-            "● {}",
+            "● /yolo on — {}",
             t!("commands.yolo.summary")
         ))),
         "/yolo must confirm that auto-approval was enabled for the current session"
@@ -161,7 +161,7 @@ fn slash_yolo_sets_current_session_and_uses_low_emphasis_status() {
     assert_eq!(
         app.current_tab().messages.last(),
         Some(&ChatMessage::Status(format!(
-            "○ {}",
+            "○ /yolo off — {}",
             t!("commands.yolo.summary")
         ))),
         "/yolo off must disable auto-approval for the current session"
@@ -183,7 +183,7 @@ fn slash_yolo_can_disable_a_globally_enabled_session() {
         .contains("sid-global-yolo"));
     assert!(matches!(
         app.current_tab().messages.last(),
-        Some(ChatMessage::Status(message)) if message.starts_with("○ ")
+        Some(ChatMessage::Status(message)) if message.starts_with("○ /yolo off — ")
     ));
 }
 
@@ -201,7 +201,7 @@ fn slash_yolo_without_state_enables_current_session() {
         .contains("sid-bare-yolo"));
     assert!(matches!(
         app.current_tab().messages.last(),
-        Some(ChatMessage::Status(message)) if message.starts_with("● ")
+        Some(ChatMessage::Status(message)) if message.starts_with("● /yolo on — ")
     ));
 }
 
