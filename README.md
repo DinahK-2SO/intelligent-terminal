@@ -123,6 +123,8 @@ Everything is configurable through Intelligent Terminal settings, under "Agent" 
 | Agent session tracking (hooks) | Allows Intelligent Terminal to track active agent sessions and their status in the session management UI |
 | Token usage display | Show or hide token usage and cost in the agent status bar |
 
+You can also pin a specific agent to a profile. Open a profile in Settings (for example, "PowerShell" or "Ubuntu") and set the agent you want its agent pane to use. For a WSL profile, the picker also lists agents installed inside that distro, so an Ubuntu profile can run a Linux-side agent. Profiles you don't configure keep using the global agent.
+
 ---
 
 ## Features
@@ -157,25 +159,15 @@ Inside the agent pane, type `/` to see available commands. Type `/help` at any t
 
 | Command | Description |
 |---------|-------------|
-| `/help` | Show the command list |
-| `/clear` | Clear the chat scrollback (keeps the current session) |
-| `/new` | Start a fresh agent session (drops history) |
-| `/fix [hint]` | Diagnose the active terminal and suggest a fix; add an optional hint to steer it (e.g. `/fix the path looks wrong`) |
-| `/restart` | Restart the agent with a clean session |
-| `/stop` | Cancel the in-flight prompt |
-| `/sessions` | Open agent management (same as <kbd>Ctrl+Shift+/</kbd>) |
 | `/agent [id]` | Pick the agent source for this tab. In a WSL pane, the picker includes agents installed on Windows and in that pane's WSL distro; it never offers other distros. |
+| `/clear` | Clear the chat scrollback (keeps the current session) |
+| `/fix [hint]` | Diagnose the active terminal and suggest a fix; add an optional hint to steer it (e.g. `/fix the path looks wrong`) |
+| `/help` | Show the command list |
 | `/model [id]` | Pick the model for this pane; bare `/model` opens a picker, `/model <id>` switches directly |
-
-Profiles use the global Windows-hosted agent by default. In a profile's
-**General** settings, **Agent pane agent** can instead select an ACP agent
-installed in that profile's WSL distro. The picker only lists the Windows host
-and that one distro. An explicit profile selection is strict: if that agent
-cannot start, the pane reports the failure without switching to another agent.
-**Command palette agent** independently selects the agent used by `?<prompt>`
-and the interactive delegate action for that profile. Its host or WSL selection
-is also strict: if the selected agent is unavailable, delegation reports that
-error instead of falling back to another agent or execution environment.
+| `/new` | Start a fresh agent session (drops history) |
+| `/restart` | Restart the agent with a clean session |
+| `/sessions` | Open agent management (same as <kbd>Ctrl+Shift+/</kbd>) |
+| `/stop` | Cancel the in-flight prompt |
 
 #### Local Models (BYOM)
 
