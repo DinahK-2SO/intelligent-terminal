@@ -38,34 +38,44 @@ impl App {
                 self.text_selection.clear();
                 self.handle_key(key);
             }
-            AppEvent::Mouse(mouse) => {
-                match mouse.kind {
-                    crossterm::event::MouseEventKind::ScrollUp
-                    | crossterm::event::MouseEventKind::ScrollDown
-                        if self.mode == AppMode::Chat
-                            && self.current_tab().current_view == View::Chat =>
-                    {
-                        self.text_selection.clear();
-                        let lines = if mouse.modifiers.contains(KeyModifiers::ALT) {
-                            1
-                        } else {
-                            3
-                        };
-                        match mouse.kind {
-                            crossterm::event::MouseEventKind::ScrollUp => {
-                                self.current_tab_mut().chat_scroll.by(lines);
-                            }
-                            crossterm::event::MouseEventKind::ScrollDown => {
-                                self.current_tab_mut().chat_scroll.by(-lines);
-                            }
-                            _ => {}
+            AppEvent::Mouse(mouse) => match mouse.kind {
+                crossterm::event::MouseEventKind::ScrollUp
+                | crossterm::event::MouseEventKind::ScrollDown
+                    if self.current_tab().current_view == View::Agents =>
+                {
+                    self.text_selection.clear();
+                    let code = if matches!(mouse.kind, crossterm::event::MouseEventKind::ScrollUp) {
+                        KeyCode::Up
+                    } else {
+                        KeyCode::Down
+                    };
+                    self.handle_key(KeyEvent::new(code, mouse.modifiers));
+                }
+                crossterm::event::MouseEventKind::ScrollUp
+                | crossterm::event::MouseEventKind::ScrollDown
+                    if self.mode == AppMode::Chat
+                        && self.current_tab().current_view == View::Chat =>
+                {
+                    self.text_selection.clear();
+                    let lines = if mouse.modifiers.contains(KeyModifiers::ALT) {
+                        1
+                    } else {
+                        3
+                    };
+                    match mouse.kind {
+                        crossterm::event::MouseEventKind::ScrollUp => {
+                            self.current_tab_mut().chat_scroll.by(lines);
                         }
-                    }
-                    _ => {
-                        self.text_selection.handle_mouse(mouse);
+                        crossterm::event::MouseEventKind::ScrollDown => {
+                            self.current_tab_mut().chat_scroll.by(-lines);
+                        }
+                        _ => {}
                     }
                 }
-            }
+                _ => {
+                    self.text_selection.handle_mouse(mouse);
+                }
+            },
             AppEvent::AgentPasteTextReady {
                 tab_id,
                 generation,
@@ -142,6 +152,21 @@ impl App {
                 self.state = ConnectionState::Connecting(stage);
                 self.publish_agent_status();
             }
+            AppEvent::CloudModelsAvailable(models) => {
+                if matches!(
+                    &self.current_agent_source,
+                    crate::agent_source::AgentSource::Host
+                ) {
+                    self.set_cloud_models(models);
+                    self.publish_agent_status();
+                } else {
+                    tracing::warn!(
+                        target: "cloud_models",
+                        agent_source = %self.current_agent_source,
+                        "ignoring Host cloud catalog delivery for WSL helper"
+                    );
+                }
+            }
             AppEvent::AgentConnected {
                 name,
                 model,
@@ -156,8 +181,14 @@ impl App {
                 self.agent_model = model;
                 self.agent_version = version;
                 self.session_id = session_id.clone();
-                self.available_models = available_models.clone();
-                self.current_model_id = current_model_id.clone();
+                let (available_models, current_model_id) = self
+                    .session_model_configs
+                    .entry(session_id.clone())
+                    .or_insert((available_models, current_model_id))
+                    .clone();
+                self.agent_models = available_models;
+                self.agent_current_model_id = current_model_id;
+                self.rebuild_model_catalog_from_agent_state();
                 self.agent_supports_load_session = load_session_supported;
                 self.agent_supports_image = image_supported;
                 self.state = ConnectionState::Connected;
@@ -168,6 +199,7 @@ impl App {
                 // A live connection cancels the degraded latch (e.g. the
                 // post-sign-in reconnect that goes back through master).
                 self.transport_lost = false;
+                self.proposal_channels.set_agent_transport_available(true);
                 self.preflight_setup_active = false;
                 // If we were in Setup (e.g. after Retry), transition to Chat
                 if self.mode == AppMode::Setup {
@@ -192,6 +224,10 @@ impl App {
                 self.session_to_tab
                     .insert(session_id.clone(), bind_tab.clone());
                 let tab = self.tab_mut(&bind_tab);
+                if tab.session_id.as_deref() != Some(session_id.as_str()) {
+                    tab.usage = None;
+                    tab.usage_staleness = crate::usage::UsageStaleness::default();
+                }
                 tab.session_id = Some(session_id);
                 let has_real_content = !tab.completed_turns.is_empty()
                     || tab
@@ -214,6 +250,19 @@ impl App {
                 available_models,
                 current_model_id,
             } => {
+                let is_active_tab = self.active_tab_key() == tab_id;
+                let replaced_session_ids: Vec<String> = self
+                    .session_to_tab
+                    .iter()
+                    .filter(|(known_session_id, known_tab_id)| {
+                        *known_tab_id == &tab_id && *known_session_id != &session_id
+                    })
+                    .map(|(known_session_id, _)| known_session_id.clone())
+                    .collect();
+                for replaced_session_id in replaced_session_ids {
+                    self.session_to_tab.remove(&replaced_session_id);
+                    self.session_model_configs.remove(&replaced_session_id);
+                }
                 self.session_to_tab
                     .insert(session_id.clone(), tab_id.clone());
                 let tab = self.tab_mut(&tab_id);
@@ -245,11 +294,15 @@ impl App {
                 // this session in the future. For now we keep
                 // App.available_models pointing at the active session's
                 // models so the existing settings UI stays correct.
-                if !available_models.is_empty() {
-                    self.available_models = available_models;
-                }
-                if current_model_id.is_some() {
-                    self.current_model_id = current_model_id;
+                let (available_models, current_model_id) = self
+                    .session_model_configs
+                    .entry(session_id.clone())
+                    .or_insert((available_models, current_model_id))
+                    .clone();
+                if is_active_tab {
+                    self.agent_models = available_models;
+                    self.agent_current_model_id = current_model_id;
+                    self.rebuild_model_catalog_from_agent_state();
                 }
                 // Keep freshly-created sessions on the effective model for
                 // this tab — its per-pane `/model` override if set, else the
@@ -265,6 +318,43 @@ impl App {
                 }
                 self.publish_agent_status();
             }
+            AppEvent::UsageReported {
+                session_id,
+                snapshot,
+            } => {
+                let target_tab = self.tab_for_session(&session_id);
+                let tab = self.tab_mut(&target_tab);
+                tab.usage_staleness.mark_reported(&snapshot);
+                if let Some(current) = tab.usage.as_mut() {
+                    current.merge(snapshot);
+                } else {
+                    tab.usage = Some(snapshot);
+                }
+                self.project_tab_state(&target_tab);
+            }
+            AppEvent::UsageCleared { session_id } => {
+                let target_tab = self.tab_for_session(&session_id);
+                let tab = self.tab_mut(&target_tab);
+                tab.usage = None;
+                tab.usage_staleness = crate::usage::UsageStaleness::default();
+                self.project_tab_state(&target_tab);
+            }
+            AppEvent::ModelConfigUpdated {
+                session_id,
+                available_models,
+                current_model_id,
+            } => {
+                self.session_model_configs.insert(
+                    session_id.clone(),
+                    (available_models.clone(), current_model_id.clone()),
+                );
+                if self.current_tab().session_id.as_deref() == Some(session_id.as_str()) {
+                    self.agent_models = available_models;
+                    self.agent_current_model_id = current_model_id;
+                    self.rebuild_model_catalog_from_agent_state();
+                    self.publish_agent_status();
+                }
+            }
             AppEvent::TabError { tab_id, message } => {
                 // Scoped error for a specific tab. Bypasses the global
                 // auth-fallback / ConnectionState::Failed flip in
@@ -277,28 +367,29 @@ impl App {
                 tab.pending_user_replay.clear();
                 tab.timing_note = None;
                 tab.turn = TurnState::Idle;
+                tab.active_direct_proposal_id = None;
                 tab.messages.push(ChatMessage::Error(message));
                 tab.scroll_to_bottom();
             }
             AppEvent::TabSystemMessage { tab_id, message } => {
                 let tab = self.tab_mut(&tab_id);
-                tab.messages.push(ChatMessage::System(message));
+                tab.messages.push(ChatMessage::info(message));
                 tab.scroll_to_bottom();
             }
             AppEvent::PromptTemplateLoaded { name } => {
                 self.prompt_name = Some(name);
             }
-            AppEvent::AutofixTargetResolved {
+            AppEvent::PromptTargetResolved {
                 tab_id,
                 prompt_id,
                 pane_id,
             } => {
-                self.apply_autofix_target_resolved(tab_id, prompt_id, pane_id);
+                self.apply_prompt_target_resolved(tab_id, prompt_id, pane_id);
             }
             AppEvent::AgentBusy { tab_id } => {
                 let tab = self.tab_mut(&tab_id);
                 tab.messages
-                    .push(ChatMessage::System(t!("system.agent_busy").into_owned()));
+                    .push(ChatMessage::warning(t!("system.agent_busy").into_owned()));
                 tab.scroll_to_bottom();
             }
             AppEvent::TabRenamed {
@@ -332,15 +423,38 @@ impl App {
                     return;
                 }
 
+                let session_survives = matches!(
+                    &failure,
+                    crate::protocol::acp::failure::AgentFailure::Protocol { .. }
+                );
+
                 // The transport to master is gone — latch the degraded state
                 // so the slash-command popup greys out everything but
                 // /restart (the only command that can recover without the
                 // dead pipe). Cleared on the next Connected.
-                if matches!(
-                    failure,
+                let transport_lost = matches!(
+                    &failure,
                     crate::protocol::acp::failure::AgentFailure::TransportLost
-                ) {
+                );
+                let stale_usage_tab = if transport_lost {
                     self.transport_lost = true;
+                    self.proposal_channels.set_agent_transport_available(false);
+                    let target_tab = session_id
+                        .as_deref()
+                        .map(|sid| self.tab_for_session(sid))
+                        .unwrap_or_else(|| self.active_tab_key().to_string());
+                    let tab = self.tab_mut(&target_tab);
+                    if let Some(snapshot) = tab.usage.as_ref() {
+                        tab.usage_staleness.mark_present_stale(snapshot);
+                        Some(target_tab)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                if let Some(target_tab) = stale_usage_tab {
+                    self.project_tab_state(&target_tab);
                 }
 
                 let is_auth_error = failure.is_auth();
@@ -399,8 +513,10 @@ impl App {
                     let tab = self.current_tab_mut();
                     tab.messages.retain(|m| !matches!(m, ChatMessage::Error(_)));
                 } else {
-                    self.state = ConnectionState::Failed(message.clone());
-                    self.publish_agent_status();
+                    if !session_survives {
+                        self.state = ConnectionState::Failed(message.clone());
+                        self.publish_agent_status();
+                    }
                     let tab = match session_id.as_deref() {
                         Some(sid) => self.session_tab_mut(sid),
                         None => self.current_tab_mut(),
@@ -548,7 +664,7 @@ impl App {
                     SoftStopReason::Refusal => t!("system.stopped_refusal"),
                 };
                 let tab = self.session_tab_mut(&session_id);
-                tab.messages.push(ChatMessage::System(msg.into_owned()));
+                tab.messages.push(ChatMessage::warning(msg.into_owned()));
                 tab.scroll_to_bottom();
             }
             AppEvent::ExecutionInfo(message) => {
@@ -582,16 +698,8 @@ impl App {
                 tab.pending_agent_response.push_str(&text);
 
                 // Append to the streaming buffer. The state machine drops
-                // late chunks and handles the stale-autofix generation check
-                // before returning whether the buffer actually grew.
-                let advanced = self.turn_observe_chunk(&session_id, ChunkKind::Message, &text);
-
-                // Surface the card the moment the streamed JSON parses,
-                // instead of waiting for AgentMessageEnd (gated behind
-                // Copilot's Stop/SessionEnd hooks, ~8s on Windows).
-                if advanced {
-                    self.turn_try_eager_surface(&session_id);
-                }
+                // late chunks and handles the stale-autofix generation check.
+                self.turn_observe_chunk(&session_id, ChunkKind::Message, &text);
             }
             AppEvent::UserMessageReplayChunk { session_id, text } => {
                 // Replayed historical user prompt from a `session/load`
@@ -690,6 +798,13 @@ impl App {
                     }
                 }
             }
+            AppEvent::HideToolCall { session_id, id } => {
+                let tab = self.session_tab_mut(&session_id);
+                tab.tool_calls.remove(&id);
+                tab.messages.retain(
+                    |message| !matches!(message, ChatMessage::ToolCall { id: message_id, .. } if message_id == &id),
+                );
+            }
             AppEvent::Plan {
                 session_id,
                 entries,
@@ -748,7 +863,7 @@ impl App {
             AppEvent::SystemMessage(message) => {
                 self.current_tab_mut()
                     .messages
-                    .push(ChatMessage::System(message));
+                    .push(ChatMessage::error(message));
                 self.scroll_to_bottom();
             }
             AppEvent::DebugPipeMessage(msg) => {
@@ -821,7 +936,7 @@ impl App {
                     if self.mode == AppMode::Chat {
                         self.current_tab_mut()
                             .messages
-                            .push(ChatMessage::System(t!("system.no_agents").into_owned()));
+                            .push(ChatMessage::warning(t!("system.no_agents").into_owned()));
                         self.scroll_to_bottom();
                     }
                 } else {
@@ -935,6 +1050,35 @@ impl App {
             AppEvent::SessionsChanged => {
                 self.schedule_agents_refetch_for_open_views();
             }
+            AppEvent::DirectTerminalActionProposal {
+                context,
+                payload,
+                source,
+                responder,
+            } => {
+                let decision =
+                    self.evaluate_direct_terminal_action_proposal(&context, &payload, source);
+                let _ = responder.send(decision);
+            }
+            AppEvent::DirectTerminalActionProposalCommit {
+                proposal_id,
+                responder,
+            } => {
+                let committed = self.commit_terminal_action_proposal(&proposal_id);
+                if !committed {
+                    self.proposal_channels.resolve_final(
+                        &proposal_id,
+                        crate::agent_tools::action_proposal::channel::ProposalFinalStatus::Cancelled,
+                    );
+                }
+                let _ = responder.send(committed);
+            }
+            AppEvent::DirectTerminalActionProposalInvalidate {
+                proposal_id,
+                session_id,
+            } => {
+                self.invalidate_terminal_action_proposal(&proposal_id, &session_id);
+            }
             AppEvent::AgentsSnapshotLoaded {
                 request_id,
                 sessions,
@@ -948,9 +1092,7 @@ impl App {
                 if self
                     .master_request_tx
                     .send(
-                        crate::protocol::acp::client::MasterExtRequest::SessionBornBound {
-                            event,
-                        },
+                        crate::protocol::acp::client::MasterExtRequest::SessionBornBound { event },
                     )
                     .is_err()
                 {
@@ -1036,10 +1178,7 @@ impl App {
                 if method == "agent_prompt" {
                     // Command palette `?<prompt>` delegation. Not a WT
                     // notification — has nothing to do with banner/queue.
-                    let prompt = params
-                        .get("prompt")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
+                    let prompt = params.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
                     tracing::info!(target: "autofix", prompt_len = prompt.len(), "agent_prompt: delegating");
                     if !prompt.is_empty() {
                         self.delegate_to_tab_agent(prompt);
@@ -1061,9 +1200,16 @@ impl App {
                     // — all in place, with NO agent-pane teardown/restart.
                     // (Agent *identity* changes go through a master respawn
                     // on the C++ side, not this event.)
-                    if let Some(enabled) =
-                        params.get("autofix_enabled").and_then(|v| v.as_bool())
-                    {
+                    let target_tab = params
+                        .get("tab_id")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("");
+                    let owner_tab = self.owner_tab_id.as_deref().unwrap_or("");
+                    if !target_tab.is_empty() && !owner_tab.is_empty() && target_tab != owner_tab {
+                        return;
+                    }
+
+                    if let Some(enabled) = params.get("autofix_enabled").and_then(|v| v.as_bool()) {
                         tracing::info!(
                             target: "autofix",
                             old = self.autofix_enabled,
@@ -1089,20 +1235,101 @@ impl App {
                         self.apply_delegate_config(delegate_agent, delegate_model);
                     }
 
-                    // acp-model: a global settings change is authoritative. It
-                    // overrides every pane's local `/model` pick, redirects the
-                    // shared current-model display, hot-swaps the model on all
-                    // live sessions, and republishes status — so every pane
-                    // visibly follows the new model (see apply_global_acp_model).
-                    // Storing it also keeps future sessions (/new, lazy-first-
-                    // prompt) on the new model via the SessionAttached re-apply.
+                    // acp-model is scoped by both the authoritative global agent
+                    // id and this helper's spawn-time follow mode. Helpers pinned
+                    // to another agent/profile, and panes with a local `/model`
+                    // override, keep their existing model.
                     if let Some(raw) = params.get("acp_model").and_then(|v| v.as_str()) {
+                        if let Some(target_agent_id) =
+                            params.get("target_agent_id").and_then(|v| v.as_str())
+                        {
                         tracing::info!(
                             target: "autofix",
                             model = raw,
-                            "acp-model hot-update requested from settings change",
+                                target_agent_id,
+                                "scoped acp-model hot-update requested from settings change",
+                            );
+                            self.apply_global_acp_model(target_agent_id, Some(raw.to_string()));
+                        } else {
+                            tracing::warn!(
+                                target: "autofix",
+                                "ignoring acp-model hot-update without target_agent_id"
+                            );
+                        }
+                    }
+                    let host_catalog_fields_present = params.get("cloud_models").is_some()
+                        || params.get("custom_models").is_some()
+                        || params.get("custom_model_selection").is_some();
+                    let accepts_host_catalog = matches!(
+                        &self.current_agent_source,
+                        crate::agent_source::AgentSource::Host
+                    );
+                    let catalog_delivery = accepts_host_catalog
+                        && (params.get("cloud_models").is_some()
+                            || params.get("custom_models").is_some());
+                    if accepts_host_catalog {
+                        if let Some(value) = params.get("cloud_models") {
+                            match serde_json::from_value::<Vec<AcpModelInfo>>(value.clone()) {
+                                Ok(models) => self.set_cloud_models(models),
+                                Err(error) => {
+                                    tracing::error!(
+                                        target: "cloud_models",
+                                        %error,
+                                        "invalid cloud model catalog in agent_config_changed"
                         );
-                        self.apply_global_acp_model(Some(raw.to_string()));
+                                    return;
+                                }
+                            }
+                        }
+                        if params.get("custom_models").is_some()
+                            || params.get("custom_model_selection").is_some()
+                        {
+                            if crate::agent_registry::lookup_profile_by_id(&self.current_agent_id)
+                                .byok_mode
+                                == crate::agent_registry::ByokMode::Unsupported
+                            {
+                                self.set_custom_model_config(Vec::new(), None);
+                            } else {
+                                let models = match params.get("custom_models") {
+                                    Some(value) => {
+                                        match serde_json::from_value::<Vec<CustomModelCatalogEntry>>(
+                                            value.clone(),
+                                        ) {
+                                            Ok(models) => models,
+                                            Err(error) => {
+                                                tracing::error!(
+                                                    target: "custom_models",
+                                                    %error,
+                                                    "invalid custom model catalog in agent_config_changed"
+                                                );
+                                                return;
+                                            }
+                                        }
+                                    }
+                                    None => self.custom_model_catalog.clone(),
+                                };
+                                let selection = params
+                                    .get("custom_model_selection")
+                                    .and_then(|value| value.as_str())
+                                    .map(str::to_string)
+                                    .or_else(|| self.custom_model_selection.clone());
+                                self.set_custom_model_config(models, selection);
+                            }
+                        }
+                    } else if host_catalog_fields_present {
+                        tracing::info!(
+                            target: "cloud_models",
+                            agent_source = %self.current_agent_source,
+                            "ignoring Host cloud/custom catalog hot update for WSL helper"
+                        );
+                    }
+                    if catalog_delivery {
+                        self.host_catalog_ready = true;
+                    }
+                    if catalog_delivery
+                        || (accepts_host_catalog && params.get("custom_model_selection").is_some())
+                    {
+                        self.publish_agent_status();
                     }
                     return;
                 }
@@ -1293,9 +1520,10 @@ impl App {
                         let tab = self.tab_mut(tab_id);
                         tab.current_view = View::Chat;
                         tab.clear_chat_history();
+                        tab.usage = None;
+                        tab.usage_staleness = crate::usage::UsageStaleness::default();
                         tab.completed_turns.clear();
                         tab.selected_completed_turn_idx = None;
-                        tab.session_id = None;
                         // Open the replay window: chunk handlers will
                         // now accept session/update events for this
                         // tab even though `turn` stays Idle. Closed by
@@ -1371,8 +1599,8 @@ impl App {
                 // so multi-window setups don't cross-talk. When window_id
                 // is unknown on either side we apply (best-effort fallback).
                 //
-                // Processed BEFORE the own-pane skip below: this is a
-                // global UI command, not a per-pane signal.
+                // Processed BEFORE the own-pane skip below: this command
+                // is routed by the target tab rather than the source pane.
                 if method == "set_agent_state" {
                     let target_window = params
                         .get("window_id")
@@ -1402,6 +1630,18 @@ impl App {
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string())
                         .unwrap_or_else(|| self.active_tab_key().to_string());
+
+                    if let Some(owner) = self.owner_tab_id.as_deref() {
+                        if owner != target_tab {
+                            tracing::debug!(
+                                target: "set_agent_state",
+                                owner,
+                                tab = %target_tab,
+                                "ignoring set_agent_state for non-owner tab"
+                            );
+                            return;
+                        }
+                    }
 
                     // Apply `view` if present.
                     if let Some(view_str) = params.get("view").and_then(|v| v.as_str()) {
@@ -1497,9 +1737,7 @@ impl App {
                             // Capture the key BEFORE PaneClosed clears
                             // the pane→key binding, so the log can report
                             // which row was demoted.
-                            let key_before = self
-                                .agent_sessions
-                                .key_for_pane(&pane_id);
+                            let key_before = self.agent_sessions.key_for_pane(&pane_id);
                             let event = crate::agent_sessions::SessionEvent::PaneClosed {
                                 pane_session_id: pane_id.clone(),
                             };
@@ -1578,7 +1816,8 @@ impl App {
                     // keeps working for its original shell-pane use
                     // case without nuking agent panes.
                     let origin = self.agent_sessions.origin_for_pane(&pane_id);
-                    let is_shell_agent = matches!(origin, Some(crate::agent_sessions::SessionOrigin::Unknown));
+                    let is_shell_agent =
+                        matches!(origin, Some(crate::agent_sessions::SessionOrigin::Unknown));
                     if seq == "osc:133;A" && is_shell_agent {
                         tracing::info!(
                             target: "agent_session_registry",
@@ -1602,14 +1841,10 @@ impl App {
                 // this helper's concern. Drop notifications whose tab_id
                 // doesn't match our owner_tab_id; empty/missing tab_id falls
                 // through (no per-tab scope).
-                if let (Some(event_tab), Some(self_tab)) = (
-                    notification.tab_id.as_deref(),
-                    self.owner_tab_id.as_deref(),
-                ) {
-                    if !event_tab.is_empty()
-                        && !self_tab.is_empty()
-                        && event_tab != self_tab
-                    {
+                if let (Some(event_tab), Some(self_tab)) =
+                    (notification.tab_id.as_deref(), self.owner_tab_id.as_deref())
+                {
+                    if !event_tab.is_empty() && !self_tab.is_empty() && event_tab != self_tab {
                         // Per-cross-tab-event (very high volume in multi-tab
                         // windows) — trace-only.
                         tracing::trace!(
@@ -1633,11 +1868,7 @@ impl App {
                         WtEventSeverity::Informational => None,
                     };
                     if let Some(severity_str) = severity_str {
-                        crate::telemetry::log_error_detected(
-                            severity_str,
-                            &method,
-                            &pane_id,
-                        );
+                        crate::telemetry::log_error_detected(severity_str, &method, &pane_id);
                     }
                 }
 
@@ -1699,9 +1930,8 @@ impl App {
                                         .trigger_echo_pane
                                         .clone();
                                     if echo.as_deref() == Some(pane_id.as_str()) {
-                                        self.tab_mut(&t.to_string())
-                                            .autofix
-                                            .trigger_echo_pane = None;
+                                        self.tab_mut(&t.to_string()).autofix.trigger_echo_pane =
+                                            None;
                                         false
                                     } else {
                                         true
@@ -1727,11 +1957,8 @@ impl App {
                                 // command exited cleanly — the user's problem resolved.
                                 // Elapsed is monotonic (`Instant::elapsed`) from arm to
                                 // clean exit, not wall-clock.
-                                if let Some(armed) = self
-                                    .tab_mut(&target_tab)
-                                    .autofix
-                                    .armed_at
-                                    .take()
+                                if let Some(armed) =
+                                    self.tab_mut(&target_tab).autofix.armed_at.take()
                                 {
                                     let elapsed_ms = armed.elapsed().as_secs_f64() * 1000.0;
                                     crate::telemetry::log_error_fix_resolved(
@@ -1908,8 +2135,16 @@ impl App {
                     }
                 }
             }
-            AppEvent::LoginComplete { success, error, agent_id } => {
-                tracing::info!("LoginComplete received: success={} deferred_acp={}", success, self.deferred_acp.is_some());
+            AppEvent::LoginComplete {
+                success,
+                error,
+                agent_id,
+            } => {
+                tracing::info!(
+                    "LoginComplete received: success={} deferred_acp={}",
+                    success,
+                    self.deferred_acp.is_some()
+                );
                 // Ignore stale/late completions: only act on a completion that
                 // matches the currently active auth attempt. After the user
                 // escapes the auth screen (auth = None) or switches agents, a
@@ -1940,7 +2175,10 @@ impl App {
                     // try_start_acp can spawn a new ACP client.
                     if self.deferred_acp.is_none() {
                         let new_cmd = self.build_agent_cmd(&agent_id);
-                        tracing::info!("LoginComplete: creating deferred_acp for reconnect cmd={}", new_cmd);
+                        tracing::info!(
+                            "LoginComplete: creating deferred_acp for reconnect cmd={}",
+                            new_cmd
+                        );
                         self.deferred_acp = Some(DeferredAcpParams {
                             agent_cmd: new_cmd,
                             acp_model: None,

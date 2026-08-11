@@ -10,6 +10,10 @@ pub enum AppEvent {
     Resize(u16, u16),
     FocusChanged(bool),
     ConnectionStage(String),
+    /// Native cloud catalog carried over the private helper↔master channel.
+    /// Kept separate from the current session's ACP-advertised models so a
+    /// BYOK session that reports no selector cannot erase clean-probed models.
+    CloudModelsAvailable(Vec<AcpModelInfo>),
     AgentConnected {
         name: String,
         model: Option<String>,
@@ -22,6 +26,18 @@ pub enum AppEvent {
     },
     SessionAttached {
         tab_id: String,
+        session_id: String,
+        available_models: Vec<AcpModelInfo>,
+        current_model_id: Option<String>,
+    },
+    UsageReported {
+        session_id: String,
+        snapshot: crate::usage::UsageSnapshot,
+    },
+    UsageCleared {
+        session_id: String,
+    },
+    ModelConfigUpdated {
         session_id: String,
         available_models: Vec<AcpModelInfo>,
         current_model_id: Option<String>,
@@ -47,7 +63,7 @@ pub enum AppEvent {
     PromptTemplateLoaded {
         name: String,
     },
-    AutofixTargetResolved {
+    PromptTargetResolved {
         tab_id: Option<String>,
         prompt_id: u64,
         pane_id: String,
@@ -112,6 +128,10 @@ pub enum AppEvent {
         /// meaningful when `location.is_some()`.
         location_is_command: bool,
     },
+    HideToolCall {
+        session_id: String,
+        id: String,
+    },
     Plan {
         session_id: String,
         entries: Vec<PlanEntry>,
@@ -169,6 +189,22 @@ pub enum AppEvent {
     AliveSessionRemoved(agent_client_protocol::schema::v1::SessionId),
     AliveJoinUpgrade(Vec<(String, Option<String>)>),
     SessionsChanged,
+    DirectTerminalActionProposal {
+        context: crate::agent_tools::action_proposal::channel::ValidationContext,
+        payload: String,
+        source: crate::agent_tools::action_proposal::pipe::ProposalPayloadSource,
+        responder: tokio::sync::oneshot::Sender<
+            crate::agent_tools::action_proposal::pipe::ProposalValidationDecision,
+        >,
+    },
+    DirectTerminalActionProposalCommit {
+        proposal_id: String,
+        responder: tokio::sync::oneshot::Sender<bool>,
+    },
+    DirectTerminalActionProposalInvalidate {
+        proposal_id: String,
+        session_id: String,
+    },
     AgentsSnapshotLoaded {
         request_id: u64,
         sessions: Vec<crate::session_registry::SessionInfo>,

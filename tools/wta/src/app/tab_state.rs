@@ -10,13 +10,26 @@ use super::{TabAutofixState, TurnState};
 
 pub(crate) const DEFAULT_TAB_ID: &str = "0";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum NoticeKind {
+    Success,
+    Info,
+    Warning,
+    Error,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ChatMessage {
     User(String),
     Agent(String),
+    /// Legacy untyped system message retained for persisted chat compatibility.
     System(String),
     /// Low-emphasis inline status rendered in the pane's normal foreground.
     Status(String),
+    Notice {
+        kind: NoticeKind,
+        text: String,
+    },
     ToolCall {
         id: String,
         title: String,
@@ -41,6 +54,36 @@ pub enum ChatMessage {
     /// no persistence gating — getting cleared by the next turn is fine,
     /// the next pane startup re-pushes it.
     Disclaimer,
+}
+
+impl ChatMessage {
+    pub fn success(text: impl Into<String>) -> Self {
+        Self::Notice {
+            kind: NoticeKind::Success,
+            text: text.into(),
+        }
+    }
+
+    pub fn info(text: impl Into<String>) -> Self {
+        Self::Notice {
+            kind: NoticeKind::Info,
+            text: text.into(),
+        }
+    }
+
+    pub fn warning(text: impl Into<String>) -> Self {
+        Self::Notice {
+            kind: NoticeKind::Warning,
+            text: text.into(),
+        }
+    }
+
+    pub fn error(text: impl Into<String>) -> Self {
+        Self::Notice {
+            kind: NoticeKind::Error,
+            text: text.into(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -127,6 +170,13 @@ impl PermissionState {
     }
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum RecommendationFocus {
+    #[default]
+    Button,
+    Input,
+}
+
 /// Single-axis scroll cursor. All mutations go through methods so callers
 /// don't reinvent saturating-math; the upper bound `max` is established by
 /// the layout/render pass once total content height is known and re-clamps
@@ -168,6 +218,14 @@ impl Scroll {
     }
 }
 
+pub(crate) struct PendingTerminalActionProposal {
+    pub proposal_id: String,
+    pub session_id: String,
+    pub prompt_id: u64,
+    pub is_autofix: bool,
+    pub recommendations: super::RecommendationSet,
+}
+
 /// Everything that conceptually belongs to one tab's conversation: the
 /// message history, the streaming buffer of the in-flight prompt, the
 /// pending tool calls, the recommendations panel state, etc.
@@ -180,6 +238,10 @@ impl Scroll {
 pub struct TabSession {
     /// Per-tab autofix state machine (see `TabAutofixState`).
     pub autofix: TabAutofixState,
+    pub(crate) pending_terminal_action_proposal: Option<PendingTerminalActionProposal>,
+    pub(crate) active_direct_proposal_id: Option<String>,
+    pub usage: Option<crate::usage::UsageSnapshot>,
+    pub usage_staleness: crate::usage::UsageStaleness,
 
     // Conversation history
     pub messages: Vec<ChatMessage>,
@@ -239,7 +301,9 @@ pub struct TabSession {
     // `turn.recommendations()`).
     pub selected_recommendation: usize,
     pub selected_button: usize,
+    pub recommendation_focus: RecommendationFocus,
     pub rec_scroll: Scroll,
+    pub rec_viewport_height: u16,
 
     /// Last value the helper published for this tab in a
     /// `set_agent_chip_target` event.
@@ -250,9 +314,7 @@ pub struct TabSession {
     pub input: String,
     pub cursor_pos: usize,
     pub(super) input_history: InputHistory,
-    /// Images captured from the clipboard via Alt+V, waiting to be sent with
-    /// the next prompt.
-    pub pending_images: Vec<crate::clipboard_image::PastedImage>,
+    pub(crate) attachments: super::attachments::PendingAttachments,
     /// True while a host-triggered text paste is reading the clipboard on a
     /// blocking worker.
     pub paste_pending: bool,
@@ -306,12 +368,15 @@ impl TabSession {
 
     pub(crate) fn should_show_thinking(&self) -> bool {
         self.turn.is_in_flight()
+            && self.turn.recommendations().is_none()
+            && self.permission.is_empty()
     }
 
     /// Whether the input box is the live, enterable caret target.
     pub fn input_has_nav_focus(&self) -> bool {
         self.selected_completed_turn_idx.is_none()
-            && self.turn.recommendations().is_none()
+            && (self.turn.recommendations().is_none()
+                || self.recommendation_focus == RecommendationFocus::Input)
             && self.permission.is_empty()
             && !self.paste_pending
             && !self.model_picker_open
@@ -321,23 +386,19 @@ impl TabSession {
     pub fn clear_recommendations(&mut self) {
         self.selected_recommendation = 0;
         self.selected_button = 0;
+        self.recommendation_focus = RecommendationFocus::Button;
         self.rec_scroll.reset();
+        self.rec_viewport_height = 0;
     }
 
     /// The pane the "Agent" chip should be pinned to while this tab has a
     /// recommendation card with a `Send` action selected.
     pub fn compute_chip_card_target(&self) -> Option<String> {
+        if self.recommendation_focus == RecommendationFocus::Input {
+            return None;
+        }
         let recs = self.turn.recommendations()?;
         let choice = recs.choices.get(self.selected_recommendation)?;
-        let send_parent = choice.actions.iter().find_map(|action| match action {
-            crate::coordinator::RecommendedAction::Send { parent, .. } if !parent.is_empty() => {
-                Some(parent.clone())
-            }
-            _ => None,
-        });
-        if send_parent.is_some() {
-            return send_parent;
-        }
         if choice
             .actions
             .iter()
@@ -346,9 +407,7 @@ impl TabSession {
             return self
                 .turn
                 .prompt()
-                .and_then(|prompt| prompt.autofix.as_ref())
-                .map(|autofix| autofix.target_pane_id.clone())
-                .filter(|pane_id| !pane_id.is_empty());
+                .and_then(|prompt| prompt.context.target_pane_id().map(str::to_string));
         }
         None
     }
@@ -365,7 +424,9 @@ impl TabSession {
         self.selection_visible_pending = false;
         self.turn = TurnState::Idle;
         self.clear_recommendations();
-        self.pending_images.clear();
+        self.attachments
+            .remove_tokens_from_input(&mut self.input, &mut self.cursor_pos);
+        self.clear_history_draft_attachments();
         self.paste_pending = false;
         self.paste_generation = self.paste_generation.wrapping_add(1);
     }

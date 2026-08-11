@@ -3,12 +3,14 @@ use std::borrow::Cow;
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 
-use crate::app::{App, ChatMessage, CompletedTurn, PlanEntryStatus};
+use crate::app::{App, ChatMessage, CompletedTurn, NoticeKind, PlanEntryStatus};
 use crate::theme;
 use crate::ui::shimmer;
 use crate::ui_trace;
 
-fn activity_label() -> String { t!("chat.activity_thinking").into_owned() }
+fn activity_label() -> String {
+    t!("chat.activity_thinking").into_owned()
+}
 
 const MAX_RENDER_LINE_CHARS: usize = 4096;
 
@@ -20,13 +22,19 @@ const MAX_RENDER_LINE_CHARS: usize = 4096;
 pub fn estimated_block_height(app: &App, area_width: u16) -> u16 {
     let tab = app.current_tab();
     let wrap_width = (area_width as usize).max(1);
-    // Fetch once for the pending-height calculation. `pending_render_text`
-    // re-parses the streaming buffer on every call (and allocates on the
-    // JSON-wrapper path via `extract_json_string_field`).
+    // Fetch once for the pending-height calculation.
     let pending_text = pending_render_text(tab);
 
-    let messages: usize = tab.messages.iter().map(|m| message_height(m, wrap_width)).sum();
-    let turns: usize = tab.completed_turns.iter().map(|t| turn_height(t, wrap_width)).sum();
+    let messages: usize = tab
+        .messages
+        .iter()
+        .map(|m| message_height(m, wrap_width))
+        .sum();
+    let turns: usize = tab
+        .completed_turns
+        .iter()
+        .map(|t| turn_height(t, wrap_width))
+        .sum();
     let pending = pending_text
         .as_deref()
         .map(|text| {
@@ -39,15 +47,15 @@ pub fn estimated_block_height(app: &App, area_width: u16) -> u16 {
     // it off the top of the visible chat block. Always a single row —
     // terminal min-width guarantees the localized title fits without
     // wrapping.
-    let welcome = if app.show_welcome_hint
-        && app.state == crate::app::ConnectionState::Connected
-    {
+    let welcome = if app.show_welcome_hint && app.state == crate::app::ConnectionState::Connected {
         1
     } else {
         0
     };
 
-    (messages + turns + pending + welcome).max(1).min(u16::MAX as usize) as u16
+    (messages + turns + pending + welcome)
+        .max(1)
+        .min(u16::MAX as usize) as u16
 }
 
 fn wrap_count(text: &str, width: usize) -> usize {
@@ -55,7 +63,11 @@ fn wrap_count(text: &str, width: usize) -> usize {
     text.split('\n')
         .map(|line| {
             let chars = line.chars().count();
-            if chars == 0 { 1 } else { chars.div_ceil(w) }
+            if chars == 0 {
+                1
+            } else {
+                chars.div_ceil(w)
+            }
         })
         .sum::<usize>()
         .max(1)
@@ -78,7 +90,12 @@ fn message_height(msg: &ChatMessage, wrap_width: usize) -> usize {
         ChatMessage::System(t) | ChatMessage::Status(t) | ChatMessage::AgentEvent(t) => {
             wrap_count(t, wrap_width) + 1
         }
-        ChatMessage::ToolCall { location, location_is_command, .. } => {
+        ChatMessage::Notice { text, .. } => dot_wrap_count(text, body_width) + 1,
+        ChatMessage::ToolCall {
+            location,
+            location_is_command,
+            ..
+        } => {
             // Command targets render one line per split statement (see
             // the render arm below, and `command_format`) — must count
             // the same number of rows here, or the chat area's height
@@ -127,7 +144,8 @@ fn tool_call_presentation(status: &str) -> (&'static str, Style, Option<&str>) {
         ("○", theme::TOOL_CALL_PENDING, None)
     } else if status.eq_ignore_ascii_case("inprogress") || status.eq_ignore_ascii_case("running") {
         ("●", theme::TOOL_CALL_RUNNING, None)
-    } else if status.eq_ignore_ascii_case("completed") || status.eq_ignore_ascii_case("exited (0)") {
+    } else if status.eq_ignore_ascii_case("completed") || status.eq_ignore_ascii_case("exited (0)")
+    {
         ("✓", theme::TOOL_CALL_SUCCESS, None)
     } else if status.eq_ignore_ascii_case("failed") {
         ("✗", theme::TOOL_CALL_FAILURE, None)
@@ -154,6 +172,11 @@ fn is_active_tool_call_status(status: &str) -> bool {
 
 fn should_show_turn_activity(tab: &crate::app::TabSession) -> bool {
     tab.should_show_thinking()
+}
+
+pub(crate) fn should_show_activity(app: &App) -> bool {
+    matches!(app.state, crate::app::ConnectionState::Connecting(_))
+        || should_show_turn_activity(app.current_tab())
 }
 
 fn permission_tool_call_id(tab: &crate::app::TabSession) -> Option<&str> {
@@ -213,7 +236,8 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
         let pane_focused = app.pane_focused;
         for (idx, turn) in app.current_tab().completed_turns.iter().enumerate().rev() {
             let is_selected = selected_idx == Some(idx);
-            let mut turn_lines = build_completed_turn_lines(turn, is_selected, pane_focused, wrap_width);
+            let mut turn_lines =
+                build_completed_turn_lines(turn, is_selected, pane_focused, wrap_width);
             reversed_lines.extend(turn_lines.drain(..).rev());
             if reversed_lines.len() >= requested_lines {
                 truncated = true;
@@ -223,25 +247,25 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     }
 
     // First-run welcome: shown once until user sends first message
-    if app.show_welcome_hint
-        && app.state == crate::app::ConnectionState::Connected
-    {
-        let mut welcome_lines = vec![
-            Line::from(vec![
-                Span::styled("● ", Style::new().fg(Color::Reset).add_modifier(Modifier::BOLD)),
-                Span::styled(
-                    t!("chat.welcome_title").into_owned(),
-                    Style::new().fg(Color::Reset).add_modifier(Modifier::BOLD),
-                ),
-            ]),
-        ];
+    if app.show_welcome_hint && app.state == crate::app::ConnectionState::Connected {
+        let mut welcome_lines = vec![Line::from(vec![
+            Span::styled(
+                "● ",
+                Style::new().fg(Color::Reset).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                t!("chat.welcome_title").into_owned(),
+                Style::new().fg(Color::Reset).add_modifier(Modifier::BOLD),
+            ),
+        ])];
         reversed_lines.extend(welcome_lines.drain(..).rev());
     }
 
     let lines: Vec<Line> = reversed_lines.into_iter().rev().collect();
 
     let total_lines = lines.len();
-    let scroll = total_lines.saturating_sub(visible_height.saturating_add(app.current_tab().chat_scroll.offset));
+    let scroll = total_lines
+        .saturating_sub(visible_height.saturating_add(app.current_tab().chat_scroll.offset));
 
     let paragraph = Paragraph::new(lines)
         .block(inner)
@@ -265,7 +289,11 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
         format!(
             "messages={} pending_chars={} requested_lines={} visible_height={} area={}x{}",
             app.current_tab().messages.len(),
-            app.current_tab().turn.buffer().map(|b| b.chars().count()).unwrap_or(0),
+            app.current_tab()
+                .turn
+                .buffer()
+                .map(|b| b.chars().count())
+                .unwrap_or(0),
             requested_lines,
             visible_height,
             area.width,
@@ -387,135 +415,15 @@ pub fn render_activity(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
     let label = activity_label();
-    let line = Line::from(shimmer::shimmer_spans(
-        &label,
-        tab.activity_frame,
-    ));
+    let line = Line::from(shimmer::shimmer_spans(&label, tab.activity_frame));
     frame.render_widget(Paragraph::new(line), area);
 }
 
-/// Incrementally extracts a JSON string field's decoded value from a
-/// possibly-truncated text. Handles `\"`, `\\`, `\n`, `\t`, `\uXXXX` and
-/// UTF-16 surrogate pairs (e.g. emoji). Returns the partial value if the
-/// closing quote hasn't arrived yet.
-pub(crate) fn extract_json_string_field(text: &str, field: &str) -> Option<String> {
-    let key = format!("\"{field}\"");
-    // Find the occurrence of `"field"` that is actually a *key* (followed by
-    // `:`), not the same token appearing earlier as a string value. Without
-    // this, `{"kind":"explanation","explanation":"real"}` would stop at the
-    // value and return None.
-    let mut search_from = 0;
-    let rest = loop {
-        let rel = text[search_from..].find(&key)?;
-        let abs = search_from + rel;
-        let after = text[abs + key.len()..].trim_start();
-        if let Some(r) = after.strip_prefix(':') {
-            break r.trim_start();
-        }
-        search_from = abs + key.len();
-    };
-    let body = rest.strip_prefix('"')?;
-
-    let mut out = String::with_capacity(body.len());
-    let mut chars = body.chars();
-    while let Some(c) = chars.next() {
-        match c {
-            '"' => return Some(out),
-            '\\' => match chars.next() {
-                None => return Some(out),
-                Some('"') => out.push('"'),
-                Some('\\') => out.push('\\'),
-                Some('/') => out.push('/'),
-                Some('n') => out.push('\n'),
-                Some('r') => out.push('\r'),
-                Some('t') => out.push('\t'),
-                Some('b') => out.push('\u{08}'),
-                Some('f') => out.push('\u{0C}'),
-                Some('u') => {
-                    let hex: String = chars.by_ref().take(4).collect();
-                    if hex.len() < 4 {
-                        return Some(out);
-                    }
-                    let Some(code) = u32::from_str_radix(&hex, 16).ok() else {
-                        continue;
-                    };
-                    match code {
-                        // High surrogate: pair it with the following
-                        // `\uXXXX` low surrogate to recover the non-BMP scalar
-                        // (e.g. emoji). If the low half hasn't streamed in yet
-                        // (or is malformed), drop the lone surrogate — the next
-                        // frame re-runs over the now-complete buffer.
-                        0xD800..=0xDBFF => {
-                            let mut lookahead = chars.clone();
-                            if lookahead.next() == Some('\\')
-                                && lookahead.next() == Some('u')
-                            {
-                                let lo_hex: String = lookahead.by_ref().take(4).collect();
-                                if lo_hex.len() == 4 {
-                                    if let Some(lo @ 0xDC00..=0xDFFF) =
-                                        u32::from_str_radix(&lo_hex, 16).ok()
-                                    {
-                                        let scalar = 0x1_0000
-                                            + ((code - 0xD800) << 10)
-                                            + (lo - 0xDC00);
-                                        if let Some(ch) = char::from_u32(scalar) {
-                                            out.push(ch);
-                                        }
-                                        chars = lookahead; // consume the low half
-                                    }
-                                }
-                            }
-                        }
-                        // Lone low surrogate or any non-scalar: skip. Valid
-                        // scalars get pushed.
-                        _ => {
-                            if let Some(ch) = char::from_u32(code) {
-                                out.push(ch);
-                            }
-                        }
-                    }
-                }
-                Some(other) => out.push(other),
-            },
-            c => out.push(c),
-        }
-    }
-    Some(out)
-}
-
-/// Resolves the user-visible portion of a streaming buffer:
-///
-/// - Buffer starts with a JSON wrapper (autofix): extract the `explanation`
-///   field so the user sees flowing markdown rather than raw JSON syntax.
-///   fix actions lack this field and yield None — the card surfaces on
-///   finalize.
-/// - Buffer is mixed prose followed by a fenced JSON block (planner
-///   terminal-task mode): render only the prose prefix; the recommendation
-///   card replaces it on eager/end-of-turn finalize.
-/// - Pure prose: stream as-is.
-///
-/// Callers outside the render path (e.g. turn-cancel / ignore commits) use
-/// this to record exactly what the user saw during streaming, instead of the
-/// raw buffer (which may contain JSON the UI deliberately hid).
+/// Return non-empty assistant text for streaming and transcript rendering.
+/// Typed proposal payloads travel through the direct Helper channel, so ACP
+/// assistant text is always user-visible chat content.
 pub(crate) fn user_visible_stream_text(text: &str) -> Option<Cow<'_, str>> {
-    let trimmed = text.trim_start();
-    if trimmed.is_empty() {
-        return None;
-    }
-    if trimmed.starts_with("```") || trimmed.starts_with('{') {
-        return extract_json_string_field(text, "explanation")
-            .filter(|s| !s.is_empty())
-            .map(Cow::Owned);
-    }
-    if let Some(fence_pos) = text.find("```") {
-        let prose = text[..fence_pos].trim_end();
-        return if prose.is_empty() {
-            None
-        } else {
-            Some(Cow::Borrowed(prose))
-        };
-    }
-    Some(Cow::Borrowed(text))
+    (!text.trim().is_empty()).then_some(Cow::Borrowed(text))
 }
 
 fn pending_render_text(tab: &crate::app::TabSession) -> Option<Cow<'_, str>> {
@@ -598,6 +506,16 @@ fn build_message_lines<'a>(
             }
             lines.push(Line::default());
         }
+        ChatMessage::Notice { kind, text } => {
+            let (marker, style) = match kind {
+                NoticeKind::Success => ("✓", theme::NOTICE_SUCCESS),
+                NoticeKind::Info => ("i", theme::NOTICE_INFO),
+                NoticeKind::Warning => ("!", theme::NOTICE_WARNING),
+                NoticeKind::Error => ("×", theme::NOTICE_ERROR),
+            };
+            push_prefixed_lines(&mut lines, marker, text, wrap_width, style);
+            lines.push(Line::default());
+        }
         ChatMessage::ToolCall {
             id,
             title,
@@ -655,15 +573,10 @@ fn build_message_lines<'a>(
                 if let Some(command) = location {
                     for entry in crate::ui::command_format::command_display_lines(command) {
                         rendered_command = true;
-                        let text = match entry {
-                            crate::ui::command_format::CommandLine::Statement(s) => {
-                                format!("    $ {s}")
-                            }
-                            crate::ui::command_format::CommandLine::Folded { remaining } => {
-                                format!("    … (+{remaining} more)")
-                            }
-                        };
-                        lines.push(Line::from(Span::styled(text, theme::CARD_CODE)));
+                        lines.push(Line::from(Span::styled(
+                            entry.rendered_text("    "),
+                            theme::CARD_CODE,
+                        )));
                     }
                 }
             }
@@ -672,7 +585,10 @@ fn build_message_lines<'a>(
             }
         }
         ChatMessage::Plan(entries) => {
-            lines.push(Line::from(Span::styled(t!("chat.plan_header").into_owned(), theme::PLAN_STYLE)));
+            lines.push(Line::from(Span::styled(
+                t!("chat.plan_header").into_owned(),
+                theme::PLAN_STYLE,
+            )));
             for entry in entries {
                 let marker = match entry.status {
                     PlanEntryStatus::Completed => t!("chat.plan_marker_completed").into_owned(),
@@ -767,6 +683,43 @@ fn push_dot_prefixed_lines<'a>(
                 lines.push(Line::from(vec![
                     Span::raw("  "),
                     Span::styled(piece_str, text_style),
+                ]));
+            }
+        }
+    }
+}
+
+fn push_prefixed_lines<'a>(
+    lines: &mut Vec<Line<'a>>,
+    marker: &'static str,
+    text: &str,
+    wrap_width: usize,
+    style: Style,
+) {
+    let body_width = wrap_width.saturating_sub(2).max(1);
+    let mut first_row = true;
+
+    for paragraph in text.split('\n') {
+        if paragraph.is_empty() {
+            if first_row {
+                continue;
+            }
+            lines.push(Line::default());
+            continue;
+        }
+
+        for piece in textwrap::wrap(paragraph, body_width) {
+            let piece_str = truncate_render_text(&piece).into_owned();
+            if first_row {
+                lines.push(Line::from(vec![
+                    Span::styled(format!("{marker} "), style),
+                    Span::styled(piece_str, style),
+                ]));
+                first_row = false;
+            } else {
+                lines.push(Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(piece_str, style),
                 ]));
             }
         }
@@ -874,6 +827,39 @@ mod tests {
         line.spans.iter().map(|s| s.content.as_ref()).collect()
     }
 
+    #[test]
+    fn notices_render_distinct_markers_and_hanging_indents() {
+        let cases = [
+            (NoticeKind::Success, "✓"),
+            (NoticeKind::Info, "i"),
+            (NoticeKind::Warning, "!"),
+            (NoticeKind::Error, "×"),
+        ];
+
+        for (kind, marker) in cases {
+            let message = ChatMessage::Notice {
+                kind,
+                text: "A notice that wraps onto another line".into(),
+            };
+            let lines = build_message_lines(&message, false, false, None, 0, 20);
+            assert!(line_text(&lines[0]).starts_with(&format!("{marker} ")));
+            assert!(
+                line_text(&lines[1]).starts_with("  "),
+                "continuation rows must align with the notice body"
+            );
+            assert!(line_text(lines.last().expect("trailing row")).is_empty());
+        }
+    }
+
+    #[test]
+    fn notice_prefix_skips_leading_blank_lines() {
+        let message = ChatMessage::info("\n\nNotice text");
+        let lines = build_message_lines(&message, false, false, None, 0, 20);
+
+        assert_eq!(line_text(&lines[0]), "i Notice text");
+        assert_eq!(lines.len(), message_height(&message, 20));
+    }
+
     fn assert_tool_call(
         status: &str,
         expected_text: &str,
@@ -893,7 +879,10 @@ mod tests {
         assert_eq!(line_text(line), expected_text);
         assert_eq!(line.spans[0].style, expected_marker_style);
         assert_eq!(line.spans[2].style, theme::TOOL_CALL_TITLE);
-        assert_eq!(line.spans.get(3).map(|span| span.style), expected_detail_style);
+        assert_eq!(
+            line.spans.get(3).map(|span| span.style),
+            expected_detail_style
+        );
     }
 
     /// A `location` hint renders as a dim `(path)` suffix right after the
@@ -1066,90 +1055,6 @@ mod tests {
         assert_ne!(theme::TOOL_CALL_CANCELED, theme::DIM);
     }
 
-    // ── extract_json_string_field: escape decoding ──────────────────────────
-
-    #[test]
-    fn json_field_basic_value() {
-        assert_eq!(
-            extract_json_string_field(r#"{"explanation":"hello"}"#, "explanation")
-                .as_deref(),
-            Some("hello")
-        );
-    }
-
-    #[test]
-    fn json_field_decodes_escapes() {
-        // \" \\ \/ \n \r \t all per RFC 8259.
-        let raw = r#"{"explanation":"a\"b\\c\/d\ne\tf"}"#;
-        assert_eq!(
-            extract_json_string_field(raw, "explanation").as_deref(),
-            Some("a\"b\\c/d\ne\tf")
-        );
-    }
-
-    #[test]
-    fn json_field_decodes_bmp_unicode_escape() {
-        // \u0041 = 'A', \u00e9 = 'é'
-        assert_eq!(
-            extract_json_string_field(r#"{"explanation":"\u0041\u00e9"}"#, "explanation")
-                .as_deref(),
-            Some("Aé")
-        );
-    }
-
-    #[test]
-    fn json_field_tolerates_whitespace_around_colon() {
-        assert_eq!(
-            extract_json_string_field("{ \"explanation\" : \"v\" }", "explanation")
-                .as_deref(),
-            Some("v")
-        );
-    }
-
-    #[test]
-    fn json_field_returns_partial_when_unterminated() {
-        // Streaming: the closing quote hasn't arrived yet — show what we have.
-        assert_eq!(
-            extract_json_string_field(r#"{"explanation":"hello world"#, "explanation")
-                .as_deref(),
-            Some("hello world")
-        );
-    }
-
-    #[test]
-    fn json_field_absent_returns_none() {
-        assert_eq!(
-            extract_json_string_field(r#"{"command":"ls"}"#, "explanation"),
-            None
-        );
-    }
-
-    // ── extract_json_string_field: ADVERSARIAL (expected to expose gaps) ─────
-
-    /// A non-BMP character (emoji) encoded as a UTF-16 surrogate pair must
-    /// decode to the actual character. Agents routinely emit emoji in prose.
-    #[test]
-    fn json_field_decodes_surrogate_pair_emoji() {
-        // U+1F600 😀 = \uD83D\uDE00 in UTF-16.
-        assert_eq!(
-            extract_json_string_field(r#"{"explanation":"\uD83D\uDE00"}"#, "explanation")
-                .as_deref(),
-            Some("😀")
-        );
-    }
-
-    /// When the field name also appears earlier as a *value*, extraction must
-    /// still find the real key=value pair, not give up at the first textual
-    /// match.
-    #[test]
-    fn json_field_skips_name_appearing_as_value() {
-        let raw = r#"{"kind":"explanation","explanation":"real"}"#;
-        assert_eq!(
-            extract_json_string_field(raw, "explanation").as_deref(),
-            Some("real")
-        );
-    }
-
     // ── user_visible_stream_text ────────────────────────────────────────────
 
     #[test]
@@ -1161,30 +1066,19 @@ mod tests {
     }
 
     #[test]
-    fn stream_text_json_wrapper_extracts_explanation() {
-        assert_eq!(
-            user_visible_stream_text(r#"{"explanation":"why blue"}"#).as_deref(),
-            Some("why blue")
-        );
+    fn stream_text_json_passes_through_verbatim() {
+        let text = r#"{"explanation":"why blue","command":"ls"}"#;
+        assert_eq!(user_visible_stream_text(text).as_deref(), Some(text));
     }
 
     #[test]
-    fn stream_text_json_without_explanation_is_hidden() {
-        // A fix-action wrapper (no explanation) must not leak raw JSON.
-        assert_eq!(user_visible_stream_text(r#"{"command":"ls"}"#), None);
+    fn stream_text_prose_then_fence_passes_through_verbatim() {
+        let text = "Here is the plan.\n```json\n{\"choices\":[]}\n```";
+        assert_eq!(user_visible_stream_text(text).as_deref(), Some(text));
     }
 
     #[test]
-    fn stream_text_prose_then_fence_shows_prose_prefix_only() {
-        let buf = "Here is the plan.\n```json\n{\"choices\":[]}\n```";
-        assert_eq!(
-            user_visible_stream_text(buf).as_deref(),
-            Some("Here is the plan.")
-        );
-    }
-
-    #[test]
-    fn stream_text_empty_is_none() {
+    fn stream_text_blank_is_none() {
         assert_eq!(user_visible_stream_text("   \n  "), None);
     }
 
@@ -1195,6 +1089,7 @@ mod tests {
                 id: 1,
                 text: "hi".into(),
                 submitted_at_unix_s: 0.0,
+                context: crate::app::TurnContext::default(),
                 autofix: None,
             },
             buf: buf.to_string(),
@@ -1218,10 +1113,7 @@ mod tests {
         assert_eq!(breathing_dot(5), "•");
         assert_eq!(breathing_dot(9), "·");
         assert_eq!(breathing_dot(14), "•");
-        assert_eq!(
-            breathing_dot(crate::ui::ACTIVITY_CYCLE_FRAMES),
-            "●"
-        );
+        assert_eq!(breathing_dot(crate::ui::ACTIVITY_CYCLE_FRAMES), "●");
     }
 
     #[test]
@@ -1241,8 +1133,7 @@ mod tests {
             location_is_command: false,
         };
 
-        let matching_lines =
-            build_message_lines(&matching, false, false, Some("tool-2"), 9, 80);
+        let matching_lines = build_message_lines(&matching, false, false, Some("tool-2"), 9, 80);
         let other_lines = build_message_lines(&other, false, false, Some("tool-2"), 9, 80);
 
         assert_eq!(matching_lines[0].spans[0].content, "·");
@@ -1321,8 +1212,9 @@ mod tests {
         // must round-trip below the threshold.
         let under: String = std::iter::repeat('é').take(MAX_RENDER_LINE_CHARS).collect();
         assert!(matches!(truncate_render_text(&under), Cow::Borrowed(_)));
-        let over: String =
-            std::iter::repeat('é').take(MAX_RENDER_LINE_CHARS + 10).collect();
+        let over: String = std::iter::repeat('é')
+            .take(MAX_RENDER_LINE_CHARS + 10)
+            .collect();
         let _ = truncate_render_text(&over).into_owned(); // must not panic
     }
 
@@ -1333,7 +1225,13 @@ mod tests {
         // Models often prefix prose with \n / \n\n; the dot must land on the
         // first content row, not burn on an empty line.
         let mut lines = Vec::new();
-        push_dot_prefixed_lines(&mut lines, "\n\nHello", 40, theme::DOT_AGENT, theme::AGENT_TEXT);
+        push_dot_prefixed_lines(
+            &mut lines,
+            "\n\nHello",
+            40,
+            theme::DOT_AGENT,
+            theme::AGENT_TEXT,
+        );
         assert_eq!(lines.len(), 1, "leading blanks must be dropped");
         assert_eq!(line_text(&lines[0]), "● Hello");
     }
@@ -1341,9 +1239,18 @@ mod tests {
     #[test]
     fn dot_prefix_preserves_paragraph_break_and_indents_continuation() {
         let mut lines = Vec::new();
-        push_dot_prefixed_lines(&mut lines, "A\n\nB", 40, theme::DOT_AGENT, theme::AGENT_TEXT);
+        push_dot_prefixed_lines(
+            &mut lines,
+            "A\n\nB",
+            40,
+            theme::DOT_AGENT,
+            theme::AGENT_TEXT,
+        );
         let texts: Vec<String> = lines.iter().map(line_text).collect();
-        assert_eq!(texts, vec!["● A".to_string(), String::new(), "  B".to_string()]);
+        assert_eq!(
+            texts,
+            vec!["● A".to_string(), String::new(), "  B".to_string()]
+        );
     }
 
     #[test]
@@ -1358,7 +1265,10 @@ mod tests {
             theme::AGENT_TEXT,
         );
         assert!(lines.len() >= 2, "long paragraph must wrap");
-        assert!(line_text(&lines[0]).starts_with("● "), "first row gets the dot");
+        assert!(
+            line_text(&lines[0]).starts_with("● "),
+            "first row gets the dot"
+        );
         assert!(
             line_text(&lines[1]).starts_with("  "),
             "continuation rows get a 2-cell hanging indent"
@@ -1377,7 +1287,10 @@ mod tests {
         let mut lines = Vec::new();
         push_prompt_prefixed_lines(&mut lines, concat!("line one\n", "line two"), 40);
         let texts: Vec<String> = lines.iter().map(line_text).collect();
-        assert_eq!(texts, vec!["> line one".to_string(), "  line two".to_string()]);
+        assert_eq!(
+            texts,
+            vec!["> line one".to_string(), "  line two".to_string()]
+        );
     }
 
     #[test]
@@ -1393,7 +1306,10 @@ mod tests {
         let mut lines = Vec::new();
         push_prompt_prefixed_lines(&mut lines, "A\n\nB", 40);
         let texts: Vec<String> = lines.iter().map(line_text).collect();
-        assert_eq!(texts, vec!["> A".to_string(), String::new(), "  B".to_string()]);
+        assert_eq!(
+            texts,
+            vec!["> A".to_string(), String::new(), "  B".to_string()]
+        );
     }
 
     #[test]
