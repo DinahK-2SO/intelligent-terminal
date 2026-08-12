@@ -338,7 +338,7 @@ fn connect_with(
         proposal_channels: Arc::new(
             crate::agent_tools::action_proposal::channel::ProposalChannelManager::new(),
         ),
-        hidden_tool_calls: Mutex::new(HashSet::new()),
+        hidden_tool_calls: Mutex::new(HashMap::new()),
     });
     let wta = WtaClient { state };
 
@@ -689,7 +689,7 @@ fn connect_for_dispatch(behavior: MockBehavior) -> DispatchHarness {
         provider_probe_capture: ProviderProbeCapture::default(),
         standard_usage_sessions: Mutex::new(HashSet::new()),
         proposal_channels: Arc::clone(&proposal_channels),
-        hidden_tool_calls: Mutex::new(HashSet::new()),
+        hidden_tool_calls: Mutex::new(HashMap::new()),
     });
     let wta = WtaClient { state };
 
@@ -1812,7 +1812,7 @@ fn bare_client_with_yolo(
         proposal_channels: Arc::new(
             crate::agent_tools::action_proposal::channel::ProposalChannelManager::new(),
         ),
-        hidden_tool_calls: Mutex::new(HashSet::new()),
+        hidden_tool_calls: Mutex::new(HashMap::new()),
     });
     (WtaClient { state }, event_rx)
 }
@@ -2184,7 +2184,7 @@ async fn session_notification_hides_proposal_mcp_tool_call() {
     ));
     assert!(
         rx.try_recv().is_err(),
-        "proposal MCP ToolCall must not reach the chat UI"
+        "session MCP ToolCall must not reach the chat UI"
     );
 }
 
