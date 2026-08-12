@@ -1,3 +1,173 @@
+# Markdown Rendering in Agent Pane Feature Handoff
+
+> Last synchronized: 2026-08-12
+>
+> 这个文件只描述 Markdown Rendering in Agent Pane Feature。它应该可以直接复制到新的 dev branch，
+> 让下一阶段不需要重新翻阅旧调查记录。实际代码始终是最终 source of truth。
+
+新的 dev/publish branches:
+
+- dev branch：`user/DinahK-2SO/markdown-renderer`, remotely push to "Dinah".
+- publish branch：`user/DinahK-2SO/markdown-renderer-publish`, remotely push to "origin".
+
+这两个branch都从`main@0c683a00e`创建。当前follow-up完成后，再下一阶段不要继续基于它们开发：
+请从最新`origin/main`开新的dev branch，把本文件copy过去，并在这里记录新branch名称。
+
+如果下一阶段仍使用dev/publish双branch：publish branch用于正式产品代码和code review，dev
+branch还可以包含调查、tracking和本地workflow。上一个publish branch不包含：
+
+- `AGENTS.md`
+- `doc/`
+- `build/scripts/New-LocalMsixInstaller.ps1`
+- `test/e2e/selftests/LocalMsixInstaller.Unit.Tests.ps1`
+- `test/e2e/selftests/UsageLocalization.Unit.Tests.ps1`
+- 本地E2E framework、wire、provider config和未明确选入review evidence的截图
+
+新的branch可以根据任务调整清单，但继续遵守同一个原则：publish只表达当前产品行为，dev可以
+保留历史背景和本地workflow。
+
+========================
+
+## 当前follow-up：
+[2026-08-12] init
+
+我们的目标是在agent pane中显示markdown。
+
+
+我们知道copilot cli和 opencode在terminal中显示的markdown是有渲染的。所以可以学习一下他们是怎么做的（已添加opencode 的代码到 current workspace）。
+
+
+之前我们组的同事们做过这个field的一点调查，告诉我们要注意几个事情：
+1. 记得要测试multiple lines的情况。
+2. 记得要测试不同的主题。
+3. 注意agent page有自己专属的主题，独立于terminal
+
+
+========================
+
+## 在开始下一阶段正式开发前
+
+如果下一阶段会改变provider launch、package、agent routing、Bottom Bar、Usage显示或session
+管理，请先确认这些live acceptance仍然可以完成：
+
+1. [empty]
+2. build/deploy existing Intelligent Terminal并launch；
+3. 截图并确认Terminal窗口visible且nonblank；
+4. 点击Bottom Bar按钮展开agent窗口，截图并确认agent对话UI可见；
+5. 默认选择的provider是copilot，截图并确认active agent确实active；
+6. 与copilot对话要一个table（比如3x3的乘法表， return in table-like, 或者你可以改成更详尽的提示词测试），等待response，然后截图，确认能看到copilot response 的显示效果。
+
+Try to reuse existing tests. 现有framework无法覆盖真实用户操作时，可以在本地开发新的test
+framework，但不要把大型新framework放进feature commit。做好modularization，使它未来可以
+独立成为新的PR。
+
+本地E2E framework、scripts、wire、provider configs和screenshots不要删除，即使它们被ignore。
+需要commit的截图必须复制到非ignored的指定review-evidence目录，否则只在tracking中记录路径和
+验证结果。
+
+用PATH中解析到的`pwsh`（PowerShell 7+）做E2E。需要启动同一个host的子进程时，复用：
+
+```powershell
+(Get-Process -Id $PID).Path
+```
+
+不要硬编码本机PowerShell安装目录。
+
+========================
+
+## Strict Test Driven Development workflow
+
+每一个behavior change必须按以下顺序：
+
+1. 在现有framework中增加或修改最小test，建立RED；
+2. 运行focused test，确认它因为预期原因失败；
+3. 做最小GREEN implementation；
+4. 立即重跑同一个focused validation；
+5. 更新新branch的self-contained tracking note；
+6. commit产品代码、合适的现有framework tests和tracking；
+7. push dev branch；
+8. 确认remote同步后才能开始下一个RED步骤。
+
+若push失败、branch分叉或出现无法安全合并的远端提交，停止下一步，先解决同步问题。
+
+注意做好modularization并reuse existing code。若现有架构在多个位置重复定义同类功能，feature
+branch先follow existing ownership；大型架构refactoring留到独立branch。不要为了这个feature
+创建平行的Usage state/event/UI route。
+
+关于tests是否commit：现有framework能自然cover的tests应该commit；新的本地桌面E2E framework
+只保留本地，未来另开framework PR。
+
+========================
+
+## 最终产品设计
+
+### 用户看到什么
+
+the correctly rendered markdown output.
+
+========================
+
+## Feature内部数据流与ownership
+
+
+
+========================
+
+## Local evidence必须保留
+
+Local desktop orchestration、provider configs、credentials、wire captures、screenshots和custom
+mock frameworks不进入feature product commits。不要因为它们被ignore就删除。
+
+Known local artifact families包括：
+
+- `test/e2e/artifacts/*
+- etc.
+
+分享或commit任何capture前，检查并清除prompts、credentials、local paths、account identifiers、
+tokens和provider logs。
+
+========================
+
+## Review hygiene与历史guardrails
+
+Publish branch 只表达当前behavior：
+
+- 不保留force/ban superseded provider-specific behavior的tests/comments；
+- 这是为了降低review cognitive load，不是隐瞒历史；
+- 历史原因保留在dev-only handoff/tracking；
+- 未来有正式特殊处理时，把verified contract、implementation和tests一起提交；
+- 对low-confidence review comment先沿owning code path验证，不直接接受或拒绝。
+
+本PR的review经验：
+
+- to be added.
+
+Do not accidentally reintroduce：
+
+- to be added
+
+
+========================
+
+## Definition of Done for next follow-up
+
+一个follow-up step完成必须满足：
+
+- behavior符合本contract或明确记录的新decision；
+- 有focused RED/GREEN evidence；
+- relevant full tests/build通过；
+- logs/telemetry不包含Usage values；
+- UI copy变化时完成localization/accessibility；
+- local E2E evidence保留且敏感/ignored artifacts不误commit；
+- dev/publish scope正确；
+- commit已push且branch同步；
+- 本handoff更新完成，下一branch无需重新调查。
+
+
+以下是project-wide 的一些background knowledge。仅供参考，请以实际代码实现为准。
+
+=================================================
+
 # Intelligent Terminal (Windows Terminal Fork)
 
 AI-native Windows Terminal — agents (Copilot, Claude, Gemini, custom) can understand, fix, and automate terminal workflows.
