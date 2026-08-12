@@ -29,7 +29,7 @@ branch还可以包含调查、tracking和本地workflow。上一个publish branc
 ========================
 
 ## 当前follow-up：
-[2026-08-12] Step 3 - GFM table and height consistency GREEN
+[2026-08-12] Step 4 - agent pane theme contract GREEN
 
 我们的目标是在agent pane中显示markdown。
 
@@ -99,8 +99,18 @@ Step 3覆盖GFM table和布局高度：
   full pending和partial typewriter reveal的actual lines都必须等于各自height calculation。
 - Commit/push：`7d7a80d6a Keep Markdown table heights consistent`。
 
-下一条RED：为light/dark agent pane theme contract建立测试，确认Markdown不会读取普通terminal pane
-theme，也不会引入hardcoded light/dark foreground/background。
+Step 4固定agent pane light/dark theme contract：
+
+- Source check：C++ `AgentPaneContent`/`TerminalPage`拥有agent pane实际foreground/background；Rust
+  renderer不读取普通terminal profile theme，也不复制light/dark palette。
+- `tui-markdown`默认H1会设置cyan background、code会设置white-on-black；WTA Step 1的
+  `AgentMarkdownStyleSheet`已经覆盖这两项。
+- 新增`agent_markdown_styles_follow_the_agent_pane_palette`作为characterization/regression test；
+  它直接GREEN，因此本step没有额外产品behavior change。测试确认正文/heading/code/quote/meta/table
+  使用`Color::Reset`基色且无background，link仅使用agent pane ANSI cyan，完整Markdown corpus没有
+  span设置显式background。
+
+下一阶段：完成build和live agent-pane light/dark/table evidence；不再扩展Markdown parser scope。
 
 
 ========================

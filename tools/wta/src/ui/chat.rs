@@ -1744,6 +1744,46 @@ mod tests {
         assert_eq!(lines.len(), message_height(&message, 80));
     }
 
+    #[test]
+    fn agent_markdown_styles_follow_the_agent_pane_palette() {
+        let pane_relative = [
+            theme::AGENT_TEXT,
+            theme::MARKDOWN_HEADING,
+            theme::MARKDOWN_CODE,
+            theme::MARKDOWN_QUOTE,
+            theme::MARKDOWN_META,
+            theme::MARKDOWN_TABLE_HEADER,
+            theme::MARKDOWN_TABLE_BORDER,
+        ];
+
+        for style in pane_relative {
+            assert_eq!(style.fg, Some(Color::Reset));
+            assert_eq!(style.bg, None);
+        }
+        assert_eq!(theme::MARKDOWN_LINK.fg, Some(Color::Cyan));
+        assert_eq!(theme::MARKDOWN_LINK.bg, None);
+        assert!(
+            theme::MARKDOWN_CODE
+                .add_modifier
+                .contains(Modifier::REVERSED)
+        );
+
+        let lines = agent_markdown_lines(
+            concat!(
+                "# Heading\n\n",
+                "[link](https://example.test) and `code`\n\n",
+                "> quote\n\n",
+                "| H | V |\n|---|---|\n| A | B |",
+            ),
+            80,
+            theme::DOT_AGENT,
+        );
+        assert!(lines
+            .iter()
+            .flat_map(|line| &line.spans)
+            .all(|span| span.style.bg.is_none()));
+    }
+
     // ── push_prompt_prefixed_lines (regression: issue #492) ─────────────────
     //
     // Multi-line prompts (Shift+Enter) must render as multiple ratatui Lines:
