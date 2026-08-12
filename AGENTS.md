@@ -29,7 +29,7 @@ branch还可以包含调查、tracking和本地workflow。上一个publish branc
 ========================
 
 ## 当前follow-up：
-[2026-08-12] Step 1 - finalized agent message Markdown GREEN
+[2026-08-12] Step 2 - streaming agent message Markdown GREEN
 
 我们的目标是在agent pane中显示markdown。
 
@@ -63,7 +63,7 @@ Decision：使用`tui-markdown -> WTA StyleSheet -> WTA styled wrapping/prefix -
 
 ### TDD evidence
 
-Step 1只改变finalized `ChatMessage::Agent`，streaming仍保持原plain-text path，等待下一条RED：
+Step 1只改变finalized `ChatMessage::Agent`：
 
 - RED：新增`agent_message_renders_multiline_markdown_with_theme_relative_styles`，运行
   `cargo test --manifest-path tools/wta/Cargo.toml agent_message_renders_multiline_markdown_with_theme_relative_styles -- --nocapture`；
@@ -75,9 +75,21 @@ Step 1只改变finalized `ChatMessage::Agent`，streaming仍保持原plain-text 
   不读取普通terminal pane theme。
 - Dependency compliance：新增`tui-markdown 0.3.9`且关闭default features；已运行
   `Generate-WtaThirdPartyNotices.ps1`更新`Cargo.lock`、`cgmanifest.json`和`NOTICE.md`。
+- Commit/push：`27ba52552 Render finalized agent responses as Markdown`已推送到
+  `Dinah/user/DinahK-2SO/markdown-renderer`并确认同步。
 
-下一条RED：streaming pending buffer必须复用同一个renderer，partial Markdown不能panic或丢字；
-之后再分别为GFM table/窄宽度、light/dark agent pane theme contract建立RED。
+Step 2让streaming pending buffer复用同一个renderer：
+
+- RED：新增`pending_stream_renders_markdown_and_preserves_partial_syntax`；第一次修正test fixture
+  后，同一focused command失败为`left: "● # Heading"`, `right: "● Heading"`。
+- GREEN：`cargo test --manifest-path tools/wta/Cargo.toml pending_stream_renders_markdown_and_preserves_partial_syntax -- --nocapture`
+  为`1 passed, 0 failed`；chat module为`33 passed, 0 failed`。
+- Streaming contract：typewriter仍先用`reveal_chars`切出当前可见buffer，再对整个可见buffer重新
+  parse/project。未闭合的`**bo`必须保留已显示的`bo`并且不能panic；finalize仍把完整raw buffer
+  存入`ChatMessage::Agent`，不保存parser state。
+
+下一条RED：GFM table在窄宽度下不能丢行，并且actual rendered lines必须与finalized/pending height
+calculation一致；之后为light/dark agent pane theme contract建立RED。
 
 
 ========================
