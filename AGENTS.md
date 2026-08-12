@@ -111,7 +111,27 @@ Step 4固定agent pane light/dark theme contract：
   span设置显式background。
 - Commit/push：`e62a4d88a Test agent Markdown theme relativity`。
 
-下一阶段：完成build和live agent-pane light/dark/table evidence；不再扩展Markdown parser scope。
+### Build和live evidence
+
+- `cargo build --target x86_64-pc-windows-msvc --manifest-path tools/wta/Cargo.toml`成功。
+- full `bcz no_clean`被本机缺少.NET 8 targeting/reference packs阻塞：14个`NU1102`来自
+  `TerminalStress`、`WpfTerminalControl`和`WpfTerminalTestNetCore`；用户拒绝了system-wide .NET 8
+  SDK安装。改用产品范围`cd src/cascadia/CascadiaPackage && bx`成功：107 warnings、0 errors。
+- `Invoke-IntelligentTerminalDebugDeployment.ps1`成功部署
+  `IntelligentTerminal_0.8.0.2_x64__rd9vj3e6a2mbr` loose Debug layout。
+- 现有`Feature.AgentPaneInteraction.Tests.ps1`为13 passed、1 failed：window/pane toggle、stash、input、
+  streaming和真实Copilot chat通过；唯一失败是`/model` popup的PowerShell capture mojibake导致Unicode
+  border regex不匹配，与Markdown renderer无关。
+- Live Markdown验证固定active tab对应的helper，避免多helper harness选错pane。真实Copilot response中的
+  response-only products `49/56/63/64/72/81`与bold result可见，raw heading/bold/table markers均不可见。
+- Dark evidence目视确认3x3 grid和bold result完整、无重叠。独立light evidence保持普通shell深色，
+  只把hidden Agent Pane profile覆盖为`One Half Light`；agent surface变浅，heading/table/bold都可读，
+  证明`Color::Reset`跟随agent pane自己的scheme而非普通terminal/app theme。
+- Local screenshots保留在ignored `test/e2e/artifacts/markdown-renderer/`，未加入feature commit；其中包含
+  local paths，分享或复制到review evidence前必须清理。
+
+下一阶段：不再扩展Markdown parser scope；准备publish branch/PR时只带产品代码、tests和第三方notice，
+不要带本handoff或本地E2E artifacts。
 
 
 ========================
