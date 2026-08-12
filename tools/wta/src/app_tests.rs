@@ -48,7 +48,7 @@ fn passed_for_custom_agent_falls_back_when_no_custom_suffix() {
 // Helper to create an App for testing (avoids needing real channels for simple state tests).
 // `pub(super)` so the sibling `slash_command_tests` module (see the
 // `#[path]` mod in app.rs) can reuse it instead of duplicating App::new.
-pub(crate) fn test_app() -> App {
+pub(super) fn test_app() -> App {
     let (prompt_tx, _prompt_rx) = tokio::sync::mpsc::unbounded_channel();
     let (recommendation_tx, _recommendation_rx) = tokio::sync::mpsc::unbounded_channel();
     let (permission_tx, _permission_rx) = tokio::sync::mpsc::unbounded_channel();

@@ -54,8 +54,6 @@ fn tool_output_lines(output: &ToolCallOutput) -> Vec<String> {
 pub fn estimated_block_height(app: &App, area_width: u16) -> u16 {
     let tab = app.current_tab();
     let wrap_width = (area_width as usize).max(1);
-    // Fetch once for the pending-height calculation.
-    let pending_text = pending_revealed_text(tab);
 
     let messages: usize = tab
         .messages
@@ -67,10 +65,7 @@ pub fn estimated_block_height(app: &App, area_width: u16) -> u16 {
         .iter()
         .map(|t| turn_height(t, wrap_width))
         .sum();
-    let pending = pending_text
-        .as_deref()
-        .map(|text| agent_markdown_lines(text, wrap_width, theme::DOT_AGENT).len())
-        .unwrap_or(0);
+    let pending = pending_height(tab, wrap_width);
     // Welcome overlay sits above all chat content when `show_welcome_hint`
     // is on; must be counted here or else any pushed message will scroll
     // it off the top of the visible chat block. Always a single row —
@@ -679,6 +674,13 @@ fn pending_revealed_text(tab: &crate::app::TabSession) -> Option<Cow<'_, str>> {
     } else {
         Some(Cow::Owned(text.chars().take(shown).collect()))
     }
+}
+
+fn pending_height(tab: &crate::app::TabSession, wrap_width: usize) -> usize {
+    pending_revealed_text(tab)
+        .as_deref()
+        .map(|text| agent_markdown_lines(text, wrap_width, theme::DOT_AGENT).len())
+        .unwrap_or(0)
 }
 
 fn build_pending_stream_lines<'a>(app: &App, wrap_width: usize) -> Vec<Line<'a>> {
@@ -1528,15 +1530,13 @@ mod tests {
         }
         assert_eq!(finalized.len(), message_height(&message, width as usize));
 
-        let mut app = crate::app::tests::test_app();
-        app.show_welcome_hint = false;
-        *app.current_tab_mut() = streaming_tab(table, table.chars().count());
-        let pending = build_pending_stream_lines(&app, width as usize);
-        assert_eq!(pending.len(), estimated_block_height(&app, width) as usize);
+        let mut pending_tab = streaming_tab(table, table.chars().count());
+        let pending = build_pending_stream_lines_for_tab(&pending_tab, width as usize);
+        assert_eq!(pending.len(), pending_height(&pending_tab, width as usize));
 
-        app.current_tab_mut().reveal_chars = table.find("| C").expect("final table row");
-        let partial = build_pending_stream_lines(&app, width as usize);
-        assert_eq!(partial.len(), estimated_block_height(&app, width) as usize);
+        pending_tab.reveal_chars = table.find("| C").expect("final table row");
+        let partial = build_pending_stream_lines_for_tab(&pending_tab, width as usize);
+        assert_eq!(partial.len(), pending_height(&pending_tab, width as usize));
     }
 
     #[test]
