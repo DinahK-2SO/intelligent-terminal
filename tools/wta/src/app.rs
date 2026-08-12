@@ -5726,4 +5726,4 @@ mod autofix_tests;
 
 #[cfg(test)]
 #[path = "app_tests.rs"]
-mod tests;
+pub(crate) mod tests;

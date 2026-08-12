@@ -55,7 +55,7 @@ pub fn estimated_block_height(app: &App, area_width: u16) -> u16 {
     let tab = app.current_tab();
     let wrap_width = (area_width as usize).max(1);
     // Fetch once for the pending-height calculation.
-    let pending_text = pending_render_text(tab);
+    let pending_text = pending_revealed_text(tab);
 
     let messages: usize = tab
         .messages
@@ -69,10 +69,7 @@ pub fn estimated_block_height(app: &App, area_width: u16) -> u16 {
         .sum();
     let pending = pending_text
         .as_deref()
-        .map(|text| {
-            let body_width = wrap_width.saturating_sub(2).max(1);
-            dot_wrap_count(text, body_width)
-        })
+        .map(|text| agent_markdown_lines(text, wrap_width, theme::DOT_AGENT).len())
         .unwrap_or(0);
     // Welcome overlay sits above all chat content when `show_welcome_hint`
     // is on; must be counted here or else any pushed message will scroll
@@ -673,6 +670,17 @@ fn pending_render_text(tab: &crate::app::TabSession) -> Option<Cow<'_, str>> {
     user_visible_stream_text(tab.turn.buffer()?)
 }
 
+fn pending_revealed_text(tab: &crate::app::TabSession) -> Option<Cow<'_, str>> {
+    let text = pending_render_text(tab)?;
+    let total = text.chars().count();
+    let shown = tab.reveal_chars.min(total);
+    if shown >= total {
+        Some(text)
+    } else {
+        Some(Cow::Owned(text.chars().take(shown).collect()))
+    }
+}
+
 fn build_pending_stream_lines<'a>(app: &App, wrap_width: usize) -> Vec<Line<'a>> {
     build_pending_stream_lines_for_tab(app.current_tab(), wrap_width)
 }
@@ -681,7 +689,7 @@ fn build_pending_stream_lines_for_tab<'a>(
     tab: &crate::app::TabSession,
     wrap_width: usize,
 ) -> Vec<Line<'a>> {
-    let Some(text) = pending_render_text(tab) else {
+    let Some(revealed) = pending_revealed_text(tab) else {
         return Vec::new();
     };
     // Typewriter smoothing: only reveal the first `reveal_chars` characters of
@@ -690,15 +698,6 @@ fn build_pending_stream_lines_for_tab<'a>(
     // upstream ~90-char-every-~100ms bursts into a smooth character flow. The
     // full text is always in `turn.buffer()`, and finalize commits it in full,
     // so this never drops or delays the final content.
-    let revealed: Cow<'_, str> = {
-        let total = text.chars().count();
-        let shown = tab.reveal_chars.min(total);
-        if shown >= total {
-            text
-        } else {
-            Cow::Owned(text.chars().take(shown).collect())
-        }
-    };
     agent_markdown_lines(&revealed, wrap_width, theme::DOT_AGENT)
 }
 
@@ -1504,6 +1503,40 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         assert!(partial_text.contains("bo"));
+    }
+
+    #[test]
+    fn narrow_table_preserves_rows_and_matches_finalized_and_pending_heights() {
+        let table = concat!(
+            "| Key | One | Two |\n",
+            "|:----|----:|----:|\n",
+            "| A | A1 | A2 |\n",
+            "| B | B1 | B2 |\n",
+            "| C | C1 | C2 |",
+        );
+        let width = 24_u16;
+        let message = ChatMessage::Agent(table.into());
+        let finalized = build_message_lines(&message, false, false, None, 0, width as usize);
+        let finalized_text = finalized
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        for row in ["│ A", "│ B", "│ C"] {
+            assert!(finalized_text.contains(row), "missing table row {row}");
+        }
+        assert_eq!(finalized.len(), message_height(&message, width as usize));
+
+        let mut app = crate::app::tests::test_app();
+        app.show_welcome_hint = false;
+        *app.current_tab_mut() = streaming_tab(table, table.chars().count());
+        let pending = build_pending_stream_lines(&app, width as usize);
+        assert_eq!(pending.len(), estimated_block_height(&app, width) as usize);
+
+        app.current_tab_mut().reveal_chars = table.find("| C").expect("final table row");
+        let partial = build_pending_stream_lines(&app, width as usize);
+        assert_eq!(partial.len(), estimated_block_height(&app, width) as usize);
     }
 
     #[test]

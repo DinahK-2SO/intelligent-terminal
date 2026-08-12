@@ -29,7 +29,7 @@ branch还可以包含调查、tracking和本地workflow。上一个publish branc
 ========================
 
 ## 当前follow-up：
-[2026-08-12] Step 2 - streaming agent message Markdown GREEN
+[2026-08-12] Step 3 - GFM table and height consistency GREEN
 
 我们的目标是在agent pane中显示markdown。
 
@@ -89,8 +89,17 @@ Step 2让streaming pending buffer复用同一个renderer：
   存入`ChatMessage::Agent`，不保存parser state。
 - Commit/push：`90b2f992c Render streaming agent responses as Markdown`。
 
-下一条RED：GFM table在窄宽度下不能丢行，并且actual rendered lines必须与finalized/pending height
-calculation一致；之后为light/dark agent pane theme contract建立RED。
+Step 3覆盖GFM table和布局高度：
+
+- RED：新增`narrow_table_preserves_rows_and_matches_finalized_and_pending_heights`；修正test width
+  类型后，focused command失败为actual pending `14`行、estimated `10`行。
+- GREEN：pending renderer和height estimator共享`pending_revealed_text`，并都通过
+  `agent_markdown_lines`投影；同一focused command为`1 passed, 0 failed`。
+- Table contract：24-column窄viewport中的3-column grid保留A/B/C三条box-grid data row；finalized、
+  full pending和partial typewriter reveal的actual lines都必须等于各自height calculation。
+
+下一条RED：为light/dark agent pane theme contract建立测试，确认Markdown不会读取普通terminal pane
+theme，也不会引入hardcoded light/dark foreground/background。
 
 
 ========================
