@@ -129,6 +129,11 @@ Step 4固定agent pane light/dark theme contract：
   证明`Color::Reset`跟随agent pane自己的scheme而非普通terminal/app theme。
 - Local screenshots保留在ignored `test/e2e/artifacts/markdown-renderer/`，未加入feature commit；其中包含
   local paths，分享或复制到review evidence前必须清理。
+- Publish branch已从`0c683a00e`创建并推送到
+  `origin/user/DinahK-2SO/markdown-renderer-publish`；单一review commit为
+  `31b96784b Render agent responses as Markdown`。publish只包含`NOTICE.md`、Cargo metadata、
+  `theme.rs`和`ui/chat.rs`，不含本handoff或local artifacts；publish worktree full WTA tests为
+  `1455 passed, 0 failed`。
 
 下一阶段：不再扩展Markdown parser scope；准备publish branch/PR时只带产品代码、tests和第三方notice，
 不要带本handoff或本地E2E artifacts。
