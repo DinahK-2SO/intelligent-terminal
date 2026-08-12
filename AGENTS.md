@@ -29,7 +29,7 @@ branch还可以包含调查、tracking和本地workflow。上一个publish branc
 ========================
 
 ## 当前follow-up：
-[2026-08-12] init
+[2026-08-12] Step 1 - finalized agent message Markdown GREEN
 
 我们的目标是在agent pane中显示markdown。
 
@@ -41,6 +41,43 @@ branch还可以包含调查、tracking和本地workflow。上一个publish branc
 1. 记得要测试multiple lines的情况。
 2. 记得要测试不同的主题。
 3. 注意agent page有自己专属的主题，独立于terminal
+
+### Implementation调查结论
+
+调查过以下路径：
+
+- OpenCode TUI使用OpenTUI的`<markdown streaming>` widget，table使用grid style；Markdown正文、
+  heading、link、code、quote、emphasis、strong、list、image和code block各自映射到TUI theme
+  token。它在streaming期间用当前完整buffer反复投影，而不是逐chunk保存parser state。
+- `tui-markdown 0.3.9`直接把CommonMark/GFM转换成Ratatui `Text`，支持heading、inline
+  formatting、list、quote、link、code block、table和wide-character table alignment，并提供
+  `StyleSheet` adapter。关闭默认`highlight-code`后不会绑定固定dark syntax theme。
+- `termimad 0.35.1`有成熟的width-aware wrapping、table balancing和skin，但自带另一套
+  Crossterm rendering/layout ownership，不适合嵌入当前Ratatui chat renderer。
+- 直接使用`pulldown-cmark`控制最强，但table、nested block、styled wrapping和Ratatui转换都要
+  自己维护；现阶段没有足够收益支持这份重复实现。
+
+Decision：使用`tui-markdown -> WTA StyleSheet -> WTA styled wrapping/prefix -> Ratatui Line`
+的数据流。parser和agent pane theme adapter分离；Markdown renderer只归
+`tools/wta/src/ui/chat.rs`所有，C++ `TerminalControl`不解析Markdown。
+
+### TDD evidence
+
+Step 1只改变finalized `ChatMessage::Agent`，streaming仍保持原plain-text path，等待下一条RED：
+
+- RED：新增`agent_message_renders_multiline_markdown_with_theme_relative_styles`，运行
+  `cargo test --manifest-path tools/wta/Cargo.toml agent_message_renders_multiline_markdown_with_theme_relative_styles -- --nocapture`；
+  失败为`left: "● # Heading"`, `right: "● Heading"`，证明旧路径没有解析Markdown。
+- GREEN：同一命令`1 passed, 0 failed`；`cargo test --manifest-path tools/wta/Cargo.toml ui::chat::tests -- --nocapture`
+  为`32 passed, 0 failed`。
+- Theme contract：正文和heading以`Color::Reset`为基色，跟随agent pane自己的color scheme；
+  code使用reverse，link使用pane ANSI cyan + underline，quote/meta/table border只叠加modifier，
+  不读取普通terminal pane theme。
+- Dependency compliance：新增`tui-markdown 0.3.9`且关闭default features；已运行
+  `Generate-WtaThirdPartyNotices.ps1`更新`Cargo.lock`、`cgmanifest.json`和`NOTICE.md`。
+
+下一条RED：streaming pending buffer必须复用同一个renderer，partial Markdown不能panic或丢字；
+之后再分别为GFM table/窄宽度、light/dark agent pane theme contract建立RED。
 
 
 ========================
@@ -109,6 +146,20 @@ the correctly rendered markdown output.
 
 ## Feature内部数据流与ownership
 
+```text
+ACP AgentMessageChunk
+  -> app_turn.rs turn buffer
+  -> ui/chat.rs pending_render_text / ChatMessage::Agent
+  -> tui-markdown parser
+  -> AgentMarkdownStyleSheet (theme.rs semantic styles)
+  -> width-aware styled lines + agent dot/hanging indent
+  -> Ratatui Paragraph
+  -> agent pane TermControl using its own color scheme
+```
+
+`ui/chat.rs`必须让实际rendered lines和height calculation共享同一个Markdown转换结果，避免
+multiple lines/table/wrapping造成chat area undercount。ACP/master、ChatMessage storage和C++ pane
+不保存parsed Markdown AST，也不做provider-specific Markdown transformation。
 
 
 ========================
@@ -140,11 +191,17 @@ Publish branch 只表达当前behavior：
 
 本PR的review经验：
 
-- to be added.
+- CommonMark single newline是soft break，不等于paragraph break；multiple-paragraph test fixture
+  必须使用空行，不能把错误expectation固化成renderer contract。
+- 不要对本feature运行crate-wide `cargo fmt --manifest-path`后提交全WTA formatting churn；只format
+  touched Rust files并检查git status。
 
 Do not accidentally reintroduce：
 
-- to be added
+- finalized message和streaming message使用不同Markdown semantics；下一step完成后两者必须调用
+  同一个renderer。
+- 使用固定dark syntax theme或hardcoded white foreground，导致light agent pane不可读。
+- height estimator继续数raw Markdown characters而actual renderer已经隐藏syntax marker。
 
 
 ========================
