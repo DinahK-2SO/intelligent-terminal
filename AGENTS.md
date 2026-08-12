@@ -97,6 +97,7 @@ Step 3覆盖GFM table和布局高度：
   `agent_markdown_lines`投影；同一focused command为`1 passed, 0 failed`。
 - Table contract：24-column窄viewport中的3-column grid保留A/B/C三条box-grid data row；finalized、
   full pending和partial typewriter reveal的actual lines都必须等于各自height calculation。
+- Commit/push：`7d7a80d6a Keep Markdown table heights consistent`。
 
 下一条RED：为light/dark agent pane theme contract建立测试，确认Markdown不会读取普通terminal pane
 theme，也不会引入hardcoded light/dark foreground/background。
