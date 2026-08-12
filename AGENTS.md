@@ -87,6 +87,7 @@ Step 2让streaming pending buffer复用同一个renderer：
 - Streaming contract：typewriter仍先用`reveal_chars`切出当前可见buffer，再对整个可见buffer重新
   parse/project。未闭合的`**bo`必须保留已显示的`bo`并且不能panic；finalize仍把完整raw buffer
   存入`ChatMessage::Agent`，不保存parser state。
+- Commit/push：`90b2f992c Render streaming agent responses as Markdown`。
 
 下一条RED：GFM table在窄宽度下不能丢行，并且actual rendered lines必须与finalized/pending height
 calculation一致；之后为light/dark agent pane theme contract建立RED。
