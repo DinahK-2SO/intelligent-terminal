@@ -3,10 +3,10 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::backend::CrosstermBackend;
 use ratatui::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tokio::sync::mpsc;
 
 struct DeferredAcpParams {
@@ -940,30 +940,12 @@ pub struct App {
     /// Cached for creating DeferredAcpParams after auth-error recovery.
     shell_mgr: Arc<crate::shell::ShellManager>,
     /// Global "Yolo mode" — set once at startup from `--auto-approve-tools`
-    /// (itself driven by the `agentPane.yoloMode` setting, gated by the
-    /// `AllowYoloMode` GPO policy on the C++ side). When true, every ACP
-    /// permission request on every session in this process is auto-approved
-    /// — see `WtaClient::request_permission`. Never toggled at runtime; the
-    /// per-session `/yolo` override lives in `yolo_sessions` instead.
-    global_auto_approve_tools: bool,
-    /// Set of ACP `session_id`s that have opted into auto-approve via the
-    /// `/yolo` slash command for THIS conversation only. Shared with
-    /// `ClientState` (the ACP client task) so `WtaClient::request_permission`
-    /// can consult it without going through the `AppEvent` channel. Entries
-    /// are removed when their session ends or is replaced (`/new`, a fresh
-    /// `session/new`/`session/load`) so a reused or stale `session_id` can
-    /// never inherit a prior session's auto-approve state.
-    yolo_sessions: Arc<Mutex<HashSet<String>>>,
+    /// Helper-owned YOLO policy shared with the ACP client. The global
+    /// default is hot-updatable; explicit per-session values override it.
+    yolo_state: crate::app_contracts::SharedYoloState,
     /// Native permission-mode changes awaiting an ACP acknowledgement.
     /// The tab id keeps completion messages scoped if focus changes.
     pending_yolo_changes: HashMap<String, (bool, String)>,
-    /// True when org policy (`AllowYoloMode` GPO, surfaced via
-    /// `--yolo-command-blocked`) forbids the per-session `/yolo` override —
-    /// independent of `global_auto_approve_tools`, which the C++ side never
-    /// sets true when policy blocks it either. `/yolo` checks this and
-    /// refuses with an explanatory system message instead of silently
-    /// enabling unattended tool-call approval in a GPO-managed environment.
-    yolo_command_blocked: bool,
     // Slash-command UI state. The /help overlay is global — it covers
     // the chat area regardless of which tab is active. Per-tab popup
     // state (the command-completion candidates as the user types `/he…`)
@@ -1227,9 +1209,7 @@ impl App {
         wt_connected: bool,
         autofix_enabled: bool,
         shell_mgr: Arc<crate::shell::ShellManager>,
-        global_auto_approve_tools: bool,
-        yolo_sessions: Arc<Mutex<HashSet<String>>>,
-        yolo_command_blocked: bool,
+        yolo_state: crate::app_contracts::SharedYoloState,
     ) -> Self {
         let mut tab_sessions = HashMap::new();
         tab_sessions.insert(DEFAULT_TAB_ID.to_string(), TabSession::default());
@@ -1324,9 +1304,7 @@ impl App {
                 crate::agent_tools::action_proposal::channel::ProposalChannelManager::new(),
             ),
             shell_mgr,
-            global_auto_approve_tools,
-            yolo_sessions,
-            yolo_command_blocked,
+            yolo_state,
         }
     }
 
@@ -1479,8 +1457,7 @@ impl App {
                 let agent_id_opt = agent_cmd_opt
                     .as_deref()
                     .map(|c| crate::agent_registry::resolve_agent_id_from_cmd(c).to_string());
-                let global_auto_approve_tools = self.global_auto_approve_tools;
-                let yolo_sessions = Arc::clone(&self.yolo_sessions);
+                let yolo_state = Arc::clone(&self.yolo_state);
 
                 if let Some(pipe_name) = pipe_name_opt {
                     // Pipe-mode reconnect (helper after FRE login).
@@ -1529,8 +1506,7 @@ impl App {
                             shell_mgr,
                             wt_connected,
                             post_login_auth, // only true on genuine LoginComplete reconnects
-                            global_auto_approve_tools,
-                            yolo_sessions,
+                            yolo_state,
                             proposal_channels,
                         )
                         .await
@@ -3833,6 +3809,9 @@ impl App {
             AppEvent::UsageCleared { .. } => "usage_cleared",
             AppEvent::ModelConfigUpdated { .. } => "model_config_updated",
             AppEvent::YoloModeChangeCompleted { .. } => "yolo_mode_change_completed",
+            AppEvent::RuntimeYoloReconcileCompleted { .. } => {
+                "runtime_yolo_reconcile_completed"
+            }
             AppEvent::TabError { .. } => "tab_error",
             AppEvent::TabSystemMessage { .. } => "tab_system_message",
             AppEvent::AgentPasteTextReady { .. } => "agent_paste_text_ready",
@@ -4737,7 +4716,7 @@ impl App {
         // means a fresh permission-prompt policy, requiring `/yolo` again if
         // the user wants auto-approve for the new conversation.
         if let Some(old_sid) = old_sid {
-            self.yolo_sessions.lock().unwrap().remove(&old_sid);
+            self.yolo_state.lock().unwrap().remove_session(&old_sid);
             self.pending_yolo_changes.remove(&old_sid);
         }
     }
@@ -4913,7 +4892,7 @@ impl App {
     /// blocks auto-approve, independent of whatever the global "Auto-approve
     /// tool calls" setting happens to be.
     fn cmd_yolo(&mut self, value: String) {
-        if self.yolo_command_blocked {
+        if self.yolo_state.lock().unwrap().policy_blocked() {
             let tab = self.current_tab_mut();
             tab.messages.push(ChatMessage::System(
                 t!("system.yolo_blocked_by_policy").into_owned(),
@@ -4967,14 +4946,68 @@ impl App {
         }
         // If there's no session yet (pane still connecting), `/yolo` is a
         // no-op beyond nothing above running: this tab's session_id isn't
-        // known yet, so there's nothing to insert into `yolo_sessions` and
-        // no session to retroactively apply the native allow-all config to.
-        // The global `--auto-approve-tools` flag (set at helper spawn) is
-        // the only channel that covers a session created after this point;
+        // known yet, so there is no session override or native allow-all
+        // config to update. The current global default is the only state that
+        // covers a session created after this point;
         // there is currently no queued/pending state that makes a `/yolo`
         // typed before the session exists retroactively apply once it does.
         // Only a successfully updated live session gets the confirmation
         // above; don't claim success when there was no session to update.
+    }
+
+    pub(crate) fn apply_runtime_yolo_config(
+        &mut self,
+        global_default: Option<bool>,
+        policy_blocked: Option<bool>,
+    ) {
+        if global_default.is_none() && policy_blocked.is_none() {
+            return;
+        }
+
+        let (current_global, current_blocked) = {
+            let state = self.yolo_state.lock().unwrap();
+            (state.global_default(), state.policy_blocked())
+        };
+        let global_default = global_default.unwrap_or(current_global);
+        let policy_blocked = policy_blocked.unwrap_or(current_blocked);
+        if global_default == current_global && policy_blocked == current_blocked {
+            return;
+        }
+
+        {
+            let mut state = self.yolo_state.lock().unwrap();
+            state.update_runtime(global_default, policy_blocked);
+        }
+        if policy_blocked {
+            self.pending_yolo_changes.clear();
+        }
+
+        let sessions = {
+            let state = self.yolo_state.lock().unwrap();
+            self.session_to_tab
+                .keys()
+                .map(|session_id| {
+                    (
+                        agent_client_protocol::schema::v1::SessionId::new(session_id.clone()),
+                        state.effective(session_id),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        let fail_closed = policy_blocked || sessions.iter().any(|(_, enabled)| !enabled);
+        if self
+            .master_request_tx
+            .send(
+                crate::protocol::acp::client::MasterExtRequest::ReconcileSessionAllowAll {
+                    sessions,
+                    fail_closed,
+                },
+            )
+            .is_err()
+            && fail_closed
+        {
+            let _ = self.restart_tx.send(RestartRequest { agent_cmd: None });
+        }
     }
 
     fn complete_yolo_change(
@@ -5000,25 +5033,16 @@ impl App {
 
         match result {
             Ok(()) => {
-                let toggled_from_global = enabled != self.global_auto_approve_tools;
-                let mut sessions = self.yolo_sessions.lock().unwrap();
-                if toggled_from_global {
-                    sessions.insert(session_id);
-                } else {
-                    sessions.remove(&session_id);
-                }
-                drop(sessions);
+                self.yolo_state
+                    .lock()
+                    .unwrap()
+                    .set_session_override(session_id, enabled);
 
                 let marker = if enabled { "●" } else { "○" };
                 let state = if enabled { "on" } else { "off" };
                 self.tab_mut(&tab_id)
                     .messages
-                    .push(ChatMessage::Status(format!(
-                        "{} /yolo {} — {}",
-                        marker,
-                        state,
-                        t!("commands.yolo.summary")
-                    )));
+                    .push(ChatMessage::Status(format!("{} /yolo {}", marker, state)));
             }
             Err(error) => {
                 let state = if enabled { "on" } else { "off" };
@@ -5066,7 +5090,7 @@ impl App {
         // Every session is about to die with the agent stack; drop any
         // `/yolo` overrides so a reused session_id (unlikely, but not
         // impossible) can't inherit stale auto-approve state.
-        self.yolo_sessions.lock().unwrap().clear();
+        self.yolo_state.lock().unwrap().clear_sessions();
         self.pending_yolo_changes.clear();
         let _ = self.restart_tx.send(RestartRequest { agent_cmd: None });
         self.publish_agent_status();

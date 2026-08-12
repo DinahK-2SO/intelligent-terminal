@@ -262,6 +262,11 @@ impl App {
                 for replaced_session_id in replaced_session_ids {
                     self.session_to_tab.remove(&replaced_session_id);
                     self.session_model_configs.remove(&replaced_session_id);
+                    self.yolo_state
+                        .lock()
+                        .unwrap()
+                        .remove_session(&replaced_session_id);
+                    self.pending_yolo_changes.remove(&replaced_session_id);
                 }
                 self.session_to_tab
                     .insert(session_id.clone(), tab_id.clone());
@@ -361,6 +366,23 @@ impl App {
                 result,
             } => {
                 self.complete_yolo_change(session_id, enabled, result);
+            }
+            AppEvent::RuntimeYoloReconcileCompleted {
+                fail_closed,
+                result,
+            } => {
+                if fail_closed && result.is_err() {
+                    tracing::error!(
+                        target: "yolo",
+                        error = %result.unwrap_err(),
+                        "cannot disable native allow-all; restarting agent stack fail-closed"
+                    );
+                    let _ = self
+                        .restart_tx
+                        .send(crate::protocol::acp::client::RestartRequest {
+                            agent_cmd: None,
+                        });
+                }
             }
             AppEvent::TabError { tab_id, message } => {
                 // Scoped error for a specific tab. Bypasses the global
@@ -1265,6 +1287,11 @@ impl App {
                         );
                         self.autofix_enabled = enabled;
                     }
+
+                    self.apply_runtime_yolo_config(
+                        params.get("yolo_enabled").and_then(|v| v.as_bool()),
+                        params.get("yolo_command_blocked").and_then(|v| v.as_bool()),
+                    );
 
                     // delegate_agent + delegate_model travel together so the
                     // delegate runtime table can be rebuilt in one shot.

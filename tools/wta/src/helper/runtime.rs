@@ -274,12 +274,15 @@ async fn run_acp_app(
         config.agent_wsl_distro.as_deref(),
     );
     let agent_source_cwd = config.agent_source_cwd.clone();
-    // Per-session `/yolo` override set — shared between `App` (mutates via
-    // the `/yolo` command) and every `WtaClient` connection's `ClientState`
-    // (reads in `request_permission`). Constructed once per helper so it
-    // survives reconnects; see `App::yolo_sessions` for the full explanation.
-    let yolo_sessions: Arc<std::sync::Mutex<std::collections::HashSet<String>>> =
-        Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()));
+    // One helper-owned policy state is shared by the App reducer and every
+    // ACP client connection so settings hot reloads and `/yolo` take effect
+    // without process-global state or a helper restart.
+    let yolo_state = Arc::new(std::sync::Mutex::new(
+        crate::app_contracts::YoloState::new(
+            config.auto_approve_tools,
+            config.yolo_command_blocked,
+        ),
+    ));
 
     let local_set = tokio::task::LocalSet::new();
     local_set
@@ -702,8 +705,7 @@ async fn run_acp_app(
                 let source_cwd = agent_source_cwd.clone();
                 let owner_tab = config.owner_tab_id.clone();
                 let initial_load_sid = config.initial_load_session_id.clone();
-                let global_auto_approve_tools = config.auto_approve_tools;
-                let yolo_sessions_for_pipe = Arc::clone(&yolo_sessions);
+                let yolo_state_for_pipe = Arc::clone(&yolo_state);
                 let proposal_channels_for_pipe = Arc::clone(&proposal_channels);
                 tokio::task::spawn_local(async move {
                     if let Err(e) = protocol::acp::client::run_acp_client_over_pipe(
@@ -728,8 +730,7 @@ async fn run_acp_app(
                         shell_mgr_for_pipe,
                         wt_connected,
                         false, // post_login_reconnect: first connection, no authenticate needed
-                        global_auto_approve_tools,
-                        yolo_sessions_for_pipe,
+                        yolo_state_for_pipe,
                         proposal_channels_for_pipe,
                     )
                     .await
@@ -785,7 +786,7 @@ async fn run_acp_app(
             ));
 
             let autofix_enabled = !config.no_autofix;
-            let mut app_state = app::App::new(prompt_tx, recommendation_tx, permission_tx, cancel_tx, new_session_tx, load_session_tx, drop_session_tx, rename_session_tx, restart_tx, master_ext_tx, debug_capture_enabled, wt_connected, autofix_enabled, Arc::clone(&shell_mgr), config.auto_approve_tools, Arc::clone(&yolo_sessions), config.yolo_command_blocked);
+            let mut app_state = app::App::new(prompt_tx, recommendation_tx, permission_tx, cancel_tx, new_session_tx, load_session_tx, drop_session_tx, rename_session_tx, restart_tx, master_ext_tx, debug_capture_enabled, wt_connected, autofix_enabled, Arc::clone(&shell_mgr), Arc::clone(&yolo_state));
             app_state.set_proposal_channels(Arc::clone(&proposal_channels));
             app_state.set_allowed_agent_ids(config.allowed_agent_ids.clone());
             // Seed the hot-updatable runtime agent config: the shared

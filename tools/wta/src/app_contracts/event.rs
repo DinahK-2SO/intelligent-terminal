@@ -47,6 +47,10 @@ pub enum AppEvent {
         enabled: bool,
         result: Result<(), String>,
     },
+    RuntimeYoloReconcileCompleted {
+        fail_closed: bool,
+        result: Result<(), String>,
+    },
     TabError {
         tab_id: String,
         message: String,

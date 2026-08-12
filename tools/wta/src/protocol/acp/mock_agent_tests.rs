@@ -327,8 +327,12 @@ fn connect_with(
         event_tx,
         shell_mgr: Arc::new(ShellManager::new()),
         prompt_timing: Arc::new(PromptTimingState::default()),
-        global_auto_approve_tools: false,
-        yolo_sessions: Arc::new(Mutex::new(HashSet::new())),
+        yolo_state: Arc::new(Mutex::new(crate::app_contracts::YoloState::new(
+            false, false,
+        ))),
+        permission_select: Arc::new(
+            crate::protocol::acp::permission_select::PermissionSelectState::new(),
+        ),
         provider_probe_capture: ProviderProbeCapture::default(),
         standard_usage_sessions: Mutex::new(HashSet::new()),
         proposal_channels: Arc::new(
@@ -676,8 +680,12 @@ fn connect_for_dispatch(behavior: MockBehavior) -> DispatchHarness {
         event_tx: event_tx.clone(),
         shell_mgr: shell_mgr.clone(),
         prompt_timing: prompt_timing.clone(),
-        global_auto_approve_tools: false,
-        yolo_sessions: Arc::new(Mutex::new(HashSet::new())),
+        yolo_state: Arc::new(Mutex::new(crate::app_contracts::YoloState::new(
+            false, false,
+        ))),
+        permission_select: Arc::new(
+            crate::protocol::acp::permission_select::PermissionSelectState::new(),
+        ),
         provider_probe_capture: ProviderProbeCapture::default(),
         standard_usage_sessions: Mutex::new(HashSet::new()),
         proposal_channels: Arc::clone(&proposal_channels),
@@ -1344,6 +1352,7 @@ async fn dispatch_new_session_creates_binds_and_emits_attached() {
                 &memo,
                 &cancel_signals,
                 &h.event_tx,
+                Arc::clone(&h.client.state),
                 false,
                 false,
                 "Test",
@@ -1394,6 +1403,7 @@ async fn dispatch_new_session_failure_emits_agent_error_and_leaves_unbound() {
                 &memo,
                 &cancel_signals,
                 &h.event_tx,
+                Arc::clone(&h.client.state),
                 false,
                 false,
                 "Test",
@@ -1453,6 +1463,7 @@ async fn dispatch_new_session_replaces_old_and_fires_its_cancel() {
                 &memo,
                 &cancel_signals,
                 &h.event_tx,
+                Arc::clone(&h.client.state),
                 false,
                 false,
                 "Test",
@@ -1505,6 +1516,7 @@ async fn dispatch_load_session_binds_and_emits_attached() {
                 &tab_to_session,
                 &cancel_signals,
                 &h.event_tx,
+                Arc::clone(&h.client.state),
                 false,
                 false,
                 std::time::Duration::from_secs(5),
@@ -1555,6 +1567,7 @@ async fn dispatch_load_session_failure_inline_emits_tab_error() {
                 &tab_to_session,
                 &cancel_signals,
                 &h.event_tx,
+                Arc::clone(&h.client.state),
                 false,
                 false,
                 std::time::Duration::from_secs(5),
@@ -1611,6 +1624,7 @@ async fn dispatch_load_session_failure_handler_restores_prior_binding() {
                 &tab_to_session,
                 &cancel_signals,
                 &h.event_tx,
+                Arc::clone(&h.client.state),
                 false,
                 true,
                 std::time::Duration::from_secs(5),
@@ -1662,6 +1676,7 @@ async fn dispatch_load_session_timeout_emits_tab_error() {
                 &tab_to_session,
                 &cancel_signals,
                 &h.event_tx,
+                Arc::clone(&h.client.state),
                 false,
                 false,
                 std::time::Duration::from_millis(50),
@@ -1708,6 +1723,7 @@ async fn dispatch_master_ext_sessions_list_loads_snapshot() {
                 &h.conn,
                 &h.event_tx,
                 &tab_to_session,
+                Arc::clone(&h.client.state),
             );
 
             match tokio::time::timeout(std::time::Duration::from_secs(5), event_rx.recv()).await {
@@ -1745,6 +1761,7 @@ async fn dispatch_master_ext_session_focus_completes() {
                 &h.conn,
                 &h.event_tx,
                 &tab_to_session,
+                Arc::clone(&h.client.state),
             );
 
             match tokio::time::timeout(std::time::Duration::from_secs(5), event_rx.recv()).await {
@@ -1778,18 +1795,18 @@ fn bare_client_with_yolo(
     yolo_session_ids: &[&str],
 ) -> (WtaClient, mpsc::UnboundedReceiver<AppEvent>) {
     let (event_tx, event_rx) = mpsc::unbounded_channel();
-    let yolo_sessions = Arc::new(Mutex::new(
-        yolo_session_ids
-            .iter()
-            .map(|s| s.to_string())
-            .collect::<HashSet<_>>(),
-    ));
+    let mut yolo = crate::app_contracts::YoloState::new(global, false);
+    for session_id in yolo_session_ids {
+        yolo.set_session_override((*session_id).to_string(), !global);
+    }
     let state = Arc::new(ClientState {
         event_tx,
         shell_mgr: Arc::new(ShellManager::new()),
         prompt_timing: Arc::new(PromptTimingState::default()),
-        global_auto_approve_tools: global,
-        yolo_sessions,
+        yolo_state: Arc::new(Mutex::new(yolo)),
+        permission_select: Arc::new(
+            crate::protocol::acp::permission_select::PermissionSelectState::new(),
+        ),
         provider_probe_capture: ProviderProbeCapture::default(),
         standard_usage_sessions: Mutex::new(HashSet::new()),
         proposal_channels: Arc::new(
@@ -2989,11 +3006,10 @@ async fn request_permission_session_yolo_can_override_global_on() {
         .await;
 }
 
-/// When an `allow_always` option is offered alongside `allow_once`, yolo
-/// mode prefers `allow_always` (fewer future prompts for the rest of this
-/// session), matching what a user manually clicking through would pick.
+/// Fallback YOLO must choose `allow_once` even when `allow_always` is offered,
+/// because the latter cannot be revoked by `/yolo off`.
 #[tokio::test]
-async fn request_permission_yolo_prefers_allow_always_over_allow_once() {
+async fn request_permission_yolo_uses_reversible_allow_once() {
     let (client, _rx) = bare_client_with_yolo(true, &[]);
     let req = acp::schema::v1::RequestPermissionRequest::new(
         acp::schema::v1::SessionId::new("s1"),
@@ -3017,8 +3033,47 @@ async fn request_permission_yolo_prefers_allow_always_over_allow_once() {
     let resp = client.request_permission(req).await.unwrap();
     match resp.outcome {
         acp::schema::v1::RequestPermissionOutcome::Selected(sel) => {
-            assert_eq!(sel.option_id.to_string(), "allow-always");
+            assert_eq!(sel.option_id.to_string(), "allow-once");
         }
         _ => panic!("expected Selected outcome"),
     }
+}
+
+#[tokio::test]
+async fn request_permission_yolo_prompts_when_only_allow_always_exists() {
+    let (client, mut rx) = bare_client_with_yolo(true, &[]);
+    let req = acp::schema::v1::RequestPermissionRequest::new(
+        acp::schema::v1::SessionId::new("s1"),
+        acp::schema::v1::ToolCallUpdate::new(
+            acp::schema::v1::ToolCallId::new("mock-tool-1"),
+            acp::schema::v1::ToolCallUpdateFields::new().title("Run: echo hi"),
+        ),
+        vec![acp::schema::v1::PermissionOption::new(
+            acp::schema::v1::PermissionOptionId::new("allow-always"),
+            "Allow always",
+            acp::schema::v1::PermissionOptionKind::AllowAlways,
+        )],
+    );
+
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async move {
+            let handle =
+                tokio::task::spawn_local(async move { client.request_permission(req).await });
+            match rx.recv().await {
+                Some(AppEvent::PermissionRequest { responder, .. }) => {
+                    responder.send("allow-always".to_string()).unwrap();
+                }
+                other => panic!(
+                    "expected interactive PermissionRequest, got is_some={}",
+                    other.is_some()
+                ),
+            }
+            let response = handle.await.unwrap().unwrap();
+            assert!(matches!(
+                response.outcome,
+                acp::schema::v1::RequestPermissionOutcome::Selected(_)
+            ));
+        })
+        .await;
 }

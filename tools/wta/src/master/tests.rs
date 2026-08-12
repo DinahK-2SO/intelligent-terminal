@@ -106,6 +106,7 @@ async fn delayed_clean_probe_does_not_block_initialize_and_notifies_bound_helper
             let legacy_hit = Arc::new(std::sync::atomic::AtomicBool::new(false));
             let agent = Arc::new(AgentCli {
                 instance_id: AgentInstanceId::new_v4(),
+                resolved_agent_id: "copilot".to_string(),
                 conn: client_connection_to_model_agent(false, config_hit, legacy_hit),
                 cached_init_resp: acp::schema::v1::InitializeResponse::new(
                     acp::schema::ProtocolVersion::V1,
@@ -141,6 +142,11 @@ async fn delayed_clean_probe_does_not_block_initialize_and_notifies_bound_helper
             assert!(
                 wta_meta.proposal_mcp.is_none(),
                 "unavailable proposal MCP must not be advertised"
+            );
+            assert_eq!(
+                wta_meta.resolved_agent_id.as_deref(),
+                Some("copilot"),
+                "the helper must receive the master-resolved Agent identity"
             );
 
             let mut response = initialize_response_for_agent(&agent, true)
@@ -201,6 +207,7 @@ async fn failed_clean_probe_is_recorded_without_catalog_delivery() {
 
             let agent = Arc::new(AgentCli {
                 instance_id: AgentInstanceId::new_v4(),
+                resolved_agent_id: "copilot".to_string(),
                 conn: client_connection_to_model_agent(
                     false,
                     Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -706,6 +713,7 @@ async fn pooled_agents_keep_model_switch_channels_isolated() {
             let a_legacy_hit = Arc::new(AtomicBool::new(false));
             let agent_a = Arc::new(AgentCli {
                 instance_id: AgentInstanceId::new_v4(),
+                resolved_agent_id: "copilot".to_string(),
                 conn: client_connection_to_model_agent(
                     true,
                     Arc::clone(&a_config_hit),
@@ -725,6 +733,7 @@ async fn pooled_agents_keep_model_switch_channels_isolated() {
             let b_legacy_hit = Arc::new(AtomicBool::new(false));
             let agent_b = Arc::new(AgentCli {
                 instance_id: AgentInstanceId::new_v4(),
+                resolved_agent_id: "copilot".to_string(),
                 conn: client_connection_to_model_agent(
                     false,
                     Arc::clone(&b_config_hit),
@@ -784,6 +793,7 @@ async fn direct_resume_updates_model_switch_channel_from_load_response() {
             let legacy_hit = Arc::new(AtomicBool::new(false));
             let agent = Arc::new(AgentCli {
                 instance_id: AgentInstanceId::new_v4(),
+                resolved_agent_id: "copilot".to_string(),
                 conn: client_connection_to_model_agent(
                     false,
                     Arc::clone(&config_hit),
@@ -844,6 +854,7 @@ async fn new_session_timeout_is_enforced_by_master_forwarder() {
             let agent = Arc::new(OnceLock::new());
             let _ = agent.set(Arc::new(AgentCli {
                 instance_id: AgentInstanceId::new_v4(),
+                resolved_agent_id: "copilot".to_string(),
                 conn: client_connection_to_pending_new_session_agent(),
                 cached_init_resp: acp::schema::v1::InitializeResponse::new(
                     acp::schema::ProtocolVersion::V1,
@@ -1190,6 +1201,7 @@ async fn prompt_forward_survives_reentrant_permission() {
             let agent = Arc::new(OnceLock::new());
             let _ = agent.set(Arc::new(AgentCli {
                 instance_id: AgentInstanceId::new_v4(),
+                resolved_agent_id: "copilot".to_string(),
                 conn: agent_conn,
                 cached_init_resp: acp::schema::v1::InitializeResponse::new(
                     acp::schema::ProtocolVersion::V1,

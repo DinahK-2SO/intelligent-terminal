@@ -15,7 +15,9 @@ use std::sync::{
 use tokio::sync::mpsc;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
-use crate::app_contracts::{AcpModelInfo, AppEvent, PermOption, PlanEntry, PlanEntryStatus};
+use crate::app_contracts::{
+    AcpModelInfo, AppEvent, PermOption, PlanEntry, PlanEntryStatus, SharedYoloState,
+};
 use crate::pane_context::PaneContext;
 use crate::shell::{ShellManager, TerminalConfig};
 
@@ -180,6 +182,10 @@ pub enum MasterExtRequest {
     SetSessionAllowAll {
         session_id: acp::schema::v1::SessionId,
         enabled: bool,
+    },
+    ReconcileSessionAllowAll {
+        sessions: Vec<(acp::schema::v1::SessionId, bool)>,
+        fail_closed: bool,
     },
 }
 
@@ -382,13 +388,8 @@ struct ClientState {
     event_tx: mpsc::UnboundedSender<AppEvent>,
     shell_mgr: Arc<ShellManager>,
     prompt_timing: Arc<PromptTimingState>,
-    /// Global "Yolo mode" — see `App::global_auto_approve_tools` for the
-    /// full explanation. Set once at helper startup; never mutated.
-    global_auto_approve_tools: bool,
-    /// Per-session `/yolo` override set, shared with `App` (which owns the
-    /// mutating side via the `/yolo` slash command). See
-    /// `App::yolo_sessions`.
-    yolo_sessions: Arc<Mutex<HashSet<String>>>,
+    yolo_state: SharedYoloState,
+    permission_select: Arc<super::permission_select::PermissionSelectState>,
     provider_probe_capture: ProviderProbeCapture,
     standard_usage_sessions: Mutex<HashSet<String>>,
     proposal_channels: Arc<crate::agent_tools::action_proposal::channel::ProposalChannelManager>,
@@ -434,16 +435,13 @@ struct WtaClient {
     state: Arc<ClientState>,
 }
 
-/// Pick the best "allow" option for yolo-mode auto-approval. Prefers an
-/// `AllowAlways` kind (fewer future prompts for this session) over a
-/// one-shot `AllowOnce`, falling back to the first `is_allow()` option in
-/// whatever order the agent sent them. Returns `None` if the agent offered
-/// no allow-shaped option at all (shouldn't normally happen).
+/// Auto-approval must remain reversible within the ACP session. Selecting
+/// `AllowAlways` lets an agent suppress future permission requests, which
+/// `/yolo off` cannot revoke for fallback agents, so only `AllowOnce` is safe.
 fn pick_allow_option(options: &[PermOption]) -> Option<&PermOption> {
     options
         .iter()
-        .find(|o| o.kind.eq_ignore_ascii_case("AllowAlways"))
-        .or_else(|| options.iter().find(|o| o.is_allow()))
+        .find(|o| o.kind.eq_ignore_ascii_case("AllowOnce"))
 }
 
 /// Maximum characters kept in a tool-call `location` hint before truncation.
@@ -1039,19 +1037,7 @@ impl WtaClient {
             })
             .collect();
 
-        // Yolo mode starts from the global `--auto-approve-tools` helper flag;
-        // membership in `yolo_sessions` inverts it for this session. When
-        // enabled, skip the UI
-        // prompt entirely and pick the best "allow" option ourselves —
-        // preferring `allow_always` (fewer future prompts) over a one-shot
-        // `allow_once`, matching what a user doing this manually would pick.
-        let toggled_from_global = self
-            .state
-            .yolo_sessions
-            .lock()
-            .unwrap()
-            .contains(&session_id);
-        let is_yolo = self.state.global_auto_approve_tools ^ toggled_from_global;
+        let is_yolo = self.state.yolo_state.lock().unwrap().effective(&session_id);
         if is_yolo {
             if let Some(option) = pick_allow_option(&options) {
                 acp_log(&format!(
@@ -1337,6 +1323,9 @@ impl WtaClient {
                 });
             }
             acp::schema::v1::SessionUpdate::ConfigOptionUpdate(update) => {
+                self.state
+                    .permission_select
+                    .record_config_options(Some(&update.config_options));
                 let (available_models, current_model_id) =
                     crate::protocol::acp::model_select::models_from_config_options(
                         &sid,
@@ -1967,15 +1956,19 @@ async fn maybe_apply_native_allow_all(
     conn: &conn::ClientLink,
     resp: &acp::schema::v1::NewSessionResponse,
     session_id: &acp::schema::v1::SessionId,
+    state: &ClientState,
 ) {
-    crate::protocol::acp::permission_select::record_from_new_session(resp);
-    if crate::protocol::acp::permission_select::is_yolo_session(&session_id.to_string()) {
-        match crate::protocol::acp::permission_select::set_native_allow_all(
-            conn,
-            session_id.clone(),
-            true,
-        )
-        .await
+    state.permission_select.record_from_new_session(resp);
+    if state
+        .yolo_state
+        .lock()
+        .unwrap()
+        .effective(&session_id.to_string())
+    {
+        match state
+            .permission_select
+            .set_native_allow_all(conn, session_id.clone(), true)
+            .await
         {
             Ok(true) => tracing::info!(
                 target: "acp",
@@ -1991,7 +1984,28 @@ async fn maybe_apply_native_allow_all(
                  falling back to request_permission interception"
             ),
         }
+
     }
+}
+
+async fn apply_native_allow_all_checked(
+    conn: &conn::ClientLink,
+    state: &ClientState,
+    session_id: acp::schema::v1::SessionId,
+    enabled: bool,
+) -> std::result::Result<bool, String> {
+    let applied = state
+        .permission_select
+        .set_native_allow_all(conn, session_id, enabled)
+        .await
+        .map_err(|error| error.to_string())?;
+    if !enabled && !applied && state.permission_select.copilot_requires_native_disable() {
+        return Err(
+            "Copilot did not advertise the verified allow_all selector; native disable could not be confirmed"
+                .to_string(),
+        );
+    }
+    Ok(applied)
 }
 
 /// Handle a `session/load` failure (Err or timeout) in the
@@ -2016,6 +2030,7 @@ async fn handle_load_failure(
     error_message: String,
     _proposal_channels: Arc<crate::agent_tools::action_proposal::channel::ProposalChannelManager>,
     proposal_mcp_enabled: bool,
+    client_state: Arc<ClientState>,
 ) {
     if let Some(old) = old_sid {
         // Mid-life session management load failure path: restore prior binding.
@@ -2067,7 +2082,7 @@ async fn handle_load_failure(
             crate::agent_pane_origin::append_default(new_sid.0.as_ref(), pane_for_index);
             let (available_models, current_model_id) =
                 crate::protocol::acp::model_select::models_from_new_session(&resp);
-            maybe_apply_native_allow_all(&conn, &resp, &new_sid).await;
+            maybe_apply_native_allow_all(&conn, &resp, &new_sid, &client_state).await;
             let _ = event_tx.send(AppEvent::SessionAttached {
                 tab_id,
                 session_id: new_sid.to_string(),
@@ -2118,8 +2133,7 @@ pub async fn run_acp_client_over_pipe(
     shell_mgr: Arc<ShellManager>,
     wt_connected: bool,
     post_login_reconnect: bool,
-    global_auto_approve_tools: bool,
-    yolo_sessions: Arc<Mutex<HashSet<String>>>,
+    yolo_state: SharedYoloState,
     proposal_channels: Arc<crate::agent_tools::action_proposal::channel::ProposalChannelManager>,
 ) -> Result<()> {
     let startup_probe = StartupProbe::new();
@@ -2221,26 +2235,18 @@ pub async fn run_acp_client_over_pipe(
     let outgoing = write_half.compat_write();
     let incoming = read_half.compat();
 
+    let permission_select = Arc::new(super::permission_select::PermissionSelectState::new());
     let state = Arc::new(ClientState {
         event_tx: event_tx.clone(),
         shell_mgr: shell_mgr.clone(),
         prompt_timing: prompt_timing.clone(),
-        global_auto_approve_tools,
-        yolo_sessions: yolo_sessions.clone(),
+        yolo_state,
+        permission_select,
         provider_probe_capture: ProviderProbeCapture::default(),
         standard_usage_sessions: Mutex::new(HashSet::new()),
         proposal_channels: Arc::clone(&proposal_channels),
         hidden_tool_calls: std::sync::Mutex::new(std::collections::HashSet::new()),
     });
-    // Mirror the same two values so `dispatch_new_session`/`dispatch_prompt_body`/
-    // `handle_load_failure` (which don't otherwise carry them) can decide
-    // whether a brand-new session should get the agent-native allow-all
-    // config applied right away — see `permission_select` module docs.
-    crate::protocol::acp::permission_select::init_yolo_state(
-        global_auto_approve_tools,
-        yolo_sessions.clone(),
-    );
-
     let client = WtaClient {
         state: state.clone(),
     };
@@ -2458,6 +2464,9 @@ pub async fn run_acp_client_over_pipe(
             anyhow::anyhow!("initialize over master pipe failed: {}", e)
         })?;
     let wta_meta = crate::session_registry::extract_wta_meta(&mut init_resp.meta);
+    state
+        .permission_select
+        .set_resolved_agent_id(wta_meta.resolved_agent_id.as_deref());
     let cloud_catalog = crate::protocol::acp::model_select::cloud_catalog_from_wta_meta(&wta_meta);
     if matches!(&agent_source, crate::agent_source::AgentSource::Host)
         && !cloud_catalog.models.is_empty()
@@ -2733,7 +2742,7 @@ pub async fn run_acp_client_over_pipe(
 
         let (available_models, current_model_id) =
             crate::protocol::acp::model_select::models_from_new_session(&session);
-        maybe_apply_native_allow_all(&conn, &session, &session_id).await;
+        maybe_apply_native_allow_all(&conn, &session, &session_id, &state).await;
         (session_id, available_models, current_model_id, true)
     };
 
@@ -2880,7 +2889,13 @@ pub async fn run_acp_client_over_pipe(
                 });
             }
             Some(req) = master_ext_rx.recv() => {
-                dispatch_master_ext_request(req, &conn, &event_tx, &tab_to_session);
+                dispatch_master_ext_request(
+                    req,
+                    &conn,
+                    &event_tx,
+                    &tab_to_session,
+                    Arc::clone(&state),
+                );
             }
             Some(req) = restart_rx.recv() => {
                 // Helper can't restart the agent CLI in-process — master owns
@@ -2920,6 +2935,7 @@ pub async fn run_acp_client_over_pipe(
                     &template_memo,
                     &cancel_signals,
                     &event_tx,
+                    Arc::clone(&state),
                     is_agent_pane,
                     true,
                     "HelperPipeNewSessionForTab",
@@ -2934,6 +2950,7 @@ pub async fn run_acp_client_over_pipe(
                     &tab_to_session,
                     &cancel_signals,
                     &event_tx,
+                    Arc::clone(&state),
                     true,
                     true,
                     std::time::Duration::from_secs(60),
@@ -2984,6 +3001,7 @@ fn dispatch_master_ext_request(
     conn: &conn::ClientLink,
     event_tx: &mpsc::UnboundedSender<AppEvent>,
     tab_to_session: &Arc<tokio::sync::Mutex<HashMap<String, acp::schema::v1::SessionId>>>,
+    client_state: Arc<ClientState>,
 ) {
     let conn = conn.clone();
     let event_tx = event_tx.clone();
@@ -3169,8 +3187,9 @@ fn dispatch_master_ext_request(
                 session_id,
                 enabled,
             } => {
-                let result = match crate::protocol::acp::permission_select::set_native_allow_all(
+                let result = match apply_native_allow_all_checked(
                     &conn,
+                    &client_state,
                     session_id.clone(),
                     enabled,
                 )
@@ -3202,13 +3221,42 @@ fn dispatch_master_ext_request(
                             enabled,
                             "native allow-all hot-update failed"
                         );
-                        Err(err.to_string())
+                        Err(err)
                     }
                 };
                 let _ = event_tx.send(AppEvent::YoloModeChangeCompleted {
                     session_id: session_id.to_string(),
                     enabled,
                     result,
+                });
+            }
+            MasterExtRequest::ReconcileSessionAllowAll {
+                sessions,
+                fail_closed,
+            } => {
+                let mut failure = None;
+                for (session_id, enabled) in sessions {
+                    if let Err(error) = apply_native_allow_all_checked(
+                        &conn,
+                        &client_state,
+                        session_id.clone(),
+                        enabled,
+                    )
+                    .await
+                    {
+                        tracing::warn!(
+                            target: "acp",
+                            session_id = %session_id.0,
+                            enabled,
+                            error = %error,
+                            "native allow-all runtime reconciliation failed"
+                        );
+                        failure.get_or_insert_with(|| error.to_string());
+                    }
+                }
+                let _ = event_tx.send(AppEvent::RuntimeYoloReconcileCompleted {
+                    fail_closed,
+                    result: failure.map_or(Ok(()), Err),
                 });
             }
         }
@@ -3235,6 +3283,7 @@ fn dispatch_load_session(
     tab_to_session: &Arc<tokio::sync::Mutex<HashMap<String, acp::schema::v1::SessionId>>>,
     cancel_signals: &Arc<std::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<()>>>>,
     event_tx: &mpsc::UnboundedSender<AppEvent>,
+    client_state: Arc<ClientState>,
     inject_pane_meta: bool,
     use_load_failure_handler: bool,
     timeout: std::time::Duration,
@@ -3314,6 +3363,33 @@ fn dispatch_load_session(
                 {
                     crate::protocol::acp::model_select::forget_session(old.0.as_ref());
                 }
+                client_state
+                    .permission_select
+                    .record_from_load_session(&resp);
+                let yolo_enabled = client_state
+                    .yolo_state
+                    .lock()
+                    .unwrap()
+                    .effective(session_id.0.as_ref());
+                if let Err(error) = apply_native_allow_all_checked(
+                    &conn,
+                    &client_state,
+                    session_id.clone(),
+                    yolo_enabled,
+                )
+                .await
+                {
+                    tracing::error!(
+                        target: "yolo",
+                        session_id = %session_id,
+                        %error,
+                        "loaded session native allow-all reconciliation failed"
+                    );
+                    let _ = event_tx.send(AppEvent::RuntimeYoloReconcileCompleted {
+                        fail_closed: !yolo_enabled,
+                        result: Err(error),
+                    });
+                }
                 // The agent replays past content via session/update
                 // notifications that route through the existing
                 // session_to_tab map. SessionAttached primes that mapping.
@@ -3358,6 +3434,7 @@ fn dispatch_load_session(
                     message,
                     &proposal_channels,
                     proposal_mcp_enabled,
+                    Arc::clone(&client_state),
                 )
                 .await;
             }
@@ -3388,6 +3465,7 @@ fn dispatch_load_session(
                     message,
                     &proposal_channels,
                     proposal_mcp_enabled,
+                    Arc::clone(&client_state),
                 )
                 .await;
             }
@@ -3411,6 +3489,7 @@ async fn dispatch_load_failure(
     message: String,
     proposal_channels: &Arc<crate::agent_tools::action_proposal::channel::ProposalChannelManager>,
     proposal_mcp_enabled: bool,
+    client_state: Arc<ClientState>,
 ) {
     if use_load_failure_handler {
         handle_load_failure(
@@ -3423,6 +3502,7 @@ async fn dispatch_load_failure(
             message,
             Arc::clone(proposal_channels),
             proposal_mcp_enabled,
+            client_state,
         )
         .await;
     } else {
@@ -3455,6 +3535,7 @@ fn dispatch_new_session(
     template_memo: &TemplateMemo,
     cancel_signals: &Arc<std::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<()>>>>,
     event_tx: &mpsc::UnboundedSender<AppEvent>,
+    client_state: Arc<ClientState>,
     is_agent_pane: bool,
     inject_pane_meta: bool,
     log_label: &'static str,
@@ -3537,7 +3618,7 @@ fn dispatch_new_session(
         }
         let (available_models, current_model_id) =
             crate::protocol::acp::model_select::models_from_new_session(&new_session);
-        maybe_apply_native_allow_all(&conn, &new_session, &new_sid).await;
+        maybe_apply_native_allow_all(&conn, &new_session, &new_sid, &client_state).await;
 
         {
             let mut g = tab_to_session.lock().await;
@@ -3820,7 +3901,13 @@ async fn dispatch_prompt_body(
             }
             let (available_models, current_model_id) =
                 crate::protocol::acp::model_select::models_from_new_session(&new_session);
-            maybe_apply_native_allow_all(&conn_task, &new_session, &new_sid).await;
+            maybe_apply_native_allow_all(
+                &conn_task,
+                &new_session,
+                &new_sid,
+                &client_task.state,
+            )
+            .await;
             let _ = event_tx_task.send(AppEvent::SessionAttached {
                 tab_id: tab_key_task.clone(),
                 session_id: new_sid.to_string(),
@@ -4114,8 +4201,12 @@ mod tests {
             event_tx,
             shell_mgr: Arc::new(ShellManager::new()),
             prompt_timing: Arc::new(PromptTimingState::default()),
-            global_auto_approve_tools: false,
-            yolo_sessions: Arc::new(Mutex::new(HashSet::new())),
+            yolo_state: Arc::new(Mutex::new(crate::app_contracts::YoloState::new(
+                false, false,
+            ))),
+            permission_select: Arc::new(
+                crate::protocol::acp::permission_select::PermissionSelectState::new(),
+            ),
             provider_probe_capture: super::ProviderProbeCapture::default(),
             standard_usage_sessions: Mutex::new(HashSet::new()),
             proposal_channels: manager,
@@ -4733,7 +4824,6 @@ mod tests {
         };
         use crate::shell::ShellManager;
         use agent_client_protocol::{self as acp};
-        use std::collections::HashSet;
         use std::path::PathBuf;
         use std::sync::{Arc, Mutex};
         use tokio::sync::mpsc;
@@ -4744,8 +4834,12 @@ mod tests {
                 event_tx: tx,
                 shell_mgr: Arc::new(ShellManager::new()),
                 prompt_timing: Arc::new(super::super::PromptTimingState::default()),
-                global_auto_approve_tools: false,
-                yolo_sessions: Arc::new(Mutex::new(HashSet::new())),
+                yolo_state: Arc::new(Mutex::new(crate::app_contracts::YoloState::new(
+                    false, false,
+                ))),
+                permission_select: Arc::new(
+                    crate::protocol::acp::permission_select::PermissionSelectState::new(),
+                ),
                 provider_probe_capture: super::super::ProviderProbeCapture::default(),
                 standard_usage_sessions: std::sync::Mutex::new(std::collections::HashSet::new()),
                 proposal_channels: Arc::new(
