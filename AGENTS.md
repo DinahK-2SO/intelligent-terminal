@@ -1,3 +1,84 @@
+# Expanded Completed-Turn Multiline Prompt Handoff
+
+> Last synchronized: 2026-08-13
+>
+> This dev-only section tracks the completed-turn multiline prompt fix. Product
+> behavior and tests remain the source of truth.
+
+Branches created from latest `origin/main@d6806c6b5`:
+
+- dev: `user/DinahK-2SO/multiline-completed-turn-prompt` -> `Dinah`
+- publish: `user/DinahK-2SO/multiline-completed-turn-prompt-publish` -> `origin`
+
+Publish scope excludes this `AGENTS.md` tracking section and any local E2E
+artifacts. The publish branch should contain only the focused WTA product/test
+change.
+
+## Current Stage
+
+[2026-08-13] Step 1 - expanded completed turns restore multiline prompts GREEN
+
+### User-visible contract
+
+- While a turn is active, a Shift+Enter prompt renders as multiple rows.
+- A collapsed completed turn (`▶`) keeps a compact single-line prompt summary;
+  embedded newlines become spaces.
+- An expanded completed turn (`▼`) renders the original prompt as real Ratatui
+  lines. Continuations align under the prompt body after `▼ > `.
+- Agent replies, tool details, selection styling, trailing markers, scrolling,
+  and collapsed behavior remain unchanged.
+
+### Ownership
+
+```text
+SubmittedPrompt.text (raw newlines preserved)
+  -> CompletedTurn.prompt
+  -> ui/chat.rs::build_completed_turn_lines
+       collapsed -> collapse_newlines_for_preview
+       expanded  -> push_prompt_prefixed_lines + chevron indent
+  -> rendered_lines_height (shared height calculation)
+  -> Ratatui Paragraph
+```
+
+This is a WTA chat renderer behavior. It is unrelated to agent Markdown parsing,
+ACP transport, C++ `TerminalControl`, or provider-specific output.
+
+### TDD evidence
+
+- RED test: `expanded_completed_turn_restores_multiline_prompt`
+- Focused command:
+  `cargo test --manifest-path tools/wta/Cargo.toml expanded_completed_turn_restores_multiline_prompt -- --nocapture`
+- Expected RED: actual `['▼ > line one line two', '']`; expected
+  `['▼ > line one', '    line two', '']`.
+- GREEN: the same command passes (`1 passed, 0 failed`).
+
+### Guardrails
+
+- Do not make collapsed headers multiline; they are navigation summaries.
+- Do not normalize newlines in storage. Rendering decides summary vs. expanded
+  presentation.
+- Height estimation must continue to consume the same rendered lines as the UI.
+- Format only touched Rust files; crate-wide `cargo fmt --manifest-path` causes
+  unrelated WTA churn.
+
+### Validation
+
+- Focused RED failed for the expected reason; focused GREEN is `1 passed`.
+- `cargo test --manifest-path tools/wta/Cargo.toml ui::chat::tests -- --nocapture`:
+  `36 passed, 0 failed`.
+- `cargo test --manifest-path tools/wta/Cargo.toml`:
+  `1484 passed, 0 failed`.
+- `cargo build --target x86_64-pc-windows-msvc --manifest-path tools/wta/Cargo.toml`:
+  succeeded with existing warnings only.
+
+### Remaining branch work
+
+- Commit/push dev and confirm remote synchronization.
+- Transfer only the focused product/test diff to publish, rerun full WTA tests,
+  commit/push, and record both commit IDs here.
+
+---
+
 # Intelligent Terminal (Windows Terminal Fork)
 
 AI-native Windows Terminal — agents (Copilot, Claude, Gemini, custom) can understand, fix, and automate terminal workflows.
