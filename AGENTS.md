@@ -119,6 +119,25 @@ Local dev-only evidence:
 - `test/e2e/artifacts/multiline-completed-turn/suite/report.html`
 - `test/e2e/artifacts/multiline-completed-turn/suite/results.xml`
 
+### PR review triage
+
+- Accepted Copilot's locale finding: the E2E now resolves
+  `chat.turn_canceled` across bundled WTA locales instead of hard-coding the
+  en-GB `(cancelled)` marker.
+- Accepted Copilot's suppressed documentation finding: the marker-target
+  comment now says the first detail row follows all expanded prompt rows.
+- Declined Copilot's continuation-filler style finding: `SELECTED` and
+  `SELECTED_INACTIVE` are foreground-only styles, and an unstyled whitespace
+  span cannot create the claimed background discontinuity.
+- Fixed the check-spelling `nline` alert at its source by constructing the
+  multiline fixture from two strings. Do not add the false token to a spelling
+  dictionary.
+- Declined the spelling workflow's dictionary-download warnings and unrelated
+  container-image pattern suggestion; neither is caused by this feature.
+- Post-review validation on both dev and publish: full WTA suite
+  `1484 passed, 0 failed`, Prompt History E2E `4 passed, 0 failed`, and explicit
+  x64 WTA build succeeded with existing warnings only.
+
 ### Branch synchronization
 
 - Dev implementation/handoff commit: `b96ad59d3d3f9a7827f6ef83de57b5ae350287a7`.
@@ -127,6 +146,8 @@ Local dev-only evidence:
 - Publish E2E test/metadata commit: `deb3f87f5ea6e6021e8174776689a0851cd8d91f`.
 - Dev PR attribution commit: `0a1bfb0b7706ae1bda8f7d00a9a7797935a1e60d`.
 - Publish PR attribution commit: `ee367f6edcfc7b62ff812370f3e43fe14aa79d00`.
+- Dev review-fix commit: `a7dc7627a0e0d948a2642e1a0cbf9c8413995676`.
+- Publish review-fix commit: `8eb79f6c317830af86af5006f27a5cbc3deaf1fe`.
 - Publish full WTA suite: `1484 passed, 0 failed`.
 - Dev and publish `Feature.PromptHistory.Tests.ps1`: `4 passed, 0 failed` on
   each branch against the hot-refreshed Dev package.
