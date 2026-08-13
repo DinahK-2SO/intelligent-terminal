@@ -9,6 +9,7 @@ Branches created from latest `origin/main@d6806c6b5`:
 
 - dev: `user/DinahK-2SO/multiline-completed-turn-prompt` -> `Dinah`
 - publish: `user/DinahK-2SO/multiline-completed-turn-prompt-publish` -> `origin`
+- pull request: `microsoft/intelligent-terminal#614`
 
 Publish scope excludes this `AGENTS.md` tracking section and any local E2E
 artifacts. The publish branch should contain only the focused WTA product/test
@@ -124,11 +125,13 @@ Local dev-only evidence:
 - Publish product/test commit: `73abdc48c3615bfe8fc2ea244b09c679f6d8f0c3`.
 - Dev E2E test/metadata commit: `125300294ec8d46343f95bc9ac71e360ac5fded6`.
 - Publish E2E test/metadata commit: `deb3f87f5ea6e6021e8174776689a0851cd8d91f`.
+- Dev PR attribution commit: `0a1bfb0b7706ae1bda8f7d00a9a7797935a1e60d`.
+- Publish PR attribution commit: `ee367f6edcfc7b62ff812370f3e43fe14aa79d00`.
 - Publish full WTA suite: `1484 passed, 0 failed`.
 - Dev and publish `Feature.PromptHistory.Tests.ps1`: `4 passed, 0 failed` on
   each branch against the hot-refreshed Dev package.
-- All implementation and E2E commits were pushed and matched their configured
-  remote refs before this tracking update.
+- All implementation, E2E, and attribution commits were pushed and matched
+  their configured remote refs before this tracking update.
 
 Publish scope contains the product change, committed E2E regression, checklist,
 and E2E README metadata. It excludes this handoff and local evidence artifacts.
