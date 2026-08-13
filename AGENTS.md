@@ -16,7 +16,7 @@ change.
 
 ## Current Stage
 
-[2026-08-13] Step 1 - expanded completed turns restore multiline prompts GREEN
+[2026-08-13] Complete - expanded completed turns restore multiline prompts
 
 ### User-visible contract
 
@@ -71,11 +71,13 @@ ACP transport, C++ `TerminalControl`, or provider-specific output.
 - `cargo build --target x86_64-pc-windows-msvc --manifest-path tools/wta/Cargo.toml`:
   succeeded with existing warnings only.
 
-### Remaining branch work
+### Branch synchronization
 
-- Commit/push dev and confirm remote synchronization.
-- Transfer only the focused product/test diff to publish, rerun full WTA tests,
-  commit/push, and record both commit IDs here.
+- Dev implementation/handoff commit: `b96ad59d3d3f9a7827f6ef83de57b5ae350287a7`.
+- Publish product/test commit: `73abdc48c3615bfe8fc2ea244b09c679f6d8f0c3`.
+- Publish full WTA suite: `1484 passed, 0 failed`.
+- Both implementation commits were pushed and matched their configured remote
+  refs before this tracking update.
 
 ---
 
