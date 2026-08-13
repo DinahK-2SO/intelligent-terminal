@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 
 use serde::{Deserialize, Serialize};
 
@@ -40,6 +40,36 @@ pub struct ToolCallOutput {
     pub truncated: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolCallLocation {
+    pub path: String,
+    #[serde(default)]
+    pub line: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ToolCallContent {
+    Text(ToolCallOutput),
+    Diff {
+        path: String,
+        #[serde(default)]
+        old_text: Option<ToolCallOutput>,
+        new_text: ToolCallOutput,
+    },
+    Terminal {
+        id: String,
+        #[serde(default)]
+        output: Option<ToolCallOutput>,
+        #[serde(default)]
+        exit_code: Option<i64>,
+    },
+    Attachment {
+        label: String,
+        #[serde(default)]
+        uri: Option<String>,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ChatMessage {
     User(String),
@@ -75,6 +105,12 @@ pub enum ChatMessage {
         /// Process exit code, only when explicitly reported by the Agent.
         #[serde(default)]
         exit_code: Option<i64>,
+        /// Standard ACP tool content, retained for expanded details.
+        #[serde(default)]
+        content: Vec<ToolCallContent>,
+        /// All standard ACP locations, including optional line numbers.
+        #[serde(default)]
+        locations: Vec<ToolCallLocation>,
     },
     Plan(Vec<PlanEntry>),
     Error(String),
@@ -304,15 +340,10 @@ pub struct TabSession {
     pub selected_completed_turn_idx: Option<usize>,
     pub chat_scroll: Scroll,
 
-    // Streaming state
-    pub pending_agent_response: String,
-    /// Accumulator for `session/update` user_message_chunk events
-    /// arriving during an ACP `session/load` replay (the historical
-    /// user prompt for the next replayed turn). Flushed as a
-    /// `ChatMessage::User` whenever a turn boundary is detected — an
-    /// agent message / thought / tool call starts, OR the load
-    /// completes (SessionAttached for the loading tab).
-    pub pending_user_replay: String,
+    // Session replay state. These buffers are used only while loading_session
+    // is true and never share storage with a live turn.
+    pub replay_agent_buffer: String,
+    pub replay_user_buffer: String,
     /// True between the inbound `load_session` event and the
     /// `SessionAttached` event that closes out the ACP `session/load`
     /// call. While set, session/update chunk handlers accept chunks
@@ -333,18 +364,15 @@ pub struct TabSession {
     // (see `doc/specs/turn-state-refactor.md`).
     pub turn: TurnState,
     pub activity_frame: usize,
-    /// Typewriter reveal cursor: how many characters of the *user-visible*
-    /// streaming text are currently shown. The full text lives in
-    /// `turn.buffer()`; the renderer only emits the first `reveal_chars`
-    /// chars of it. Advanced toward the full length by `RevealTick`
+    /// Typewriter reveal cursor for the final assistant-text item in the
+    /// active transcript. Advanced toward its full length by `RevealTick`
     /// (`advance_reveal`), reset to 0 when a new turn starts streaming, and
     /// made irrelevant on finalize (the committed message renders in full).
     pub reveal_chars: usize,
     pub timing_note: Option<String>,
     pub selection_visible_pending: bool,
 
-    // Tool calls / permission
-    pub tool_calls: HashMap<String, (String, String)>,
+    // Blocking action queues
     /// FIFO of pending permission requests for this session. The front
     /// entry is the one currently rendered and accepting keys; the rest
     /// queue up.
@@ -425,6 +453,16 @@ impl TabSession {
             && self.turn.recommendations().is_none()
             && self.permission.is_empty()
             && self.user_input.is_empty()
+            && self.streaming_agent_text().is_none_or(|text| text.trim().is_empty())
+            && !self.messages.iter().any(|message| {
+                matches!(
+                    message,
+                    ChatMessage::ToolCall { status, .. }
+                        if status.eq_ignore_ascii_case("pending")
+                            || status.eq_ignore_ascii_case("inprogress")
+                            || status.eq_ignore_ascii_case("running")
+                )
+            })
     }
 
     /// Whether the input box is the live, enterable caret target.
@@ -470,12 +508,11 @@ impl TabSession {
 
     pub fn clear_chat_history(&mut self) {
         self.messages.clear();
-        self.tool_calls.clear();
         self.permission.clear();
         self.user_input.clear();
         self.activity_frame = 0;
-        self.pending_agent_response.clear();
-        self.pending_user_replay.clear();
+        self.replay_agent_buffer.clear();
+        self.replay_user_buffer.clear();
         self.chat_scroll.reset();
         self.timing_note = None;
         self.selection_visible_pending = false;
@@ -489,14 +526,58 @@ impl TabSession {
     }
 
     pub fn flush_load_replay_pending(&mut self) {
-        if !self.pending_user_replay.is_empty() {
-            let text = std::mem::take(&mut self.pending_user_replay);
+        if !self.replay_user_buffer.is_empty() {
+            let text = std::mem::take(&mut self.replay_user_buffer);
             self.messages.push(ChatMessage::User(text));
         }
-        if !self.pending_agent_response.is_empty() {
-            let text = std::mem::take(&mut self.pending_agent_response);
+        if !self.replay_agent_buffer.is_empty() {
+            let text = std::mem::take(&mut self.replay_agent_buffer);
             self.messages.push(ChatMessage::Agent(text));
         }
+    }
+
+    pub fn append_agent_chunk(&mut self, text: &str) {
+        match self.messages.last_mut() {
+            Some(ChatMessage::Agent(current)) => current.push_str(text),
+            _ => {
+                self.messages.push(ChatMessage::Agent(text.to_string()));
+                self.reveal_chars = 0;
+            }
+        }
+    }
+
+    pub fn streaming_agent_message_index(&self) -> Option<usize> {
+        self.turn
+            .is_streaming()
+            .then(|| self.messages.len().checked_sub(1))
+            .flatten()
+            .filter(|index| matches!(self.messages.get(*index), Some(ChatMessage::Agent(_))))
+    }
+
+    pub fn streaming_agent_text(&self) -> Option<&str> {
+        let index = self.streaming_agent_message_index()?;
+        match self.messages.get(index) {
+            Some(ChatMessage::Agent(text)) => Some(text),
+            _ => None,
+        }
+    }
+
+    pub fn active_agent_text(&self) -> String {
+        self.messages
+            .iter()
+            .filter_map(|message| match message {
+                ChatMessage::Agent(text) => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("")
+    }
+
+    pub fn take_current_turn_details(&mut self) -> Vec<ChatMessage> {
+        std::mem::take(&mut self.messages)
+            .into_iter()
+            .filter(|message| !matches!(message, ChatMessage::User(_)))
+            .collect()
     }
 
     pub fn pack_replayed_messages_into_turns(&mut self) {
@@ -576,13 +657,6 @@ impl TabSession {
         }
     }
 
-    pub fn current_turn_details(&self) -> Vec<ChatMessage> {
-        self.messages
-            .iter()
-            .filter(|message| !matches!(message, ChatMessage::User(_)))
-            .cloned()
-            .collect()
-    }
 }
 
 /// Top-level UI view selector. Toggled with Ctrl+Shift+/.

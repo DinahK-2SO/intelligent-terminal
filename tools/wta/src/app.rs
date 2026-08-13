@@ -61,7 +61,7 @@ use input_edit::{next_word_boundary, prev_word_boundary, INPUT_HISTORY_MAX_ENTRI
 pub(crate) use tab_state::DEFAULT_TAB_ID;
 pub use tab_state::{
     ChatMessage, CompletedTurn, NoticeKind, PermissionState, RecommendationFocus, TabSession,
-    ToolCallKind, ToolCallOutput, UserInputState, View,
+    ToolCallContent, ToolCallKind, ToolCallLocation, ToolCallOutput, UserInputState, View,
 };
 pub use turn_state::{AutofixContext, ChunkKind, SubmittedPrompt, TurnOutcome, TurnState};
 
@@ -3830,6 +3830,7 @@ impl App {
             AppEvent::TimingMetric { .. } => "timing_metric",
             AppEvent::ToolCall { .. } => "tool_call",
             AppEvent::ToolCallUpdate { .. } => "tool_call_update",
+            AppEvent::ToolTerminalOutput { .. } => "tool_terminal_output",
             AppEvent::HideToolCall { .. } => "hide_tool_call",
             AppEvent::Plan { .. } => "plan",
             AppEvent::PermissionRequest { .. } => "permission_request",
@@ -3875,7 +3876,9 @@ impl App {
             tab.messages.len(),
             tab.completed_turns.len(),
             tab.input.chars().count(),
-            tab.turn.buffer().map(|b| b.chars().count()).unwrap_or(0),
+            tab.streaming_agent_text()
+                .map(|text| text.chars().count())
+                .unwrap_or(0),
             tab.chat_scroll.offset,
             tab.activity_frame,
             tab.turn.recommendations().map(|r| r.choices.len()).unwrap_or(0),
@@ -4136,12 +4139,10 @@ impl App {
         }
     }
 
-    /// Number of *user-visible* characters in a tab's streaming buffer, i.e.
-    /// the length of what the renderer would show in full. `None` when the
-    /// tab is not streaming visible prose.
+    /// Number of user-visible characters in the active assistant segment.
     fn tab_visible_stream_len(tab: &TabSession) -> Option<usize> {
-        let buf = tab.turn.buffer()?;
-        crate::ui::chat::user_visible_stream_text(buf).map(|t| t.chars().count())
+        crate::ui::chat::user_visible_stream_text(tab.streaming_agent_text()?)
+            .map(|text| text.chars().count())
     }
 
     /// True iff the current (visible) tab has streaming text that the reveal
