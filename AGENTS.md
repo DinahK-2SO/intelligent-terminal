@@ -1,6 +1,6 @@
 # Markdown Rendering in Agent Pane Feature Handoff
 
-> Last synchronized: 2026-08-12
+> Last synchronized: 2026-08-13
 >
 > 这个文件只描述 Markdown Rendering in Agent Pane Feature。它应该可以直接复制到新的 dev branch，
 > 让下一阶段不需要重新翻阅旧调查记录。实际代码始终是最终 source of truth。
@@ -29,7 +29,7 @@ branch还可以包含调查、tracking和本地workflow。上一个publish branc
 ========================
 
 ## 当前follow-up：
-[2026-08-12] Step 4 - agent pane theme contract GREEN
+[2026-08-13] Step 5 - OpenCode stack alternatives investigation complete (research-only)
 
 我们的目标是在agent pane中显示markdown。
 
@@ -110,6 +110,84 @@ Step 4固定agent pane light/dark theme contract：
   使用`Color::Reset`基色且无background，link仅使用agent pane ANSI cyan，完整Markdown corpus没有
   span设置显式background。
 - Commit/push：`e62a4d88a Test agent Markdown theme relativity`。
+
+Step 5补充调查OpenCode技术栈的两条替代路线；本step不改变behavior，因此没有RED/GREEN：
+
+#### 方向1：Rust能否直接加载OpenCode使用的JavaScript包
+
+需要区分`marked` parser和OpenTUI `MarkdownRenderable` renderer：
+
+- **只嵌入`marked`：技术上可行。** `marked`发布browser/ESM/UMD bundle；它的核心lexer可在
+  browser中运行，不依赖Node filesystem/process API。Rust可把固定版本的`marked.umd.js`作为
+  build artifact嵌入binary，初始化一个JS context，调用`marked.lexer(markdown, { gfm: true })`，
+  再把token tree通过JSON或typed bridge传回Rust。
+- 可选JS engine包括：
+  - `boa_engine 0.21.1`：pure Rust、支持embedded/custom module loader，最符合single Rust binary；
+    但项目仍把自己描述为experimental且不是Node/npm runtime，需要先验证当前`marked` bundle用到的
+    ECMAScript语义。
+  - `rquickjs 0.12.2`：QuickJS-NG binding，启动轻、支持module loader和embedded bytecode；但它会
+    编译C library，runtime有thread lock。Windows x64 MSVC有预生成binding，其他WTA Windows targets
+    尤其ARM64需要bindgen/toolchain/static-CRT验证。
+  - `deno_core`/`v8`：兼容性最高，但引入V8、单独event loop和显著build/package成本；`JsRuntime`
+    是`!Send + !Sync`，对于只做Markdown tokenization明显过重。
+- **“有JS engine”不等于“可以npm install”。** Boa/QuickJS/`deno_core`本身不是Node/Bun package
+  manager；必须在build时锁定并bundle `marked`，或自行实现module resolver。依赖外部Node/Bun
+  subprocess则要求用户机器安装对应runtime，不能作为packaged WTA产品contract。
+- 即使成功运行`marked`，仍必须在Rust中维护`MarkedToken -> Ratatui Line/Span`、table layout、
+  styled wrapping、agent prefix和height estimation。也就是说它只替换当前`pulldown-cmark` parser，
+  不会得到OpenCode的实际显示效果。
+- 还会新增JS engine生命周期、panic/exception和memory limit、JS/Rust token schema、每次typewriter
+  reveal的cross-runtime调用、bundle更新和第三方notice等ownership。除非发现一个必须逐字匹配
+  `marked`的compatibility bug，这些成本没有对应产品收益。
+
+- **嵌入完整`@opentui/core`/`MarkdownRenderable`：不能只靠通用JS engine完成。**
+  `MarkdownRenderable`依赖`RenderContext`、`CodeRenderable`、`TextTableRenderable`、`BoxRenderable`、
+  `StyledText`和OpenTUI buffer；OpenTUI本身是Zig native core + TypeScript binding，通过FFI使用Yoga、
+  terminal renderer和native text buffers，还带Tree-sitter worker/WASM/query assets。创建native renderer
+  通常需要Bun，或Node 26.4 experimental FFI及platform-specific native package。
+- OpenTUI native core虽然暴露C ABI，Rust理论上可以直接binding，但Markdown token到renderable的逻辑
+  仍在TypeScript层。为了只取得几行文本而引入第二套layout/terminal renderer，再把offscreen buffer
+  转回Ratatui，会同时存在OpenTUI和Ratatui两套terminal、layout、theme和scroll ownership；这比移植
+  renderer更复杂，也容易与当前Crossterm/Ratatui lifecycle冲突。
+
+方向1结论：**可以在Rust里跑`marked`，但不能低成本复用OpenCode的renderer。** 若未来必须验证
+`marked` parity，最小prototype应为`Boa/QuickJS + vendored marked UMD -> JSON tokens`，且只能作为
+parser A/B test，不应直接接管WTA rendering。
+
+#### 方向2：OpenCode依赖是否有对应Rust版本
+
+没有一比一的`marked-rs`或`MarkdownRenderable-rs`，但每层都有Rust-native counterpart：
+
+| OpenCode层 | Rust候选 | 结论 |
+|---|---|---|
+| `marked` GFM lexer/token tree | `pulldown-cmark`、`comrak`、`markdown-rs`、`markdown-it` | 无`marked`官方移植。`pulldown-cmark`是低分配event stream；`comrak`提供完整GFM AST；`markdown-rs`提供mdast/GFM；`markdown-it`是`markdown-it.js`移植，不是`marked`移植。 |
+| OpenTUI `MarkdownRenderable` | `tui-markdown` | 最接近当前ownership：直接生成Ratatui `Text`，已有GFM table、wide character width和`StyleSheet`。当前实现已经采用。 |
+| OpenTUI table/layout | `tui-markdown` table builder、Ratatui | 能生成box grid，但OpenTUI的Yoga/component reconciliation没有对应的drop-in Rust port；WTA继续拥有prefix、wrapping和height。 |
+| OpenTUI Tree-sitter Markdown highlighting | `tree-sitter` + `tree-sitter-md 0.5.3` + `tree-sitter-highlight` | Rust binding和同源split `markdown`/`markdown_inline` grammar都存在。grammar自身明确不建议作为correctness parser，适合作为highlight/conceal层。 |
+| fenced-code highlighting | `syntect` + `ansi-to-tui`，或上述Tree-sitter stack | `tui-markdown`默认feature已经提供Syntect路径；当前关闭它是为了避免默认固定dark theme。精确复刻OpenCode则要维护language grammar/query/injection registry、theme-group映射、streaming cache和assets。 |
+| 完整terminal renderer | Ratatui | WTA已经基于Ratatui；替换为OpenTUI不是Markdown dependency change，而是整个helper UI framework migration。 |
+
+Rust parser进一步取舍：
+
+- `comrak 0.54.0`最适合需要GitHub-compatible AST和高度可配置extensions的场景，但它不输出Ratatui，
+  仍需自建terminal renderer；AST/arena也比当前event projection更重。
+- `markdown-rs 1.0.0`提供100% CommonMark/GFM和位置完整的mdast，适合复杂transform，不提供terminal
+  renderer。
+- `markdown-it 0.6.1`具有JS `markdown-it`式plugin/AST模型，适合自定义syntax，但不是OpenCode所用
+  `marked`的token contract，且仍没有Ratatui adapter。
+- `tree-sitter-md`与OpenTUI使用的grammar同源并支持GFM table/task list/strikethrough，但其README明确
+  说明Markdown受Tree-sitter grammar限制、存在不准确项，目标是syntax highlighting而非规范解析。
+
+方向2结论：**Rust已有功能等价组件，但没有OpenCode整栈的drop-in port。** 当前
+`pulldown-cmark (via tui-markdown) -> Ratatui -> WTA layout/theme`是最小且ownership正确的组合。
+未来若增加code highlighting，应在独立step比较：
+
+1. 启用`tui-markdown`的Syntect feature，并解决agent pane light/dark code theme选择；或
+2. 增加Rust Tree-sitter highlight layer，复用`tree-sitter-md`及各language query。
+
+两者都不应把Tree-sitter替换成Markdown correctness parser，也不应为了parser parity引入完整JS/OpenTUI
+runtime。只有出现经fixture证明的`pulldown-cmark`与agent输出不兼容时，才重新评估`marked` embedding
+或`comrak`/`markdown-rs` AST路线。
 
 ### Build和live evidence
 
