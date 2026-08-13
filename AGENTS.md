@@ -126,9 +126,15 @@ Local dev-only evidence:
   en-GB `(cancelled)` marker.
 - Accepted Copilot's suppressed documentation finding: the marker-target
   comment now says the first detail row follows all expanded prompt rows.
-- Declined Copilot's continuation-filler style finding: `SELECTED` and
-  `SELECTED_INACTIVE` are foreground-only styles, and an unstyled whitespace
-  span cannot create the claimed background discontinuity.
+- Accepted Copilot's continuation-filler style suggestion after focused TDD.
+  The current foreground-only selection styles did not create a visible
+  background gap, but the raw filler failed to carry the selected style and
+  would become discontinuous if selection gains a background later.
+- Accepted Copilot's follow-up optional-padding suggestion: input-row regexes
+  now allow the right border to be adjacent when content reaches the edge.
+- Declined narrowing the captured border to one character: real `wtcli`
+  captures can decode `│` as the multi-character token `Γöé`, so `\S+` is
+  required for the existing cross-environment E2E path.
 - Fixed the check-spelling `nline` alert at its source by constructing the
   multiline fixture from two strings. Do not add the false token to a spelling
   dictionary.
@@ -148,11 +154,17 @@ Local dev-only evidence:
 - Publish PR attribution commit: `ee367f6edcfc7b62ff812370f3e43fe14aa79d00`.
 - Dev review-fix commit: `a7dc7627a0e0d948a2642e1a0cbf9c8413995676`.
 - Publish review-fix commit: `8eb79f6c317830af86af5006f27a5cbc3deaf1fe`.
+- Dev follow-up review commit: `82456949f7a8dfc1357a04e87b72d42a23f4034c`.
+- Publish follow-up review commit: `245c16c1731e52e16404518c8d70aea5f6145829`.
 - Publish full WTA suite: `1484 passed, 0 failed`.
 - Dev and publish `Feature.PromptHistory.Tests.ps1`: `4 passed, 0 failed` on
   each branch against the hot-refreshed Dev package.
 - All implementation, E2E, and attribution commits were pushed and matched
   their configured remote refs before this tracking update.
+- The exact follow-up publish binary was hot-refreshed into the Dev package;
+  Cargo and deployed SHA-256 both matched
+  `6866F64629DC7785B6061937A53E362D05C203E12B87E0942DFE9F85F120764A`,
+  then Prompt History E2E passed `4/4`.
 
 Publish scope contains the product change, committed E2E regression, checklist,
 and E2E README metadata. It excludes this handoff and local evidence artifacts.
