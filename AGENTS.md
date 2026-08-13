@@ -16,7 +16,7 @@ change.
 
 ## Current Stage
 
-[2026-08-13] Complete - expanded completed turns restore multiline prompts
+[2026-08-13] Complete - unit, package, and live E2E validation passed
 
 ### User-visible contract
 
@@ -52,6 +52,27 @@ ACP transport, C++ `TerminalControl`, or provider-specific output.
   `['▼ > line one', '    line two', '']`.
 - GREEN: the same command passes (`1 passed, 0 failed`).
 
+### Test-driven workflow
+
+This fix is not complete at unit-test GREEN. Its workflow is:
+
+1. Add the smallest renderer regression test and confirm the expected RED.
+2. Apply the smallest implementation and confirm focused GREEN.
+3. Run the relevant chat tests, full WTA suite, and explicit x64 WTA build.
+4. Deploy the built `wta.exe` into the existing local Debug package.
+5. Launch Intelligent Terminal and exercise a real Shift+Enter prompt end to
+  end. Capture evidence that the active prompt is multiline, the collapsed
+  completed turn is one line, and the expanded completed turn restores the
+  original lines with aligned continuations.
+6. Confirm the visible Agent Pane is nonblank and no prompt, reply, marker, or
+  selection content overlaps after collapse/expand.
+7. Record deployment identity, E2E result, and evidence paths here before
+  marking the fix complete.
+
+Reuse the existing E2E framework when it naturally covers these interactions.
+Any new local desktop orchestration or screenshots remain dev-only unless they
+belong cleanly in an existing committed test suite.
+
 ### Guardrails
 
 - Do not make collapsed headers multiline; they are navigation summaries.
@@ -70,14 +91,47 @@ ACP transport, C++ `TerminalControl`, or provider-specific output.
   `1484 passed, 0 failed`.
 - `cargo build --target x86_64-pc-windows-msvc --manifest-path tools/wta/Cargo.toml`:
   succeeded with existing warnings only.
+- `pwsh -File test/e2e/bootstrap.ps1 -Check`: all prerequisites passed
+  (PowerShell 7.6.4, Pester 6.0.1, Windows App CLI, Dev package).
+- Live E2E RED ran against the old deployed Dev `wta.exe`: active multiline
+  input passed, then the expanded completed-turn assertion failed because the
+  two prompt lines rendered on one row.
+- The explicit x64 build was hot-refreshed into
+  `IntelligentTerminal_0.8.0.2_x64__rd9vj3e6a2mbr`. Cargo and deployed
+  `wta.exe` SHA-256 both matched
+  `E3EBC2691711302D7B3735C5B7F9FB06666030365B903E908B2AAD3CAAA397C0`.
+- Focused live E2E `Completed turns restore multiline prompts when expanded`:
+  `1 passed, 0 failed`. It exercises real Shift+Enter input, submission,
+  cancellation, collapse, and re-expansion through the packaged Agent Pane.
+- Full `Feature.PromptHistory.Tests.ps1`: `4 passed, 0 failed`.
+- Release checklist item `C262` is marked `[x]` by the generated report.
+- Visual inspection confirmed a visible, nonblank Agent Pane; aligned active,
+  expanded, and re-expanded prompt rows; a compact collapsed row; and no
+  overlap among prompt text, `(cancelled)`, status, selection, or input UI.
+
+Local dev-only evidence:
+
+- `test/e2e/artifacts/multiline-completed-turn/active-multiline.png`
+- `test/e2e/artifacts/multiline-completed-turn/expanded-multiline.png`
+- `test/e2e/artifacts/multiline-completed-turn/collapsed-summary.png`
+- `test/e2e/artifacts/multiline-completed-turn/reexpanded-multiline.png`
+- `test/e2e/artifacts/multiline-completed-turn/suite/report.html`
+- `test/e2e/artifacts/multiline-completed-turn/suite/results.xml`
 
 ### Branch synchronization
 
 - Dev implementation/handoff commit: `b96ad59d3d3f9a7827f6ef83de57b5ae350287a7`.
 - Publish product/test commit: `73abdc48c3615bfe8fc2ea244b09c679f6d8f0c3`.
+- Dev E2E test/metadata commit: `125300294ec8d46343f95bc9ac71e360ac5fded6`.
+- Publish E2E test/metadata commit: `deb3f87f5ea6e6021e8174776689a0851cd8d91f`.
 - Publish full WTA suite: `1484 passed, 0 failed`.
-- Both implementation commits were pushed and matched their configured remote
-  refs before this tracking update.
+- Dev and publish `Feature.PromptHistory.Tests.ps1`: `4 passed, 0 failed` on
+  each branch against the hot-refreshed Dev package.
+- All implementation and E2E commits were pushed and matched their configured
+  remote refs before this tracking update.
+
+Publish scope contains the product change, committed E2E regression, checklist,
+and E2E README metadata. It excludes this handoff and local evidence artifacts.
 
 ---
 
