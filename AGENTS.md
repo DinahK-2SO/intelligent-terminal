@@ -46,7 +46,7 @@ Publish scope excludes this `AGENTS.md` handoff and local screenshots/reports.
 
 ## Current Stage
 
-[2026-08-14] Step 4 - PR #618 review triaged; publish validation GREEN
+[2026-08-14] Step 4 - PR #618 performance follow-up GREEN on dev; publish validation pending
 
 ### User-visible contract
 
@@ -147,18 +147,21 @@ were unchanged at the visibility oracle.
   suppressed comment. Focused RED proved `select_older_completed_turn` left
   `completed_turn_selection_visible_pending=true` when no turns existed. Both
   empty-list navigation paths now clear the flag; focused GREEN passes.
-- Declined Copilot's double-layout performance suggestion for this PR. The
-  extra measurement occurs only on the one-shot selection-pending render and
-  must use the same wrapped-line builders to preserve scroll correctness. The
-  normal render remains lazy, the latest 12 packaged helper logs contain zero
-  `slow: chat_render` events at the existing 75ms threshold, and eliminating
-  the pass safely would require a height cache or a higher-risk lazy-render
-  refactor. Revisit only with measured slow-render evidence.
+- Accepted Copilot's duplicate-layout finding after the user requested a small
+  optimization. A deterministic builder-count RED measured 36 completed-turn
+  line builds for a 12-turn selection-follow frame: 12 from the pre-existing
+  layout estimate, 12 from the new visibility pre-pass, and 12 from rendering.
+  Visibility measurement now happens inside the existing bottom-up render pass,
+  preserving exact wrapped-line geometry and lazy truncation while removing the
+  new pre-pass. GREEN measures 24 builds, the pre-existing estimate plus render.
+  This halves the PR-added layout work without introducing a height cache or
+  redesigning the layout system.
 - Public PR conversation, reviews, inline comments, suppressed comments, files,
   and HEAD checks were all inspected through anonymous REST/web access. PR HEAD
   checks were successful or intentionally skipped; check-spelling reported no
   new alerts.
 - Post-fix dev WTA suite: `1505 passed, 0 failed`.
+- Dev performance commit: `cfb2bf611ed36e49d254f6c82d4f0eadeb04d91f`.
 - Dev publishable review-fix commit:
   `7a0f081932e0ce860c1346ccaeb4e47cdcc08a25`.
 - Publish cherry-pick review-fix commit:
