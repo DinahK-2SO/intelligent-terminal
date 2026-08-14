@@ -29,7 +29,7 @@ Publish scope excludes this `AGENTS.md` handoff and local screenshots/reports.
 
 ## Current Stage
 
-[2026-08-14] Step 3 - deterministic E2E and Rust GREEN; branch publication pending
+[2026-08-14] Step 3 - deterministic E2E and Rust GREEN; branches published, PR pending
 
 ### User-visible contract
 
