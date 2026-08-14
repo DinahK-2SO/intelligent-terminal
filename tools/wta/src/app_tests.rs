@@ -9115,6 +9115,62 @@ fn message_list_focus_routes_arrows_to_completed_turn_selection() {
 }
 
 #[test]
+fn render_chat_keeps_keyboard_selected_completed_turn_visible() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let mut app = test_app();
+    app.state = ConnectionState::Connected;
+    for index in 0..12 {
+        app.current_tab_mut().completed_turns.push(CompletedTurn {
+            prompt: format!("SELECT_SCROLL_TURN_{index:02}"),
+            details: vec![ChatMessage::Agent(format!(
+                "ACK_SELECT_SCROLL_TURN_{index:02}"
+            ))],
+            expanded: true,
+            trailing_marker: None,
+        });
+    }
+
+    let before = render_to_text(&mut app, 80, 16);
+    assert!(before.contains("SELECT_SCROLL_TURN_11"));
+    assert!(!before.contains("SELECT_SCROLL_TURN_00"));
+
+    app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    let newest_selected = render_to_text(&mut app, 80, 16);
+    assert!(newest_selected.contains("SELECT_SCROLL_TURN_11"));
+    assert_eq!(
+        app.current_tab().chat_scroll.offset,
+        0,
+        "selecting an already-visible turn must not move the viewport",
+    );
+    for _ in 0..11 {
+        app.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+    }
+    assert_eq!(app.current_tab().selected_completed_turn_idx, Some(0));
+
+    let after = render_to_text(&mut app, 80, 16);
+    assert!(
+        after.contains("SELECT_SCROLL_TURN_00"),
+        "the viewport must follow keyboard selection to the oldest completed turn; rendered:\n{after}",
+    );
+
+    for _ in 0..11 {
+        app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    }
+    let newest_again = render_to_text(&mut app, 80, 16);
+    assert!(newest_again.contains("SELECT_SCROLL_TURN_11"));
+    assert_eq!(app.current_tab().chat_scroll.offset, 0);
+
+    app.current_tab_mut().chat_scroll.offset = 4;
+    let manually_scrolled = render_to_text(&mut app, 80, 16);
+    assert_eq!(
+        app.current_tab().chat_scroll.offset,
+        4,
+        "a later manual scroll must not be overridden after selection visibility is consumed",
+    );
+    assert!(!manually_scrolled.contains("SELECT_SCROLL_TURN_11"));
+}
+
+#[test]
 fn input_history_deduplicates_and_caps_at_fifty() {
     let mut tab = TabSession::default();
     for index in 0..55 {

@@ -333,6 +333,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     let inner_area = inner.inner(area);
     let visible_height = inner_area.height as usize;
     let wrap_width = inner_area.width as usize;
+    ensure_selected_completed_turn_visible(app, visible_height, wrap_width);
     let requested_lines = visible_height
         .saturating_add(app.current_tab().chat_scroll.offset)
         .saturating_add(32);
@@ -434,6 +435,78 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
             area.height
         )
     });
+}
+
+fn ensure_selected_completed_turn_visible(app: &mut App, visible_height: usize, wrap_width: usize) {
+    let tab = app.current_tab();
+    if !tab.completed_turn_selection_visible_pending {
+        return;
+    }
+    let Some(selected_idx) = tab.selected_completed_turn_idx else {
+        app.current_tab_mut()
+            .completed_turn_selection_visible_pending = false;
+        return;
+    };
+
+    let streaming_index = tab.streaming_agent_message_index();
+    let permission_tool_call_id = permission_tool_call_id(tab);
+    let mut rows_below =
+        rendered_lines_height(&build_pending_stream_lines(app, wrap_width), wrap_width);
+    rows_below += tab
+        .messages
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| Some(*index) != streaming_index)
+        .map(|(index, message)| {
+            rendered_lines_height(
+                &build_message_lines(
+                    message,
+                    index + 1 == tab.messages.len(),
+                    tab.turn.is_streaming(),
+                    permission_tool_call_id,
+                    tab.activity_frame,
+                    wrap_width,
+                ),
+                wrap_width,
+            )
+        })
+        .sum::<usize>();
+    rows_below += tab
+        .completed_turns
+        .iter()
+        .skip(selected_idx + 1)
+        .map(|turn| {
+            rendered_lines_height(
+                &build_completed_turn_lines(turn, false, false, wrap_width),
+                wrap_width,
+            )
+        })
+        .sum::<usize>();
+
+    let selected_height = tab
+        .completed_turns
+        .get(selected_idx)
+        .map(|turn| {
+            rendered_lines_height(
+                &build_completed_turn_lines(turn, true, app.pane_focused, wrap_width),
+                wrap_width,
+            )
+        })
+        .unwrap_or(0);
+    let current_offset = tab.chat_scroll.offset;
+    let viewport_height = visible_height.max(1);
+    let selected_end = rows_below.saturating_add(selected_height);
+    let next_offset = if rows_below < current_offset {
+        rows_below
+    } else if selected_end > current_offset.saturating_add(viewport_height) {
+        selected_end.saturating_sub(viewport_height)
+    } else {
+        current_offset
+    };
+
+    let tab = app.current_tab_mut();
+    tab.chat_scroll.offset = next_offset;
+    tab.completed_turn_selection_visible_pending = false;
 }
 
 fn build_completed_turn_lines<'a>(
