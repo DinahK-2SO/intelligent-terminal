@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use crate::commands::{self, CommandKind, CommandSpec, MovePositionSpec, YoloOptionSpec};
+use crate::commands::{self, CommandSpec, MovePositionSpec, YoloOptionSpec};
 
 use super::tab_state::TabSession;
 
@@ -253,7 +253,7 @@ impl TabSession {
             self.yolo_option_candidates = commands::match_yolo_options(prefix);
         } else if commands::is_command_prefix(&self.input) {
             // Strip leading whitespace + the `/` to get the user's
-            // partial name. `is_command_prefix` already guarantees the
+            // name query. `is_command_prefix` already guarantees the
             // shape, so the unwrap is safe.
             let trimmed = self.input.trim_start();
             let name = trimmed.strip_prefix('/').unwrap_or("");
@@ -303,30 +303,6 @@ impl TabSession {
         self.yolo_option_candidates
             .get(self.command_popup_selected)
             .copied()
-    }
-
-    /// Tab-completion: replace the input buffer with the selected command
-    /// and reset the cursor to the end. `/yolo` includes a trailing space
-    /// so its on/off choices remain available.
-    pub fn accept_command_popup_completion(&mut self) {
-        self.reset_input_history_navigation();
-        if let Some(position) = self.selected_move_position() {
-            self.input = format!("/move {}", position.name);
-            self.cursor_pos = self.input.len();
-            self.refresh_command_popup();
-        } else if let Some(option) = self.selected_yolo_option() {
-            self.input = format!("/yolo {}", option.name);
-            self.cursor_pos = self.input.len();
-            self.refresh_command_popup();
-        } else if let Some(spec) = self.selected_command_spec() {
-            self.input = if spec.kind == CommandKind::Yolo {
-                format!("/{} ", spec.name)
-            } else {
-                format!("/{}", spec.name)
-            };
-            self.cursor_pos = self.input.len();
-            self.refresh_command_popup();
-        }
     }
 }
 
