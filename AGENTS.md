@@ -24,7 +24,7 @@ Publish scope excludes this `AGENTS.md` handoff and local screenshots/reports.
   orchestration, and experiments that do not belong to an existing framework.
 - The publish worktree must directly cherry-pick the dev publishable commit. Do
   not cherry-pick a mixed commit and then restore dev-only files.
-- Current publishable commit: `0a7c9355bdef7f70663820c79a60cfdc8c534678`.
+- Current publishable commit: `b8ada36ee287d563d276a077258ccb62a1e4f8c0`.
 - The separate `Start-Terminal` two-window startup-ordering fix is not part of
   this publishable commit or this issue branch.
 
@@ -46,7 +46,7 @@ Publish scope excludes this `AGENTS.md` handoff and local screenshots/reports.
 
 ## Current Stage
 
-[2026-08-14] Step 4 - PR #618 performance follow-up GREEN on dev and publish
+[2026-08-14] Step 5 - latest suppressed review fixes published; verifying final HEAD review and checks
 
 ### User-visible contract
 
@@ -111,13 +111,14 @@ were unchanged at the visibility oracle.
 
 - Completed-turn selection methods set a one-shot
   `completed_turn_selection_visible_pending` flag.
-- The chat render pass consumes that flag before lazy history construction.
-- Using the same pending-message, message, and completed-turn line builders as
-  normal rendering, it computes the selected block's rendered row interval
-  measured from the bottom.
+- The normal bottom-up chat render pass consumes that flag. When it reaches the
+  selected turn, it uses the lines already built in that same pass to compute
+  the selected block's rendered row interval measured from the bottom.
 - Scroll offset changes only when that interval falls outside the viewport.
   Selection of an already-visible turn is a no-op, and later manual scrolling
   is not overridden because the pending flag has already been consumed.
+- The earlier standalone visibility pre-pass was removed after deterministic
+  builder-count TDD proved it added a third completed-turn layout pass.
 
 ### TDD and validation evidence
 
@@ -156,6 +157,22 @@ were unchanged at the visibility oracle.
   new pre-pass. GREEN measures 24 builds, the pre-existing estimate plus render.
   This halves the PR-added layout work without introducing a height cache or
   redesigning the layout system.
+- Accepted three equivalent/companion suppressed comments about the test-only
+  global `AtomicUsize` builder counter. A focused cross-thread RED proved a
+  build recorded on another Rust test thread leaked into the current thread's
+  count. The counter is now a thread-local `Cell<usize>`; focused GREEN passes
+  and preserves the 24-build performance oracle without parallel-test races.
+- Accepted the suppressed E2E space-path risk but rejected its literal quoting
+  fix. Host ACP spawn still tokenizes custom commands with `split_whitespace`,
+  and a prior quoted-path experiment passed quote characters into `pwsh`.
+  A live RED moved the fixture and log under paths containing spaces and failed
+  before an agent session appeared. The test now sends the fixture invocation
+  through PowerShell `-EncodedCommand`, whose command tokens contain no spaces;
+  live GREEN connected the fixture, completed all 12 turns exactly once, and
+  revealed the oldest keyboard-selected turn.
+- Latest dev validation: all `ui::chat::tests` passed (`37/37`), the focused
+  selection render regression passed, and the explicit-target full WTA suite
+  passed (`1506 passed, 0 failed`). Touched files have no editor diagnostics.
 - Public PR conversation, reviews, inline comments, suppressed comments, files,
   and HEAD checks were all inspected through anonymous REST/web access. PR HEAD
   checks were successful or intentionally skipped; check-spelling reported no
@@ -169,6 +186,18 @@ were unchanged at the visibility oracle.
 - Optimized publish Cargo and deployed Dev-package `wta.exe` SHA-256 both
   matched `F979BACCD47B9658681272359811F19811D2858505FB8E385FC0C6AB8286DC26`.
 - Optimized pre-push publish E2E: `1 passed, 0 failed`.
+- Current PR HEAD: `5bc643e3bd5314217219c0d0550130ab4748abb3`.
+- Latest dev publishable review-fix commit:
+  `b8ada36ee287d563d276a077258ccb62a1e4f8c0`.
+- Latest publish review-fix cherry-pick:
+  `5bc643e3bd5314217219c0d0550130ab4748abb3`.
+- Exact publish WTA suite: `1506 passed, 0 failed`; explicit x64 build
+  succeeded with existing warnings only.
+- Exact publish Cargo and deployed Dev-package `wta.exe` SHA-256 both matched
+  `7567EFCF18B5BC393A07829C9BE28081B2B1DEA08B55BE5BBD2AF52B8157FE7A`.
+- Exact publish packaged E2E: `1 passed, 0 failed`; the fixture recorded turns
+  00-11 exactly once, and screenshots show keyboard focus moved from the
+  initially visible newest turns to visible oldest turn 00 without overlap.
 - Dev publishable review-fix commit:
   `7a0f081932e0ce860c1346ccaeb4e47cdcc08a25`.
 - Publish cherry-pick review-fix commit:
