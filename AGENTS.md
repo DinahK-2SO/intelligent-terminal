@@ -9,6 +9,7 @@ Branches created from latest `origin/main@ac0d42080`:
 
 - dev: `user/DinahK-2SO/completed-turn-selection-scroll` -> `Dinah`
 - publish: `user/DinahK-2SO/completed-turn-selection-scroll-publish` -> `origin`
+- pull request: `microsoft/intelligent-terminal#618`
 
 Publish scope excludes this `AGENTS.md` handoff and local screenshots/reports.
 
@@ -27,9 +28,25 @@ Publish scope excludes this `AGENTS.md` handoff and local screenshots/reports.
 - The separate `Start-Terminal` two-window startup-ordering fix is not part of
   this publishable commit or this issue branch.
 
+### Public PR review workflow
+
+- For public GitHub PRs, review without authentication by reading these public
+  REST endpoints with the webpage fetch tool: `/pulls/<n>`,
+  `/issues/<n>/comments`, `/pulls/<n>/reviews`, `/pulls/<n>/comments`,
+  `/pulls/<n>/files`, and the HEAD commit's `/check-runs` endpoint.
+- Review bodies can contain `<details><summary>Suppressed comments</summary>`;
+  treat every suppressed finding as review input and triage it explicitly.
+- Do not use `gh`, GitKraken, or another tool that requires GitHub login for a
+  public read-only review. Anonymous API/web access cannot reply to or resolve
+  threads; report that limitation instead of requesting credentials.
+- Every accepted behavior change follows RED -> minimal GREEN -> focused/full
+  validation. Before any fix commit is pushed to the PR, run the related live
+  E2E from the publish worktree against the exact publish-built and deployed
+  binary, and verify source/deployed SHA-256 equality.
+
 ## Current Stage
 
-[2026-08-14] Step 3 - deterministic E2E and Rust GREEN; branches published, PR pending
+[2026-08-14] Step 4 - PR #618 review fixes GREEN; publish validation pending
 
 ### User-visible contract
 
@@ -123,6 +140,25 @@ were unchanged at the visibility oracle.
 - Visual inspection: before navigation only turns 09-11 are visible; after
   navigation turns 00-02 are visible and turn 00 has cyan keyboard focus. The
   pane is nonblank and prompt/reply/input rows do not overlap.
+
+### PR #618 review triage
+
+- Accepted Copilot's empty-list pending-state finding, including the equivalent
+  suppressed comment. Focused RED proved `select_older_completed_turn` left
+  `completed_turn_selection_visible_pending=true` when no turns existed. Both
+  empty-list navigation paths now clear the flag; focused GREEN passes.
+- Declined Copilot's double-layout performance suggestion for this PR. The
+  extra measurement occurs only on the one-shot selection-pending render and
+  must use the same wrapped-line builders to preserve scroll correctness. The
+  normal render remains lazy, the latest 12 packaged helper logs contain zero
+  `slow: chat_render` events at the existing 75ms threshold, and eliminating
+  the pass safely would require a height cache or a higher-risk lazy-render
+  refactor. Revisit only with measured slow-render evidence.
+- Public PR conversation, reviews, inline comments, suppressed comments, files,
+  and HEAD checks were all inspected through anonymous REST/web access. PR HEAD
+  checks were successful or intentionally skipped; check-spelling reported no
+  new alerts.
+- Post-fix dev WTA suite: `1505 passed, 0 failed`.
 
 Local ignored evidence:
 
