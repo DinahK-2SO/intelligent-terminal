@@ -1,3 +1,183 @@
+# Completed-Turn Selection Auto-Scroll Handoff
+
+> Last synchronized: 2026-08-14
+>
+> This dev-only section tracks the completed-turn keyboard-selection viewport
+> issue. Product behavior and committed tests remain the source of truth.
+
+Branches created from latest `origin/main@ac0d42080`:
+
+- dev: `user/DinahK-2SO/completed-turn-selection-scroll` -> `Dinah`
+- publish: `user/DinahK-2SO/completed-turn-selection-scroll-publish` -> `origin`
+
+Publish scope excludes this `AGENTS.md` handoff and local screenshots/reports.
+
+### Commit and worktree discipline
+
+- Publishable changes are committed first on dev as one self-contained commit:
+  product code, product/Rust tests, tests that live naturally in the existing
+  ItE2E framework, their deterministic fixtures, and release-checklist/ItE2E
+  metadata.
+- Dev-only changes are committed separately afterward: this `AGENTS.md`
+  handoff, progress notes, ignored screenshots/reports/logs, local-only test
+  orchestration, and experiments that do not belong to an existing framework.
+- The publish worktree must directly cherry-pick the dev publishable commit. Do
+  not cherry-pick a mixed commit and then restore dev-only files.
+- Current publishable commit: `0a7c9355bdef7f70663820c79a60cfdc8c534678`.
+- The separate `Start-Terminal` two-window startup-ordering fix is not part of
+  this publishable commit or this issue branch.
+
+## Current Stage
+
+[2026-08-14] Step 3 - deterministic E2E and Rust GREEN; branch publication pending
+
+### User-visible contract
+
+- With an empty input and completed turns present, Tab moves focus from the
+  input to the newest completed turn.
+- Up/Down moves that focus through completed turns.
+- Every focused completed turn must remain inside the visible chat viewport.
+- Moving to an already-visible turn must not jump the viewport unnecessarily.
+- Enter expansion, Esc dismissal, manual wheel scrolling, prompt-history
+  Up/Down, replies, markers, and input rendering must remain unchanged.
+
+### Current ownership hypothesis
+
+```text
+Tab / Up / Down
+  -> app_keys.rs
+  -> TabSession::select_older_completed_turn / select_newer_completed_turn
+  -> selected_completed_turn_idx changes
+
+chat viewport
+  -> ui/chat.rs::render
+  -> chat_scroll.offset
+  -> Paragraph::scroll
+```
+
+The local hypothesis is that completed-turn selection mutates only
+`selected_completed_turn_idx`; no code updates `chat_scroll.offset`, so keyboard
+focus can move outside the viewport while rendering stays at the old offset.
+
+### E2E reproduction steps
+
+Use the existing `ItE2E` framework, deployed Dev package, and the deterministic
+`Mock-AcpChatAgent.ps1` fixture:
+
+1. Start Intelligent Terminal with `custom:chat-fixture` and open its Agent
+  Pane.
+2. Submit 12 uniquely named `SCROLL_TURN_nn_<guid>` prompts. For every prompt,
+  wait for the fixture's unique `ACK_<prompt>` reply and for the connected input
+  placeholder before sending the next one.
+3. Assert the fixture log contains exactly 12 prompt records so the setup cannot
+  pass when submissions were dropped or overwritten.
+4. Capture the pane and prove the oldest prompt is outside the viewport while
+  the newest prompt is visible.
+5. Press Tab once to select the newest completed turn.
+6. Press Up 11 times until the oldest completed turn is selected.
+7. Capture the pane again.
+8. RED oracle: the oldest unique prompt should now be visible because the
+   viewport followed keyboard focus. The current bug is reproduced only if the
+   focused prompt remains absent.
+9. Save before/after screenshots, pane captures, and the fixture log as ignored
+  local evidence.
+
+The test must use unique prompt markers and prove the target starts off-screen;
+otherwise visibility after navigation is not evidence of auto-scroll.
+
+RED evidence is now valid: all 12 fixture prompts completed exactly once, the
+newest turn was visible and the oldest was off-screen before navigation, and
+the oldest remained absent after `Tab` plus 11 `Up` keys. Before/after captures
+were unchanged at the visibility oracle.
+
+### Implementation
+
+- Completed-turn selection methods set a one-shot
+  `completed_turn_selection_visible_pending` flag.
+- The chat render pass consumes that flag before lazy history construction.
+- Using the same pending-message, message, and completed-turn line builders as
+  normal rendering, it computes the selected block's rendered row interval
+  measured from the bottom.
+- Scroll offset changes only when that interval falls outside the viewport.
+  Selection of an already-visible turn is a no-op, and later manual scrolling
+  is not overridden because the pending flag has already been consumed.
+
+### TDD and validation evidence
+
+- Live E2E RED: `Keyboard selection keeps focused completed turns visible`
+  failed only at the final oldest-turn visibility oracle after all 12
+  deterministic turns completed.
+- Rust RED: `render_chat_keeps_keyboard_selected_completed_turn_visible`
+  selected index 0 but rendered only turns 08-11.
+- The same Rust test is GREEN and covers Tab on an already-visible newest turn,
+  Up navigation to the oldest turn, Down navigation back to newest, and later
+  manual-scroll preservation.
+- Neighboring selection routing test and all `ui::chat::tests` passed (`36/36`).
+- Full WTA suite: `1504 passed, 0 failed`.
+- Explicit `x86_64-pc-windows-msvc` WTA build succeeded with existing warnings
+  only.
+- Final Cargo and deployed Dev-package `wta.exe` SHA-256 both matched
+  `E418EF6AE2AB1A51DD575EA57055BB46238A9A4BD5E11590053CD8F2B71C6BCD`.
+- Final packaged E2E: `1 passed, 0 failed`.
+- Release checklist item `C263` is `[x]` in the generated report.
+- Visual inspection: before navigation only turns 09-11 are visible; after
+  navigation turns 00-02 are visible and turn 00 has cyan keyboard focus. The
+  pane is nonblank and prompt/reply/input rows do not overlap.
+
+Local ignored evidence:
+
+- `test/e2e/artifacts/completed-turn-selection-scroll/before-navigation.png`
+- `test/e2e/artifacts/completed-turn-selection-scroll/after-navigation.png`
+- `test/e2e/artifacts/completed-turn-selection-scroll/before-navigation.txt`
+- `test/e2e/artifacts/completed-turn-selection-scroll/after-navigation.txt`
+- `test/e2e/artifacts/completed-turn-selection-scroll/fixture.log`
+- `test/e2e/artifacts/completed-turn-selection-scroll/final/report.html`
+- `test/e2e/artifacts/completed-turn-selection-scroll/final/results.xml`
+
+### Strict TDD workflow
+
+1. Add the smallest live E2E case to the existing natural suite.
+2. Deploy latest-main WTA before the RED run so the baseline binary is exact.
+3. Run only the new case and confirm it fails at the visibility oracle for the
+   expected reason. If it cannot reproduce, stop and report the evidence before
+   changing product code.
+4. Add a focused Rust state/render regression that captures the missing
+   selection-to-scroll behavior and confirm RED.
+5. Apply the smallest implementation at the owning scroll boundary.
+6. Rerun the same focused Rust and live E2E checks for GREEN.
+7. Run related chat tests, the full WTA suite, and explicit x64 WTA build.
+8. Hot-refresh the exact built `wta.exe` into the Dev package, verify SHA-256,
+   and rerun the full related E2E suite.
+9. Inspect screenshots for a visible nonblank pane, selected target visibility,
+   stable input layout, and no overlap.
+10. Commit product/tests/existing-framework E2E/checklist metadata as the dev
+  publishable commit; commit this handoff and local-only material separately.
+11. Push dev and confirm remote synchronization, then directly cherry-pick the
+  publishable commit into the publish worktree.
+
+### Guardrails
+
+- Do not make Up/Down scroll completed turns while input history owns focus.
+- Do not infer visibility from selection index alone; the live viewport is the
+  user-visible contract.
+- Do not reset manual scroll globally on every selection key. Adjust only enough
+  to reveal the selected turn.
+- Height calculations must use the same rendered-line builders as the UI.
+- Format only touched Rust files; crate-wide formatting causes unrelated churn.
+
+### Separate E2E harness follow-up
+
+Repeated investigation runs exposed an unrelated `Start-Terminal` race: COM
+probing can begin before AUMID activation creates its first HWND, producing two
+top-level windows in one process. Waiting for the first HWND before COM probing
+changed controlled launches from `2 HWND / 2 logical windows` to `1 / 1`.
+
+Do not include that harness change in this issue branch or publish PR. After the
+auto-scroll fix PR is created, open a separate small branch/PR for the startup
+ordering fix and its focused single-window regression coverage.
+
+---
+
 # Intelligent Terminal (Windows Terminal Fork)
 
 AI-native Windows Terminal — agents (Copilot, Claude, Gemini, custom) can understand, fix, and automate terminal workflows.
