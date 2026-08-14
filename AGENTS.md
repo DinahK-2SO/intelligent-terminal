@@ -1,49 +1,18 @@
-# Feature/Fix Handoff Template
+# 历史对话三角形点击交互交接
 
-> TEMPLATE: When instantiating this handoff, replace each `<PLACEHOLDER>` as
-> its evidence becomes available. Delete optional sections that do not apply.
-> Do not carry details from a previous work item into a new branch. Keep the
-> repository reference below the `---` divider unchanged unless its long-lived
-> architecture changes.
-
-## Placeholder Checklist
-
-Fill these before implementation begins:
-
-- Identity: `<WORK_ITEM_TITLE>`, `<LAST_SYNCHRONIZED_YYYY-MM-DD>`, `<BASE_SHA>`,
-  branch/remote names, and `<ISSUE_OR_PR>`.
-- Scope: `<CURRENT_STAGE>`, `<USER_VISIBLE_CONTRACT>`, non-goals, guardrails,
-  `<OPEN_FOLLOW_UPS>`, `<REVIEW_EVIDENCE_DIR>`, and any
-  `<PUBLISH_SCOPE_EXCEPTION>`.
-- Discovery: ownership path, falsifiable hypothesis, discriminating check,
-  deterministic reproduction, setup preconditions, RED oracle, and the nearest
-  existing test/framework that can be reused.
-
-Fill these as implementation evidence becomes available:
-
-- RED/GREEN results, owning abstraction, state/API changes, invariants,
-  performance notes, rejected alternatives, and artifact paths.
-- Review decisions with rationale, resolution, and focused validation.
-
-Fill these before publishing or handoff completion:
-
-- Full-suite/build/deployment/E2E results, visual evidence, remaining gaps,
-  source/deployed hashes, `<PUBLISHABLE_COMMIT>`, and `<PUBLISH_HEAD>`.
-- Replace any remaining inline `<PLACEHOLDER>` or explicitly mark it `N/A`.
-
-> Last synchronized: `<LAST_SYNCHRONIZED_YYYY-MM-DD>`
+> Last synchronized: `2026-08-14`
 >
-> This dev-only section tracks `<WORK_ITEM_TITLE>`. Product behavior and
-> committed tests remain the source of truth.
+> 本地开发区跟踪第一版鼠标交互：仅点击历史 turn 的 `▶` / `▼`
+> 三角形时展开或折叠该 turn。产品行为与已提交测试仍是最终事实来源。
 
-Branches created from `origin/main@<BASE_SHA>`:
+Branches created from `origin/main@8dfcf91935032e1d6cb9f056f32bcf67329651ad`:
 
-- dev: `<DEV_BRANCH>` -> `<DEV_REMOTE>`
-- publish: `<PUBLISH_BRANCH>` -> `<PUBLISH_REMOTE>`
-- issue / pull request: `<ISSUE_OR_PR>`
+- dev: `user/DinahK-2SO/mouse-interactions` -> `Dinah`
+- publish: `user/DinahK-2SO/mouse-interactions-publish` -> `origin`
+- issue / pull request: `暂无；创建后补充`
 
 Publish scope excludes this handoff and local-only screenshots, reports, logs,
-and experiments unless `<PUBLISH_SCOPE_EXCEPTION>` explicitly says otherwise.
+and experiments. 本功能当前没有额外 publish scope 例外。
 
 ### Commit and worktree discipline
 
@@ -56,23 +25,25 @@ and experiments unless `<PUBLISH_SCOPE_EXCEPTION>` explicitly says otherwise.
   orchestration, and experiments that do not belong to an existing framework.
 - The publish worktree must directly cherry-pick the dev publishable commit. Do
   not cherry-pick a mixed commit and then restore dev-only files.
-- Current publishable commit: `<PUBLISHABLE_COMMIT>`.
-- Current publish head: `<PUBLISH_HEAD>`.
-- Excluded work: `<OPEN_FOLLOW_UPS>`.
+- Current publishable commit: `待 RED/GREEN 与完整验证后补充`.
+- Current publish head: `待 publish worktree 直接 cherry-pick 后补充`.
+- Excluded work: `hover 高亮、点击 user-input 文本展开/折叠、跨 pane 的
+  PointerExited 处理，以及扩大点击热区；这些均不属于第一版`.
 
 ### E2E Reuse and Test-Framework Modularization
 
 - Reuse or extend existing tests, fixtures, helpers, and E2E frameworks first.
-  Record the nearest reusable coverage at `<EXISTING_TEST_SURFACE>` and explain
-  why it is sufficient or insufficient for the real user workflow.
+  当前最近的可复用覆盖是 `test/e2e/tests/Feature.AgentMouse.Tests.ps1`，
+  以及 `Send-AgentMouseEvent` / `Send-AgentMouseClick`。它们已经通过
+  ConPTY 注入真实 SGR mouse input，足以覆盖第一版用户操作。
 - When the existing framework cannot exercise the real user operation, a local
   E2E framework or orchestration layer may be developed to establish RED/GREEN
-  evidence. Keep it under `<LOCAL_E2E_FRAMEWORK_PATH>` and design clear module
-  boundaries, inputs, outputs, and cleanup so it can become an independent PR.
+  evidence. 第一版不需要新建本地 E2E framework；若后续发现现有能力不足，
+  新 framework 必须保持模块化并单独提取为 PR。
 - Do not include a large new test framework, general-purpose harness rewrite,
   or unrelated infrastructure in the feature/fix publishable commit. Commit
   only tests that fit naturally in an existing framework; track the modular
-  framework extraction under `<OPEN_FOLLOW_UPS>` for a separate branch/PR.
+  framework extraction under 上述 Excluded work，并使用独立 branch/PR。
 - Small deterministic fixtures or helpers may ship with the feature when they
   are narrowly owned by the existing test suite and are required to make the
   regression reliable.
@@ -97,95 +68,116 @@ and experiments unless `<PUBLISH_SCOPE_EXCEPTION>` explicitly says otherwise.
 
 ## Current Stage
 
-`<LAST_SYNCHRONIZED_YYYY-MM-DD>`: `<CURRENT_STAGE>`
+`2026-08-14`: 可行性调查完成，第一版范围已收敛，准备在现有 mouse E2E
+中建立 live RED，并在 Rust 中建立 focused RED；尚未修改产品代码。
 
 ### User-Visible Contract
 
-`<USER_VISIBLE_CONTRACT>`
-
-List concrete behavior, preserved workflows, edge cases, and explicit
-non-goals. Prefer observable outcomes over implementation details.
+- 用户仅在左键单击可见历史 turn 的 `▶` 或 `▼` 三角形时，展开或折叠
+  对应 turn。
+- Mouse Down 与 Mouse Up 必须落在同一个三角形 cell，且过程中没有 drag，
+  才算一次有效点击。
+- 点击 prompt 文本、reply/details、行尾空白或其他 UI 不产生展开/折叠。
+- 点击三角形不改变键盘 selection/focus；现有 Tab/Up/Down/Enter 行为保持不变。
+- 鼠标拖拽、双击/三击文本选择、Ctrl+C 复制和滚轮滚动保持不变。
+- 滚动、换行、窗口 resize 后，只允许当前实际可见的三角形响应点击。
+- 第一版明确不实现 hover、高亮、点击 user-input 文本、扩大点击热区，
+  也不修改 TermControl/C++ 的 pointer lifecycle。
 
 ### Current Ownership Hypothesis
 
 ```text
-<ENTRY_POINT>
-  -> <ROUTING_LAYER>
-  -> <OWNING_ABSTRACTION>
-  -> <STATE_OR_OUTPUT>
+SGR mouse Down / Up from ConPTY
+  -> event.rs::map_crossterm_event
+  -> AppEvent::Mouse / app_events.rs
+  -> chat render 生成的可见三角形 hit regions
+  -> TabSession 按 turn index 展开或折叠
 ```
 
-- Owning code path: `<OWNERSHIP_PATH>`
-- Falsifiable hypothesis: `<CURRENT_HYPOTHESIS>`
-- Cheapest discriminating check: `<DISCRIMINATING_CHECK>`
+- Owning code path: `ui/chat.rs` 负责三角形实际渲染位置，`app_events.rs`
+  负责鼠标手势路由，`TabSession` 负责 turn 展开状态。
+- Falsifiable hypothesis: 当前 Down/Drag/Up 只进入文本选择逻辑，render 也没有
+  暴露可见三角形坐标；若记录每帧实际三角形 hit region，并仅在无 drag 的
+  同点 Down/Up 上按 index toggle，就能复用 Enter 的状态变化且不破坏文本选择。
+- Cheapest discriminating check: 使用合成 Mouse Down/Up 点击已知三角形 cell，
+  应只切换目标 turn；将同一点击移到 prompt 文本 cell 时必须保持不变。
 
 ### Reproduction and RED Oracle
 
-Framework / fixture: `<TEST_FRAMEWORK_AND_FIXTURE>`
+Framework / fixture: 复用 `Feature.AgentMouse.Tests.ps1`、ItE2E 的
+`Send-AgentMouseClick` 和现有 deterministic ACP fixture；不新建 framework。
 
-1. `<REPRO_STEP_1>`
-2. `<REPRO_STEP_2>`
-3. `<REPRO_STEP_3>`
-4. Prove setup preconditions: `<SETUP_PRECONDITIONS>`.
-5. Capture ignored evidence at `<ARTIFACT_PATHS>`.
+1. 使用 `ITE2E_PACKAGE=Dev` 启动 exact baseline，并创建至少一个已完成 turn。
+2. 证明该 turn 初始为折叠状态，记录 `▶` 的可见 cell 坐标并保存 RED 截图。
+3. 通过 ConPTY 向该 cell 发送完整左键 click，再捕获 pane。
+4. 证明 setup preconditions：目标 pane/session 正确、turn 已完成、目标三角形
+  可见、fixture prompt exactly once、实际运行 binary 与 baseline hash 匹配。
+5. 将截图、pane capture、fixture log 和命令记录在
+  `test/e2e/artifacts/mouse-interactions/`。
 
-- RED oracle: `<RED_ORACLE>`
-- Expected failure location/message: `<EXPECTED_FAILURE>`
-- Evidence that setup itself succeeded: `<VALID_SETUP_EVIDENCE>`
+- RED oracle: 点击 `▶` 后 turn 仍保持折叠，因为当前没有 triangle hit-test 路由。
+- Expected failure location/message: 新 E2E 应只在“点击后 details 未出现”的最终
+  行为断言失败，而不是 setup、连接或坐标定位失败。
+- Evidence that setup itself succeeded: `待 live RED 运行后记录 exact marker、
+  pane/session、baseline hash、before/after capture 与失败消息`。
 
 ### Implementation
 
-`<IMPLEMENTATION_SUMMARY>`
+尚未实现。预期最小方案是在 chat render 中记录当前帧可见的三角形 cell 与
+turn index，在 App 中跟踪左键 Down 目标和是否发生 Drag，并在同一三角形上的
+Mouse Up 调用按 index toggle 的状态方法。
 
-- Owning abstraction: `<OWNING_ABSTRACTION>`
-- State or API changes: `<STATE_OR_API_CHANGES>`
-- Preserved invariants: `<PRESERVED_INVARIANTS>`
-- Performance implications: `<PERFORMANCE_NOTES>`
-- Rejected alternatives and rationale: `<REJECTED_ALTERNATIVES>`
+- Owning abstraction: `待 focused RED 后确认；预期为 chat hit region + App mouse
+  gesture routing + TabSession turn toggle`。
+- State or API changes: `待实现；仅允许最小的可见 hit regions 和 click gesture
+  state，不引入 hover state`。
+- Preserved invariants: 键盘 selection 与 Enter、文本选择、多击、复制、滚轮、
+  手动 scroll offset、其他 card/input 交互均不改变。
+- Performance implications: 不启用 Moved，也不增加 hover redraw；只在正常 render
+  时更新少量可见三角形坐标，点击成功后触发一次既有重绘。
+- Rejected alternatives and rationale: 第一版拒绝整行/user-input 点击与 hover，
+  因为它们扩大文本选择冲突，并引入高频 redraw 与 PointerExited 生命周期问题。
 
 ### TDD and Validation Evidence
 
-- Focused RED: `<FOCUSED_RED_EVIDENCE>`
-- Live / E2E RED: `<LIVE_RED_EVIDENCE>`
-- Focused GREEN: `<FOCUSED_GREEN_EVIDENCE>`
-- Neighboring tests: `<NEIGHBORING_TEST_RESULTS>`
-- Full suite: `<FULL_SUITE_RESULTS>`
-- Explicit-target build: `<BUILD_RESULTS>`
-- Exact deployed package: `<PACKAGE_SELECTOR_AND_IDENTITY>`
-- Source/deployed SHA-256: `<SOURCE_HASH>` / `<DEPLOYED_HASH>`
-- Packaged E2E: `<PACKAGED_E2E_RESULTS>`
-- Screenshot paths: `<RED_SCREENSHOTS>` / `<GREEN_SCREENSHOTS>`
-- Visual inspection: `<VISUAL_EVIDENCE>`
-- Remaining test gaps: `<REMAINING_TEST_GAPS>`
+- Focused RED: `待补充；至少覆盖 triangle click toggle、prompt click no-op、
+  drag no-toggle、错误/不可见坐标 no-op`。
+- Live / E2E RED: `待补充；必须运行 exact baseline，并仅在 details 可见性 oracle
+  失败`。
+- Focused GREEN: `待实现后补充`。
+- Neighboring tests: `待补充；至少运行 mouse selection、mouse wheel、键盘 Enter
+  toggle 与 completed-turn render tests`。
+- Full suite: `待补充`。
+- Explicit-target build: `待补充`。
+- Exact deployed package: `必须为 Dev package；运行时验证 PFN、process path 和
+  package identity，禁止使用默认 Auto`。
+- Source/deployed SHA-256: `待补充` / `待补充`。
+- Packaged E2E: `待补充`。
+- Screenshot paths: `test/e2e/artifacts/mouse-interactions/red/` /
+  `test/e2e/artifacts/mouse-interactions/green/`。
+- Visual inspection: `待补充；必须确认 triangle glyph 与 details 状态正确、pane
+  非空、无 overlap/clipping，并覆盖折叠与展开两个方向`。
+- Remaining test gaps: `待 RED 与实现后评估`。
 
 For UI or terminal-rendering changes, screenshots are required evidence, not
 optional decoration. Capture the failing state and the fixed state from the
 real user workflow. Inspect and record that the target state is visible, output
 is nonblank, layout is stable, and controls/text do not overlap or clip. Cover
 all relevant pane positions, window sizes, themes, or interaction modes named
-by `<USER_VISIBLE_CONTRACT>`.
+by 上述 User-Visible Contract。
 
 ### Review Triage
 
-For every review round, append a short entry using this format:
+每轮 review 都追加一条记录，包含日期、review ID 或 head SHA、finding 路径与
+摘要、accept/decline/escalate 决策、技术理由、RED 证据、处理方式、GREEN
+验证和 publish commit。
 
-```text
-<REVIEW_DATE> <REVIEW_ID_OR_HEAD_SHA>
-- Finding: <PATH_AND_SUMMARY>
-- Decision: accept | decline | escalate
-- Rationale: <TECHNICAL_REASONING>
-- RED: <FAILURE_EVIDENCE_OR_N/A>
-- Resolution: <CHANGE_OR_EXPLICIT_DECLINE>
-- GREEN: <VALIDATION_EVIDENCE>
-- Publish commit: <SHA_OR_N/A>
-```
-
-Current review status: `<REVIEW_STATUS>`
-Open review items: `<OPEN_REVIEW_ITEMS_OR_NONE>`
+Current review status: `尚未创建 PR，暂无 review round`
+Open review items: `无；创建 PR 后按上述格式追加`
 
 ### Local-Only Evidence
 
-`<ARTIFACT_PATHS>`
+当前 evidence root：`test/e2e/artifacts/mouse-interactions/`。
 
 List ignored screenshots, pane captures, fixture logs, test reports, local E2E
 frameworks, scripts, wire captures, and provider configurations. State which
@@ -196,7 +188,8 @@ artifact proves each user-visible assertion.
   for reproduction, review follow-up, and extraction into a separate PR.
 - If a screenshot or other evidence must be committed for review, copy the
   final selected artifact into the designated non-ignored
-  `<REVIEW_EVIDENCE_DIR>`. Do not force-add the ignored working artifact.
+  `待 PR 创建时指定的 review-evidence 目录`. Do not force-add the ignored
+  working artifact.
 - If evidence does not need to be committed, keep it in its ignored location
   and record the exact path, command, package/binary identity, validation
   result, and visual conclusion in this handoff.
@@ -227,9 +220,11 @@ artifact proves each user-visible assertion.
 
 ### Guardrails
 
-- `<WORK_ITEM_GUARDRAIL_1>`
-- `<WORK_ITEM_GUARDRAIL_2>`
-- `<WORK_ITEM_GUARDRAIL_3>`
+- 第一版只允许点击 `▶` / `▼` 单个 cell；不得顺手加入 hover、整行点击或
+  user-input 文本点击。
+- 必须区分 click 与 drag：任何 drag 都归文本选择，不得 toggle turn。
+- Mouse Down/Up 必须命中同一可见三角形；过期、滚出 viewport 或 resize 前的
+  hit region 必须安全 no-op。
 - Do not infer user-visible behavior only from internal state; validate the
   actual output or workflow.
 - Do not include unrelated fixes discovered during investigation. Record them
@@ -237,13 +232,14 @@ artifact proves each user-visible assertion.
 - Do not delete ignored local E2E frameworks, scripts, wire/provider configs,
   screenshots, or logs. Preserve them and record their paths.
 - Do not force-add ignored screenshots. Copy review-selected evidence into
-  `<REVIEW_EVIDENCE_DIR>` when it must be committed.
+  指定的非 ignored review-evidence 目录 when it must be committed.
 - Format only touched files; avoid repository-wide mechanical churn.
 
 ### Optional Follow-Ups
 
-- `<FOLLOW_UP_TITLE>`: `<WHY_EXCLUDED>`, `<EVIDENCE>`, `<PROPOSED_NEXT_STEP>`.
-- If none: `None`.
+- Hover 与 user-input 文本点击：第一版明确排除。完成 triangle-only MVP 并取得
+  性能、文本选择和用户反馈后，再单独评估是否需要 PointerExited/C++ 支持、
+  hover redraw gating 与更大的 hit target。
 
 ---
 
