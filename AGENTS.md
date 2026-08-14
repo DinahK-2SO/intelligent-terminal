@@ -24,7 +24,7 @@ Publish scope excludes this `AGENTS.md` handoff and local screenshots/reports.
   orchestration, and experiments that do not belong to an existing framework.
 - The publish worktree must directly cherry-pick the dev publishable commit. Do
   not cherry-pick a mixed commit and then restore dev-only files.
-- Current publishable commit: `b8ada36ee287d563d276a077258ccb62a1e4f8c0`.
+- Current publishable commit: `8d35eaf7fccc84b990c8724adb4d3c0c5db98d24`.
 - The separate `Start-Terminal` two-window startup-ordering fix is not part of
   this publishable commit or this issue branch.
 
@@ -170,6 +170,17 @@ were unchanged at the visibility oracle.
   through PowerShell `-EncodedCommand`, whose command tokens contain no spaces;
   live GREEN connected the fixture, completed all 12 turns exactly once, and
   revealed the oldest keyboard-selected turn.
+- Accepted the suppressed completed-turn selection invariant finding. Focused
+  RED proved Esc cleared `selected_completed_turn_idx` but left its pending
+  visibility request set. `TabSession::clear_completed_turn_selection` now
+  atomically clears both fields; `clear_chat_history`, Esc, empty navigation,
+  and recommendation surfacing all use it, and no production path directly
+  clears the index. Focused clear-history and Esc regressions are GREEN.
+- Accepted the suppressed fixture unknown-request finding. A direct stdio RED
+  sent a request with id 77 and an unknown method; the fixture exited without
+  writing a response. Its default branch now returns JSON-RPC `-32601` for
+  unknown requests with an id while ignoring notifications. The same probe is
+  GREEN, and the packaged E2E confirms the normal ACP flow is unchanged.
 - Latest dev validation: all `ui::chat::tests` passed (`37/37`), the focused
   selection render regression passed, and the explicit-target full WTA suite
   passed (`1506 passed, 0 failed`). Touched files have no editor diagnostics.
@@ -186,12 +197,22 @@ were unchanged at the visibility oracle.
 - Optimized publish Cargo and deployed Dev-package `wta.exe` SHA-256 both
   matched `F979BACCD47B9658681272359811F19811D2858505FB8E385FC0C6AB8286DC26`.
 - Optimized pre-push publish E2E: `1 passed, 0 failed`.
-- Current PR HEAD: `5bc643e3bd5314217219c0d0550130ab4748abb3`.
+- Current PR HEAD: `eb9d66f461f04eb11c554971fb88dd9f2d037c2f`.
 - Latest dev publishable review-fix commit:
-  `b8ada36ee287d563d276a077258ccb62a1e4f8c0`.
+  `8d35eaf7fccc84b990c8724adb4d3c0c5db98d24`.
 - Latest publish review-fix cherry-pick:
+  `eb9d66f461f04eb11c554971fb88dd9f2d037c2f`.
+- Latest exact publish WTA suite: `1506 passed, 0 failed`; explicit x64 build
+  succeeded with existing warnings only.
+- Latest exact publish Cargo and deployed Dev-package `wta.exe` SHA-256 both
+  matched `80F22B106C1759A1015C8EF53ABE64B89B0B4BF90B5C9AFCB37111CE698E9A9E`.
+- Latest exact packaged E2E: `1 passed, 0 failed`; turns 00-11 were recorded
+  exactly once, and visual evidence showed turn 00 selected without overlap.
+- Previous dev publishable review-fix commit:
+  `b8ada36ee287d563d276a077258ccb62a1e4f8c0`.
+- Previous publish review-fix cherry-pick:
   `5bc643e3bd5314217219c0d0550130ab4748abb3`.
-- Exact publish WTA suite: `1506 passed, 0 failed`; explicit x64 build
+- Previous exact publish WTA suite: `1506 passed, 0 failed`; explicit x64 build
   succeeded with existing warnings only.
 - Exact publish Cargo and deployed Dev-package `wta.exe` SHA-256 both matched
   `7567EFCF18B5BC393A07829C9BE28081B2B1DEA08B55BE5BBD2AF52B8157FE7A`.
