@@ -46,7 +46,7 @@ Publish scope excludes this `AGENTS.md` handoff and local screenshots/reports.
 
 ## Current Stage
 
-[2026-08-14] Step 4 - PR #618 performance follow-up GREEN on dev; publish validation pending
+[2026-08-14] Step 4 - PR #618 performance follow-up GREEN on dev and publish
 
 ### User-visible contract
 
@@ -162,6 +162,13 @@ were unchanged at the visibility oracle.
   new alerts.
 - Post-fix dev WTA suite: `1505 passed, 0 failed`.
 - Dev performance commit: `cfb2bf611ed36e49d254f6c82d4f0eadeb04d91f`.
+- Publish performance cherry-pick commit:
+  `ccdaf2517fde13df82891fdaf8192b4676d649b7`.
+- Optimized publish WTA suite: `1505 passed, 0 failed`; explicit x64 build
+  succeeded with existing warnings only.
+- Optimized publish Cargo and deployed Dev-package `wta.exe` SHA-256 both
+  matched `F979BACCD47B9658681272359811F19811D2858505FB8E385FC0C6AB8286DC26`.
+- Optimized pre-push publish E2E: `1 passed, 0 failed`.
 - Dev publishable review-fix commit:
   `7a0f081932e0ce860c1346ccaeb4e47cdcc08a25`.
 - Publish cherry-pick review-fix commit:
