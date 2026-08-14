@@ -46,7 +46,7 @@ Publish scope excludes this `AGENTS.md` handoff and local screenshots/reports.
 
 ## Current Stage
 
-[2026-08-14] Step 4 - PR #618 review fixes GREEN; publish validation pending
+[2026-08-14] Step 4 - PR #618 review triaged; publish validation GREEN
 
 ### User-visible contract
 
@@ -159,6 +159,15 @@ were unchanged at the visibility oracle.
   checks were successful or intentionally skipped; check-spelling reported no
   new alerts.
 - Post-fix dev WTA suite: `1505 passed, 0 failed`.
+- Dev publishable review-fix commit:
+  `7a0f081932e0ce860c1346ccaeb4e47cdcc08a25`.
+- Publish cherry-pick review-fix commit:
+  `6a7de25fd86bfeae75544a15926f3bb5ec8be1eb`.
+- Publish WTA suite: `1505 passed, 0 failed`; explicit x64 build succeeded
+  with existing warnings only.
+- Publish Cargo and deployed Dev-package `wta.exe` SHA-256 both matched
+  `69DADC079CDE194BFB8DD56C8999638C257C8F670652F6D7EA923C676F89BE1C`.
+- Pre-push publish E2E: `1 passed, 0 failed`.
 
 Local ignored evidence:
 
