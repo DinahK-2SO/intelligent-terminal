@@ -25,8 +25,8 @@ and experiments. 本功能当前没有额外 publish scope 例外。
   orchestration, and experiments that do not belong to an existing framework.
 - The publish worktree must directly cherry-pick the dev publishable commit. Do
   not cherry-pick a mixed commit and then restore dev-only files.
-- Current publishable commit: `待 RED/GREEN 与完整验证后补充`.
-- Current publish head: `待 publish worktree 直接 cherry-pick 后补充`.
+- Current publishable commit: `7376ead15e7b0757627ac4746831ee6bd7cab1f2`.
+- Current publish head: `306159803f51cc89a7e7b6137c063808822e9c60`.
 - Excluded work: `hover 高亮、点击 user-input 文本展开/折叠、跨 pane 的
   PointerExited 处理，以及扩大点击热区；这些均不属于第一版`.
 
@@ -68,8 +68,9 @@ and experiments. 本功能当前没有额外 publish scope 例外。
 
 ## Current Stage
 
-`2026-08-14`: 可行性调查完成，第一版范围已收敛，准备在现有 mouse E2E
-中建立 live RED，并在 Rust 中建立 focused RED；尚未修改产品代码。
+`2026-08-14`: 第一版 triangle-only 实现、dev/publish commit 拆分与 exact publish
+验证完成；focused/full tests、build/deploy、live RED/GREEN、截图、process path、
+hash 和 release-report evidence 均已完成，准备 push。
 
 ### User-Visible Contract
 
@@ -108,29 +109,35 @@ Framework / fixture: 复用 `Feature.AgentMouse.Tests.ps1`、ItE2E 的
 `Send-AgentMouseClick` 和现有 deterministic ACP fixture；不新建 framework。
 
 1. 使用 `ITE2E_PACKAGE=Dev` 启动 exact baseline，并创建至少一个已完成 turn。
-2. 证明该 turn 初始为折叠状态，记录 `▶` 的可见 cell 坐标并保存 RED 截图。
+2. 证明该 turn 初始为展开状态，记录 `▼` 的可见 cell 坐标并保存 RED 截图。
 3. 通过 ConPTY 向该 cell 发送完整左键 click，再捕获 pane。
 4. 证明 setup preconditions：目标 pane/session 正确、turn 已完成、目标三角形
   可见、fixture prompt exactly once、实际运行 binary 与 baseline hash 匹配。
 5. 将截图、pane capture、fixture log 和命令记录在
   `test/e2e/artifacts/mouse-interactions/`。
 
-- RED oracle: 点击 `▶` 后 turn 仍保持折叠，因为当前没有 triangle hit-test 路由。
-- Expected failure location/message: 新 E2E 应只在“点击后 details 未出现”的最终
+- RED oracle: 点击 `▼` 后 turn 仍保持展开，因为 baseline 没有 triangle hit-test
+  路由。
+- Expected failure location/message: 新 E2E 应只在“点击后 details 仍可见”的最终
   行为断言失败，而不是 setup、连接或坐标定位失败。
-- Evidence that setup itself succeeded: `待 live RED 运行后记录 exact marker、
-  pane/session、baseline hash、before/after capture 与失败消息`。
+- Evidence that setup itself succeeded: fixture 对唯一
+  `SCROLL_TURN_00_<guid>` 只记录一次；header 与 `▼` cell 坐标唯一，reply 初始
+  可见；baseline source/deployed SHA-256 均为
+  `544D70F3CD200EA701079A926878F80C116B163737A101931A44891099B425BD`；
+  Pester 仅在 collapse oracle 报 `Expected $true ... but got $false`。
 
 ### Implementation
 
-尚未实现。预期最小方案是在 chat render 中记录当前帧可见的三角形 cell 与
-turn index，在 App 中跟踪左键 Down 目标和是否发生 Drag，并在同一三角形上的
-Mouse Up 调用按 index toggle 的状态方法。
+已在正常 chat render 后从实际 buffer 建立当前帧可见 triangle cell 到 turn index
+的映射。App 保存 `{tab_id, hit}` Down target；Key、Drag、wheel、resize、focus
+change、tab switch 都取消 press。Mouse Up 仅在同一 tab、同一坐标、同一 turn
+仍为当前可见 hit 时调用直接按 index toggle。
 
-- Owning abstraction: `待 focused RED 后确认；预期为 chat hit region + App mouse
-  gesture routing + TabSession turn toggle`。
-- State or API changes: `待实现；仅允许最小的可见 hit regions 和 click gesture
-  state，不引入 hover state`。
+- Owning abstraction: `ui/chat.rs` 生成可见 hit regions；`ui/layout.rs` 每帧先
+  清空旧 map；`app_events.rs` 路由 gesture；`TabSession::toggle_completed_turn`
+  复用既有展开状态。
+- State or API changes: App 新增少量当前帧 hit map 与 pressed target；
+  `TabSession` 新增按 index toggle helper；没有 hover/Moved state。
 - Preserved invariants: 键盘 selection 与 Enter、文本选择、多击、复制、滚轮、
   手动 scroll offset、其他 card/input 交互均不改变。
 - Performance implications: 不启用 Moved，也不增加 hover redraw；只在正常 render
@@ -140,24 +147,39 @@ Mouse Up 调用按 index toggle 的状态方法。
 
 ### TDD and Validation Evidence
 
-- Focused RED: `待补充；至少覆盖 triangle click toggle、prompt click no-op、
-  drag no-toggle、错误/不可见坐标 no-op`。
-- Live / E2E RED: `待补充；必须运行 exact baseline，并仅在 details 可见性 oracle
-  失败`。
-- Focused GREEN: `待实现后补充`。
-- Neighboring tests: `待补充；至少运行 mouse selection、mouse wheel、键盘 Enter
-  toggle 与 completed-turn render tests`。
-- Full suite: `待补充`。
-- Explicit-target build: `待补充`。
-- Exact deployed package: `必须为 Dev package；运行时验证 PFN、process path 和
-  package identity，禁止使用默认 Auto`。
-- Source/deployed SHA-256: `待补充` / `待补充`。
-- Packaged E2E: `待补充`。
+- Focused RED: `clicking_completed_turn_triangle_toggles_details` 在 baseline 上
+  失败于 `clicking the rendered triangle must collapse the completed turn`。
+- Live / E2E RED: `CompletedTurnMouse` setup 全部通过，仅 collapse oracle 失败；
+  RED Pester `0 passed, 1 failed`。
+- Focused GREEN: 4 个 `completed_turn_triangle*` tests 全部通过，覆盖 direct
+  toggle、prompt/mismatched-Up/drag no-op、hidden view/overlay/resize/wheel/tab
+  cancellation、visible scrolled hit rebuild、prompt 自带 triangle glyph 和 keyboard
+  selection preservation。
+- Neighboring tests: `mouse_` 7/7、`completed_turn` 11/11 通过；两个既有
+  Copilot-based AgentMouse cases 在 feature 与 exact main baseline 上都因各自 setup
+  / oracle 不稳定而失败，A/B 证明不是本功能回归。
+- Full suite: dev 与 exact publish 均为 `1510 passed, 0 failed`。
+- Explicit-target build: Debug x64 build 成功；50 个既有 dead-code/private-interface
+  warnings。
+- Exact deployed package: `IntelligentTerminal_0.8.0.2_x64__rd9vj3e6a2mbr`，
+  loose Dev AppX；新 E2E 自身固定 `Start-Terminal -Package 'Dev'`。运行中
+  `WindowsTerminal.exe`、master 与 helper 均来自该 AppX path，未使用 Store/Auto。
+- Source/deployed SHA-256: exact publish source、deployed file、live master/helper
+  均为 `FFFE6830C9C8B15E6D88F8148BA1B3218A3610747821CF5BA73B8608118CC56E`。
+  Dev worktree 最终验证 build 曾匹配
+  `49318CB781C50A6CFB345814C3CFAA80216814209BCE9905F65727F979EBE17F`。
+- Packaged E2E: exact publish `CompletedTurnMouse` 1 passed, 0 failed；覆盖
+  展开→折叠→重新展开、prompt click no-op 与 drag no-op。首次 publish run 因
+  已知双 helper startup race 在 BeforeAll timeout，未执行 click；清理后相同 case
+  通过。C264 在 isolated release report 中为 `[x]`。
 - Screenshot paths: `test/e2e/artifacts/mouse-interactions/red/` /
   `test/e2e/artifacts/mouse-interactions/green/`。
-- Visual inspection: `待补充；必须确认 triangle glyph 与 details 状态正确、pane
-  非空、无 overlap/clipping，并覆盖折叠与展开两个方向`。
-- Remaining test gaps: `待 RED 与实现后评估`。
+- Visual inspection: RED before/after 均保持 `▼` 且 reply 可见；GREEN 点击后
+  为 `▶` 且 reply 隐藏，再点击恢复 `▼` 与 reply。所有截图 pane 非空，输入区
+  稳定，无 overlap/clipping。
+- Remaining test gaps: 既有 Copilot-based wheel/selection E2E 当前 baseline 也不
+  稳定；另有已记录的 Start-Terminal 双 helper startup race，曾导致一次 BeforeAll
+  timeout，清理进程后同一 deterministic case 通过；两者均不在本 feature scope。
 
 For UI or terminal-rendering changes, screenshots are required evidence, not
 optional decoration. Capture the failing state and the fixed state from the
@@ -178,6 +200,13 @@ Open review items: `无；创建 PR 后按上述格式追加`
 ### Local-Only Evidence
 
 当前 evidence root：`test/e2e/artifacts/mouse-interactions/`。
+
+- `red/before-click.png` 与 `red/after-click.png`：baseline 点击前后均保持展开。
+- `green/before-click.png`、`green/after-click.png`、
+  `green/after-reexpand.png`：最终 build 的展开、折叠、重新展开状态。
+- `red/fixture.log` / `green/fixture.log`：各自唯一 prompt exactly once。
+- `final/report.html`、`final/results.xml`、`final/summary.md`：最终 isolated
+  Pester 1/1 GREEN；`final/release-report.md` 中 C264 为 `[x]`。
 
 List ignored screenshots, pane captures, fixture logs, test reports, local E2E
 frameworks, scripts, wire captures, and provider configurations. State which
