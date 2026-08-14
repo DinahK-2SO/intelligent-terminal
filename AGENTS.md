@@ -24,7 +24,7 @@ Publish scope excludes this `AGENTS.md` handoff and local screenshots/reports.
   orchestration, and experiments that do not belong to an existing framework.
 - The publish worktree must directly cherry-pick the dev publishable commit. Do
   not cherry-pick a mixed commit and then restore dev-only files.
-- Current publishable commit: `8d35eaf7fccc84b990c8724adb4d3c0c5db98d24`.
+- Current publishable commit: `b5fd8a7bb0af1992b80023d183531fe535c80dda`.
 - The separate `Start-Terminal` two-window startup-ordering fix is not part of
   this publishable commit or this issue branch.
 
@@ -42,7 +42,9 @@ Publish scope excludes this `AGENTS.md` handoff and local screenshots/reports.
 - Every accepted behavior change follows RED -> minimal GREEN -> focused/full
   validation. Before any fix commit is pushed to the PR, run the related live
   E2E from the publish worktree against the exact publish-built and deployed
-  binary, and verify source/deployed SHA-256 equality.
+  binary, and verify source/deployed SHA-256 equality. Set
+  `ITE2E_PACKAGE=Dev`; the harness default `Auto` prefers an installed Store
+  package and can otherwise validate the wrong binary.
 
 ## Current Stage
 
@@ -181,6 +183,12 @@ were unchanged at the visibility oracle.
   writing a response. Its default branch now returns JSON-RPC `-32601` for
   unknown requests with an id while ignoring notifications. The same probe is
   GREEN, and the packaged E2E confirms the normal ACP flow is unchanged.
+- Accepted the suppressed test-name readability suggestion. Renamed the
+  cross-thread builder-counter regression to
+  `completed_turn_build_counter_does_not_leak_across_threads`.
+- Accepted the suppressed release-checklist newline finding. Raw-byte
+  inspection proved line 431 was the file's only CRLF ending among 430 LF
+  lines; it is now LF, with no whole-file newline churn.
 - Latest dev validation: all `ui::chat::tests` passed (`37/37`), the focused
   selection render regression passed, and the explicit-target full WTA suite
   passed (`1506 passed, 0 failed`). Touched files have no editor diagnostics.
@@ -197,16 +205,31 @@ were unchanged at the visibility oracle.
 - Optimized publish Cargo and deployed Dev-package `wta.exe` SHA-256 both
   matched `F979BACCD47B9658681272359811F19811D2858505FB8E385FC0C6AB8286DC26`.
 - Optimized pre-push publish E2E: `1 passed, 0 failed`.
-- Current PR HEAD: `eb9d66f461f04eb11c554971fb88dd9f2d037c2f`.
+- Current PR HEAD: `5049cc9e1e1c3dc52c2f758a1382b34f1068a526`.
 - Latest dev publishable review-fix commit:
-  `8d35eaf7fccc84b990c8724adb4d3c0c5db98d24`.
+  `b5fd8a7bb0af1992b80023d183531fe535c80dda`.
 - Latest publish review-fix cherry-pick:
+  `5049cc9e1e1c3dc52c2f758a1382b34f1068a526`.
+- Latest exact publish WTA suite: `1506 passed, 0 failed`; a clean explicit x64
+  build also succeeded with existing warnings only.
+- Latest clean publish Cargo and deployed Dev-package `wta.exe` SHA-256 both
+  matched `C0E31D73558835BE5491B7AB2B083460D8E277A460D459FC461E641D133311DF`.
+- Latest exact packaged E2E, forced with `ITE2E_PACKAGE=Dev`: `1 passed,
+  0 failed`; turns 00-11 were recorded exactly once, and screenshots show turn
+  00 selected without overlap.
+- Earlier validation attempts in this round used the harness default `Auto`
+  and failed because they launched Store package `Microsoft.IntelligentTerminal`
+  instead of the deployed Dev package; live process path/hash inspection proved
+  the mismatch before the corrected Dev run.
+- Previous dev publishable review-fix commit:
+  `8d35eaf7fccc84b990c8724adb4d3c0c5db98d24`.
+- Previous publish review-fix cherry-pick:
   `eb9d66f461f04eb11c554971fb88dd9f2d037c2f`.
-- Latest exact publish WTA suite: `1506 passed, 0 failed`; explicit x64 build
+- Previous exact publish WTA suite: `1506 passed, 0 failed`; explicit x64 build
   succeeded with existing warnings only.
-- Latest exact publish Cargo and deployed Dev-package `wta.exe` SHA-256 both
+- Previous exact publish Cargo and deployed Dev-package `wta.exe` SHA-256 both
   matched `80F22B106C1759A1015C8EF53ABE64B89B0B4BF90B5C9AFCB37111CE698E9A9E`.
-- Latest exact packaged E2E: `1 passed, 0 failed`; turns 00-11 were recorded
+- Previous exact packaged E2E: `1 passed, 0 failed`; turns 00-11 were recorded
   exactly once, and visual evidence showed turn 00 selected without overlap.
 - Previous dev publishable review-fix commit:
   `b8ada36ee287d563d276a077258ccb62a1e4f8c0`.
