@@ -26,10 +26,11 @@ and experiments. 本功能当前没有额外 publish scope 例外。
   orchestration, and experiments that do not belong to an existing framework.
 - The publish worktree must directly cherry-pick the dev publishable commit. Do
   not cherry-pick a mixed commit and then restore dev-only files.
-- Current publishable commit: `4e6ba9d34924158b96f387b9630cf249bcec3333`.
-- Current publish head: `1819e140f53d15d16be30dac5442c5498ef87a67`.
-- Excluded work: `hover 高亮、跨 pane 的 PointerExited 处理，以及把点击热区
-  扩大到 user-input 之外的整行空白或 reply/details；这些不属于本次 extension`.
+- Current publishable commit: `506cd8563f4cb1842715d186d17571685c0a0cbe`.
+- Current publish head: `f44831d21999e8686c9b8f8a59eefdb1ab5a3a30`.
+- Excluded work: `reply/details、completed-turn 分隔空行及其他非 user-input UI
+  仍不属于 click target；本次新增 hand pointer、整条 prompt row 与 input dialog
+  focus recovery，但不显示动作提示文字、underline 或 mouse-only selection state`.
 
 ### E2E Reuse and Test-Framework Modularization
 
@@ -69,25 +70,33 @@ and experiments. 本功能当前没有额外 publish scope 例外。
 
 ## Current Stage
 
-`2026-08-17`: functional extension 已实现并完成 exact publish GREEN：保留 triangle
-click，同时把有效热区扩大到历史 user-input 的实际渲染 cells，包括显式多行、
-自动换行、内部空格与 collapsed summary；成功 click 复用 keyboard completed-turn
-selection/highlight，随后 Up/Down/Esc/Enter 均沿用既有行为。publishable commit 已从
-dev 直接 cherry-pick 到 clean publish worktree，并在该 exact commit 上完成 full WTA、
-build、deploy/hash、packaged E2E、C264 与 visual inspection。
+`2026-08-17`: 第二阶段交互细节已完成 exact publish GREEN：所有可触发 completed-turn toggle
+的可见 prompt rows 在 hover 时显示 hand pointer；整条 row 均可点击。点击 input
+dialog 会清除历史 turn selection 并恢复输入导航焦点。不显示“点击折叠/点击展开”
+提示文字、hyperlink underline、hover background 或 mouse-only selection state。
+publishable commit 已从 dev 直接 cherry-pick 到 clean publish worktree，并在该 exact
+commit 上完成 full WTA、mixed build、binary hot-refresh/hash、host tests、packaged
+E2E 与 C264 验证。
 
 ### User-Visible Contract
 
-- 用户左键单击可见历史 turn 的 `▶` / `▼` 三角形或 user-input 实际渲染区域
-  时，展开或折叠对应 turn。
-- User-input hit region 包含 prompt 文本实际占用的 cells；单词之间属于输入内容
-  的空格也属于 hit region。`> ` UI prefix、每行末尾未被文本占用的空白、
-  reply/details、trailing marker 和其他 UI 均不属于 hit region。
+- 用户左键单击可见历史 turn 的任一 user-input prompt row 时，展开或折叠对应
+  turn；`▶` / `▼`、`> ` prefix、prompt 文本及该 row 内未被文字占用的剩余空白
+  都属于同一个 click target。
+- Prompt-row hit region 横向覆盖 chat content area 的完整可见宽度，纵向仅覆盖该
+  turn 实际渲染出的 prompt rows。reply/details、trailing marker、turn 间分隔空行、
+  recommendation/permission、hint/activity、input dialog 和其他 UI 均不得误触发。
 - 展开状态下，原始多行 prompt 的每一条实际文本行，以及因窗口宽度自动换行后
   的每一条可见 prompt row，都属于同一个 turn 的 user-input hit region。
-  纯空行没有可点击文本 cell，不应把整行空白变成热区。
-- 折叠状态下，仅当前实际渲染的一行 prompt summary 文本 cells 与三角形可点击；
-  被截断、未渲染的原始文本不产生不可见 hit region。
+  原始 prompt 中显式存在的空行也属于该 turn 的 prompt-row target；不可见、被
+  viewport 裁掉或已折叠隐藏的原始 rows 不产生 hit region。
+- 折叠状态下，仅当前实际渲染的一条 summary row 整行可点击；被截断或未渲染的
+  原始文本不产生不可见 hit region。
+- 鼠标移动到任一当前可触发 toggle 的 prompt row 时，OS pointer 必须切换为 hand
+  cursor。不得显示“点击折叠/点击展开”或其他动作提示文字，也不得因承载 action
+  metadata 而显示常驻或 hover underline。Pointer movement 本身不得 toggle、select
+  或改变文本选择；离开 target、PointerExited、scroll/resize、tab/view 切换及 stale
+  frame 必须恢复默认 pointer。
 - Mouse Down 与 Mouse Up 必须命中同一 turn 的有效 click target，且过程中没有
   drag，才算一次有效点击。任何 Drag 都归文本选择，不得 toggle turn。
 - 成功点击 triangle 或 user-input 后，该 turn 必须成为当前
@@ -95,14 +104,21 @@ build、deploy/hash、packaged E2E、C264 与 visual inspection。
   高亮和选中样式；不得另建一套 mouse-only selection 状态或视觉样式。
 - 鼠标选中后，现有 Up/Down 必须从该 turn 继续导航，Esc 必须清除选择，Enter
   必须复用 `toggle_selected_completed_turn` 对当前选中 turn 再次展开/折叠。
-- 点击不得改变 agent pane 的 XAML focus；input caret、recommendation/card focus
-  与其他键盘交互保持既有语义。
+- 点击 completed-turn row 不得改变 agent pane 的 XAML focus；input caret、
+  recommendation/card focus 与其他键盘交互保持既有语义。
+- 当历史 turn 已被 mouse 或 keyboard 选中时，左键单击当前可见且可输入的 input
+  dialog（包含 `Ask anything, / for commands...` placeholder 的边框区域）必须清除
+  `selected_completed_turn_idx` 并恢复既有 input navigation focus。该 click 不提交、
+  不插入字符、不触发 completed-turn toggle；随后普通字符输入必须进入当前 draft。
 - 鼠标拖拽、双击/三击文本选择、Ctrl+C 复制和滚轮滚动保持不变。
 - 双击/三击 user-input 后，最终展开状态不得因多击序列发生变化；若实现需要
   延迟单击确认或复用 multi-click classification，必须用 focused test 锁定。
 - 滚动、换行、窗口 resize 后，只允许当前实际可见的 triangle/user-input
   cells 响应点击；旧 frame 的 hit region 必须安全失效。
-- 本次 extension 仍不实现 hover、高亮或 PointerExited/C++ lifecycle 变更。
+- Hand pointer 必须复用 TerminalControl 的 pointer/hyperlink lifecycle；action metadata
+  仅用于定位当前 action，不得显示 hyperlink underline，也不得被 Ctrl+Click 或
+  mark-mode Enter 当作可导航 URI 打开。WTA 不接收 OS PointerMoved，也不得因每个
+  Moved event 高频重绘；OutputIdle/PointerExited 负责刷新或清理 stale hover state。
 
 ### Current Ownership Hypothesis
 
@@ -110,22 +126,28 @@ build、deploy/hash、packaged E2E、C264 与 visual inspection。
 SGR mouse Down / Up from ConPTY
   -> event.rs::map_crossterm_event
   -> AppEvent::Mouse / app_events.rs
-  -> chat render 生成的可见 triangle + user-input hit regions
-  -> TabSession 按 turn index 展开或折叠
+  -> chat render 生成的可见 full-row turn hit regions + input dialog bounds
+  -> TabSession 按 turn index 选择/展开/折叠，或清除 selection 恢复 input focus
+
+current-frame action metadata
+  -> TerminalControl hyperlink hover lifecycle
+  -> hand pointer + PointerExited cleanup; renderer suppresses action-link underline
 ```
 
 - Owning code path: `ui/chat.rs` 已负责可见 triangle hit；extension 仍由该 render
   path 根据最终 buffer 建立 user-input 实际文本 cell ranges，`app_events.rs`
   负责鼠标手势与 multi-click/drag 协调，`TabSession` 继续负责 turn 展开状态。
-- Falsifiable hypothesis: 当前 hit map 只记录 triangle cell，因此 prompt click 是
-  no-op。若把每个可见 turn 的 prompt 文本 spans/ranges 加入同一 turn hit map，
-  并在成功 click 时调用同一 completed-turn selection helper 后再复用既有 toggle，
-  同时保持 prefix/行尾空白/details 不命中，就能扩展单击行为而不扩大到整行或
-  破坏既有 triangle、keyboard 与 drag selection。
-- Cheapest discriminating check: render 一个包含显式换行与自动换行的 completed
-  turn，分别点击第一行文本、第二行文本、折叠 summary、`> ` prefix、行尾空白
-  和 detail；只有 prompt 实际文本 cells 与 triangle 应选中并 toggle 同一 turn，
-  高亮必须与键盘 selection 相同，随后 Enter 必须再次 toggle 该选中 turn。
+- Falsifiable hypothesis: 若把每个可见 turn 的实际 prompt rows 扩大为完整 chat
+  content width，并把同一 rows 作为 action hyperlink metadata 输出，整行 click 与
+  hand pointer 可以共享同一 render geometry，同时 renderer 可按私有 action URI 抑制
+  hyperlink decoration；input dialog bounds 则可在同一 frame 单独记录并复用既有
+  selection clear helper，而不扩大到 details 或破坏 drag。
+- Cheapest discriminating check: render 一个包含显式换行、显式空行与自动换行的
+  completed turn；每条实际 prompt row 都产生 full-width hit/action metadata，点击
+  prefix、文本、行尾空白和显式空行都 toggle 同一 turn，而 details/分隔行不
+  toggle。mouse-selected turn 后点击 input dialog 必须清除 selection，随后输入字符
+  写入 draft。PointerExited/scroll/resize/tab/view 变化后 action hover 必须失效；
+  hand pointer 与无 underline 由用户在 exact deployed build 上手动验证。
 
 ### Reproduction and RED Oracle
 
@@ -163,15 +185,15 @@ change、tab switch 都取消 press。Mouse Up 仅在同一 tab、同一坐标�
 仍为当前可见 hit 时调用直接按 index toggle。
 
 Functional extension 已将 triangle point map 泛化为带 kind/range 的 current-frame
-hit regions。`ui/chat.rs` 从 completed-turn prompt spans 的 terminal display width
-产生每条可见 row 的 body range，覆盖显式多行、自动换行、wide cells 与 collapsed
-summary，并排除 prefix、空行、行尾空白和 details。
+hit regions。`ui/chat.rs` 从实际 completed-turn render geometry 产生每条可见 prompt
+row 的 full-width range，覆盖 prefix、正文、行尾空白、显式空行、自动换行、wide
+cells 与 collapsed summary，并排除 details、分隔行和其他 UI。
 
 - Owning abstraction: `ui/chat.rs` 生成可见 hit regions；`ui/layout.rs` 每帧先
   清空旧 map；`app_events.rs` 路由 gesture；`TabSession::toggle_completed_turn`
   复用既有展开状态。
-- State or API changes: App 新增少量当前帧 hit map 与 pressed target；
-  `TabSession` 新增按 index toggle helper；没有 hover/Moved state。
+- State or API changes: App 新增当前帧 hit map、action-link rows、input bounds 与 pressed
+  target；`TabSession` 新增按 index toggle/input-focus helper；没有 WTA Moved state。
 - Extension state/API: `CompletedTurnHitRegion` 统一 triangle/user-input targets；
   `TabSession::select_completed_turn` 与既有 toggle/navigation helpers 统一更新
   `selected_completed_turn_idx`。`TextSelection` 继续拥有 multi-click classification，
@@ -179,12 +201,14 @@ summary，并排除 prefix、空行、行尾空白和 details。
   multiline row 的 word/line selection；没有 mouse-only selection 或 hover state。
 - Preserved invariants: 键盘 selection 与 Enter、文本选择、多击、复制、滚轮、
   手动 scroll offset、其他 card/input 交互均不改变。
-- Performance implications: 不启用 Moved，也不增加 hover redraw；只在正常 render
-  时更新少量可见三角形坐标，点击成功后触发一次既有重绘。
-- Rejected alternatives and rationale: 第一版拒绝整行/user-input 点击与 hover，
-  因为它们扩大文本选择冲突，并引入高频 redraw 与 PointerExited 生命周期问题。
-  当前 extension 只重新接受“实际 user-input 文本 cells”，仍拒绝整行空白与
-  hover；通过精确 ranges 控制 blast radius。
+- Performance implications: WTA 不接收 PointerMoved；正常 render 后只给少量可见
+  prompt rows 附加无视觉 decoration 的 action hyperlink metadata。TerminalControl 复用
+  本地 hovered-cell lifecycle，OutputIdle/PointerExited 清理 stale metadata，不增加
+  持续 hover animation。
+- Rejected alternatives and rationale: 不允许 TerminalControl 通过 glyph/prefix 文本
+  猜测哪些 rows 可点击；WTA render geometry 是 target ownership 的唯一事实来源。
+  不允许每个 Moved 全帧 redraw，也不允许全 pane/详情行热区；用 current-frame
+  prompt-row metadata 和 host 既有 PointerExited lifecycle 控制范围与性能。
 
 ### TDD and Validation Evidence
 
@@ -246,6 +270,36 @@ summary，并排除 prefix、空行、行尾空白和 details。
 - C264 在 fresh isolated release report 中为 `[x]`。`extension-green` before/collapsed/
   Enter screenshots 均非空；collapsed row 使用 keyboard 同款 cyan selection，三帧输入区
   与分隔线稳定，无 overlap/clipping。
+
+- Second-stage focused GREEN: `completed_turn` 17/17；action overlay 3/3，覆盖整条
+  prompt row、显式空行、尾部空白、wide-cell tail 跳过及 cell symbol/style 保持；
+  TerminalControl action tests 3/3，覆盖 action URI 分类、action underline suppression、
+  Ctrl+Click VT mouse forwarding 与不导航。
+- Second-stage full WTA: `1520 passed, 0 failed, 0 ignored`，零 test warning；
+  explicit-target Debug build 成功。51 个 build warning 均为既有 dead-code/private-
+  interface warning；额外计数来自 HEAD 已存在且未被本功能触及的 `app.rs::truncate`。
+- Second-stage mixed Debug package build: `169 warnings, 0 errors`。Dev loose package
+  `IntelligentTerminal_0.8.0.2_x64__rd9vj3e6a2mbr` 部署成功；Cargo/deployed `wta.exe`
+  均为 32,459,776 bytes，SHA-256
+  `2997759B13396EBCBF411FD05A43EDB0C2DC0382DBF81B09F20ADD3847AB219D`；
+  build/deployed `Microsoft.Terminal.Control.dll` 均为 14,460,416 bytes，SHA-256
+  `21DCE666E36EFB790F6BC5F509E9C6A6A1EC418D685333A7185A4019EBDEC5D3`。
+- Second-stage packaged GREEN: deterministic `CompletedTurnMouse` 2 passed, 0 failed,
+  0 skipped；覆盖 triangle、prefix、整行尾部空白、显式多行、drag、Enter 复用，以及
+  点击 input dialog 后 draft/caret 恢复。Fresh C264 report 为 `[x]`。
+- Second-stage exact publish identity: publish Cargo/deployed `wta.exe` 均为
+  32,459,776 bytes，SHA-256
+  `EF4FE97C28CC47E5FC79D494C077201870D219230597319307392C9F70A951D7`；
+  publish build/deployed `Microsoft.Terminal.Control.dll` 均为 14,630,400 bytes，
+  SHA-256 `FF2121CFFBA3EB1C7C0CAE6DF27E6B7F0459C47FC14D37A2CC62D48D9FC81E12`。
+  Publish full WTA `1520/1520`，mixed build `218 warnings, 0 errors`，requested action
+  tests包含在 `32/32` TAEF GREEN 中，packaged `CompletedTurnMouse` `2/2` GREEN，
+  fresh C264 `[x]`。
+- Hover visual evidence: 用户在 exact local Dev deployment 上手动确认 full-row target
+  显示 hand cursor。跨应用 OS pointer scan 已删除：它曾错误移动到 VS Code 状态栏，
+  不能作为产品证据；当前自动化只验证 action metadata、URI routing、stale cleanup 与
+  underline suppression，不再移动真实鼠标。最终 hand-only 且无 underline 的视觉状态
+  在 exact publish build 上保留人工验收。
 
 For UI or terminal-rendering changes, screenshots are required evidence, not
 optional decoration. Capture the failing state and the fixed state from the
@@ -323,15 +377,19 @@ artifact proves each user-visible assertion.
 
 ### Guardrails
 
-- 保留第一版 `▶` / `▼` 点击行为，并仅把热区扩大到 user-input 实际渲染文本
-  cells；不得扩大到 `> ` prefix、整行空白、reply/details 或其他 UI。
+- 保留 `▶` / `▼` 和 prompt text 点击行为，并把热区扩大到每条实际渲染 prompt
+  row 的完整 chat content width；不得扩大到 reply/details、分隔行或其他 UI。
 - 鼠标成功 click 必须复用现有 completed-turn keyboard selection 状态和样式；
   禁止新增平行的 mouse selection/highlight 状态。
 - 必须区分 click 与 drag：任何 drag 都归文本选择，不得 toggle turn。
 - Mouse Down/Up 必须命中同一 turn 的当前可见 triangle/user-input target；过期、
   滚出 viewport 或 resize 前的 hit region 必须安全 no-op。
-- 多行与自动换行 prompt 的 hit region 必须来自实际 render geometry，不得按
-  原始字符串长度猜测 row/column。
+- 多行、显式空行与自动换行 prompt 的 full-row hit region 必须来自实际 render
+  geometry，不得按原始字符串长度猜测 row/column。
+- Hand pointer 只允许出现在当前 full-row targets；必须处理 PointerExited 与 stale
+  frame，不显示动作提示文字或 underline，且 custom action 不得成为可打开的 URI。
+- 点击 input dialog 必须只复用 `clear_completed_turn_selection` 和现有 input focus
+  语义，不得创建第二套 focus state 或提交空 prompt。
 - 双击/三击文本选择的最终展开状态必须保持不变；不得用“每次 click 都 toggle，
   偶数次碰巧还原”代替明确的 multi-click 设计与测试。
 - Do not infer user-visible behavior only from internal state; validate the
@@ -346,9 +404,9 @@ artifact proves each user-visible assertion.
 
 ### Optional Follow-Ups
 
-- Hover 仍明确排除。完成本次 user-input click extension 并取得性能、文本选择
-  和用户反馈后，再单独评估是否需要 PointerExited/C++ 支持与 hover redraw
-  gating。
+- 本阶段只使用 hand pointer，不增加 hyperlink underline、tooltip、整行 hover 背景色、
+  动画或 reply/details hover affordance；其他视觉扩展需另行评估可访问性与 redraw
+  成本。
 
 ---
 
