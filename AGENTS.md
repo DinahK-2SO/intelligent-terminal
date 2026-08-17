@@ -10,7 +10,7 @@ Branches created from `origin/main@8dfcf91935032e1d6cb9f056f32bcf67329651ad`:
 
 - dev: `user/DinahK-2SO/mouse-interactions` -> `Dinah`
 - publish: `user/DinahK-2SO/mouse-interactions-publish` -> `origin`
-- issue / pull request: `暂无；创建后补充`
+- issue / pull request: `PR #624`
 
 Publish scope excludes this handoff and local-only screenshots, reports, logs,
 and experiments. 本功能当前没有额外 publish scope 例外。
@@ -26,8 +26,8 @@ and experiments. 本功能当前没有额外 publish scope 例外。
   orchestration, and experiments that do not belong to an existing framework.
 - The publish worktree must directly cherry-pick the dev publishable commit. Do
   not cherry-pick a mixed commit and then restore dev-only files.
-- Current publishable commit: `954132ebdc6e2bbb31e1b617365203e3b3c9b12d`.
-- Current publish head: `7cb94900132f8e3442cbe8e5d9da9d610b2f63da`.
+- Current publishable commit: `aa2c73de7a506b4a0fb67aaa39f04b00701aa770`.
+- Current publish head: `9c5553857c5fd83324fe88bcd1bf0dbd2475022b`.
 - Excluded work: `reply/details、completed-turn 分隔空行及其他非 user-input UI
   仍不属于 click target；本次新增 hand pointer、整条 prompt row 与 input dialog
   focus recovery，但不显示动作提示文字、underline 或 mouse-only selection state`.
@@ -314,8 +314,8 @@ by 上述 User-Visible Contract。
 摘要、accept/decline/escalate 决策、技术理由、RED 证据、处理方式、GREEN
 验证和 publish commit。
 
-Current review status: `PR #624；首轮 review 已完成 triage/fix，review-fix commit
-已准备，等待新一轮 review`
+Current review status: `PR #624；第二轮 single suppressed finding 已完成
+triage/fix 与 exact publish validation，等待新一轮 review`
 Open review items: `11 个原始 threads 无法通过匿名 public API 回复或 resolve；fix push
 后会变为 outdated，但 PR owner 仍需在 GitHub UI 中处理 thread 状态`
 
@@ -347,6 +347,23 @@ Open review items: `11 个原始 threads 无法通过匿名 public API 回复或
   SHA-256 `0268C9EBADCBD30519093713FE87DF8C3101D574A3A089C15D9D42CC71BC3635`;
   `Microsoft.Terminal.Control.dll` 14,638,080 bytes, SHA-256
   `E2A29A4FB84A9B2A594FD62DC3C29BE41CCA2CBE404EA4DFE5A4DA5D638C9BA5`.
+- `2026-08-17`, head `7cb94900132f8e3442cbe8e5d9da9d610b2f63da`, Copilot review
+  `4950222981`: accepted the single suppressed finding at `TermControl.cpp:2050`.
+  Calling `HoveredUriText()` on every pointer move was a real lock/allocation hot path,
+  but deleting it outright would regress same-row hand cursor stability because
+  `RestorePointerCursor` runs before a no-change hover event. PointerMoved now reasserts
+  the hand from cached `_completedTurnActionHovered` state without reading the terminal
+  or constructing a URI; `HoveredHyperlinkChanged` and OutputIdle remain the only state
+  update paths. GREEN: TerminalControl build `0 errors`, requested host tests `3/3`,
+  mixed build `169 warnings, 0 errors`, packaged E2E `2/2`. Publishable dev commit
+  `aa2c73de7a506b4a0fb67aaa39f04b00701aa770` was directly cherry-picked as publish
+  commit `9c5553857c5fd83324fe88bcd1bf0dbd2475022b`. Exact publish validation: focused
+  TerminalControl and Control unit builds `0 errors`, requested TAEF `3/3`, mixed build
+  `170 warnings, 0 errors`, packaged `CompletedTurnMouse` `2/2`. Publish source/deployed
+  `wta.exe` are 32,461,312 bytes with SHA-256
+  `A75953CBE8D45AD0B9EE266F5922888C7A1247DCD4162893D4FD12AF02A4D6E1`;
+  build/deployed `Microsoft.Terminal.Control.dll` are 14,639,104 bytes with SHA-256
+  `FEDD3CD059DE7BEB3E6DAE8660613E97CD7D208ED17CE3C8CB4E586E8403FF6C`.
 
 ### Local-Only Evidence
 
@@ -366,6 +383,8 @@ Open review items: `11 个原始 threads 无法通过匿名 public API 回复或
 - `extension-green/fixture.log`：deterministic prompts exactly once；
   `extension-green/release-report.md`：C264 `[x]`。最新 packaged result 为
   `test/e2e/artifacts/results.xml` / `summary.md`，`CompletedTurnMouse` 2/2 GREEN。
+- `suppressed-review-publish/report.html`、`results.xml`、`summary.md`：exact publish
+  `9c5553857c5fd83324fe88bcd1bf0dbd2475022b` 的 `CompletedTurnMouse` 2/2 GREEN。
 
 List ignored screenshots, pane captures, fixture logs, test reports, local E2E
 frameworks, scripts, wire captures, and provider configurations. State which
