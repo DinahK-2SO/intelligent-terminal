@@ -67,6 +67,14 @@ and experiments. 本功能当前没有额外 publish scope 例外。
   binary, and verify source/deployed SHA-256 equality. Set
   `ITE2E_PACKAGE=Dev`; the harness default `Auto` prefers an installed Store
   package and can otherwise validate the wrong binary.
+- Every final iteration that touches a user-visible UI, rendering, pointer,
+  focus, or interaction path must capture fresh success-state screenshots from
+  that iteration's exact publish HEAD and exact deployed binaries. Screenshots
+  from an earlier iteration may remain as historical evidence but must not be
+  cited as the latest iteration's visual evidence. A GREEN test report from a
+  suite that captures images only on failure is not sufficient: run an explicit
+  success-state capture workflow or extend the existing test to preserve its
+  before/action/after frames.
 
 ## Current Stage
 
@@ -306,7 +314,10 @@ optional decoration. Capture the failing state and the fixed state from the
 real user workflow. Inspect and record that the target state is visible, output
 is nonblank, layout is stable, and controls/text do not overlap or clip. Cover
 all relevant pane positions, window sizes, themes, or interaction modes named
-by 上述 User-Visible Contract。
+by 上述 User-Visible Contract。每轮最终截图必须来自该轮 exact publish commit 的
+已部署 package；按 iteration 使用独立 evidence 目录，并记录 commit、package path、
+source/deployed binary SHA-256、capture command 和截图路径。性能或 lifecycle 修复若
+触及同一 user-visible path，也必须重新捕获；不得用旧截图加新测试报告代替。
 
 ### Review Triage
 
@@ -363,7 +374,14 @@ Open review items: `11 个原始 threads 无法通过匿名 public API 回复或
   `wta.exe` are 32,461,312 bytes with SHA-256
   `A75953CBE8D45AD0B9EE266F5922888C7A1247DCD4162893D4FD12AF02A4D6E1`;
   build/deployed `Microsoft.Terminal.Control.dll` are 14,639,104 bytes with SHA-256
-  `FEDD3CD059DE7BEB3E6DAE8660613E97CD7D208ED17CE3C8CB4E586E8403FF6C`.
+  `FEDD3CD059DE7BEB3E6DAE8660613E97CD7D208ED17CE3C8CB4E586E8403FF6C`。
+  Fresh exact-iteration screenshot rerun on the same deployed package passed
+  `CompletedTurnMouse` `2/2` in 53.96s. Seven new before/action/after PNGs under
+  `publish-9c555385-latest/screenshots/` show triangle and multiline prompt
+  collapse/re-expand, keyboard-style cyan selection, Enter reuse, and restored
+  input draft/caret. All frames are nonblank and show stable borders/separators
+  with no overlap or clipping; exact provenance is in that directory's
+  `EVIDENCE.md`.
 
 ### Local-Only Evidence
 
@@ -385,6 +403,12 @@ Open review items: `11 个原始 threads 无法通过匿名 public API 回复或
   `test/e2e/artifacts/results.xml` / `summary.md`，`CompletedTurnMouse` 2/2 GREEN。
 - `suppressed-review-publish/report.html`、`results.xml`、`summary.md`：exact publish
   `9c5553857c5fd83324fe88bcd1bf0dbd2475022b` 的 `CompletedTurnMouse` 2/2 GREEN。
+- `publish-9c555385-latest/`：当前 latest iteration 的 fresh exact-publish evidence；
+  `screenshots/` 包含 7 张 20:16 重新捕获的 before/collapse/re-expand/Enter/input-focus
+  PNG 与 pane captures，`report/` 为 `CompletedTurnMouse` 2/2 GREEN，`EVIDENCE.md`
+  记录 commit、package path、source/deployed hashes、capture command 与逐图结论。
+  `publish-9c555385-prior-20260817-1858/` 仅保留此前同 commit 但命名含糊的历史截图，
+  不作为 latest iteration evidence。
 
 List ignored screenshots, pane captures, fixture logs, test reports, local E2E
 frameworks, scripts, wire captures, and provider configurations. State which
@@ -416,9 +440,14 @@ artifact proves each user-visible assertion.
 7. Run related tests, the full relevant suite, and required explicit builds.
 8. Deploy the exact validated build using the narrowest supported flow, verify
   binary identity when applicable, and rerun the full related E2E suite.
-9. Inspect visual evidence for nonblank output, expected state, stable layout,
-  no overlap, and no clipping when UI behavior is involved. Record RED/GREEN
-  screenshot paths and the inspection result.
+9. From the exact final publish HEAD and its hash-verified deployed package,
+  capture fresh before/action/after success-state screenshots for this
+  iteration, even when the code change is performance-only but touches the same
+  UI or interaction path. Tests that save screenshots only on failure require a
+  separate explicit GREEN capture. Inspect for nonblank output, expected state,
+  stable layout, no overlap, and no clipping; record the commit, binary hashes,
+  capture command, screenshot paths, and inspection result. Never substitute
+  screenshots from an earlier iteration.
 10. Commit product/tests/existing-framework E2E/checklist metadata as the dev
   publishable commit. Keep large new local test frameworks modular and out of
   the feature commit; commit this handoff and local-only material separately.
