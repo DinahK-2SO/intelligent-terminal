@@ -26,8 +26,8 @@ and experiments. 本功能当前没有额外 publish scope 例外。
   orchestration, and experiments that do not belong to an existing framework.
 - The publish worktree must directly cherry-pick the dev publishable commit. Do
   not cherry-pick a mixed commit and then restore dev-only files.
-- Current publishable commit: `506cd8563f4cb1842715d186d17571685c0a0cbe`.
-- Current publish head: `f44831d21999e8686c9b8f8a59eefdb1ab5a3a30`.
+- Current publishable commit: `954132ebdc6e2bbb31e1b617365203e3b3c9b12d`.
+- Current publish head: `7cb94900132f8e3442cbe8e5d9da9d610b2f63da`.
 - Excluded work: `reply/details、completed-turn 分隔空行及其他非 user-input UI
   仍不属于 click target；本次新增 hand pointer、整条 prompt row 与 input dialog
   focus recovery，但不显示动作提示文字、underline 或 mouse-only selection state`.
@@ -314,8 +314,39 @@ by 上述 User-Visible Contract。
 摘要、accept/decline/escalate 决策、技术理由、RED 证据、处理方式、GREEN
 验证和 publish commit。
 
-Current review status: `尚未创建 PR，暂无 review round`
-Open review items: `无；创建 PR 后按上述格式追加`
+Current review status: `PR #624；首轮 review 已完成 triage/fix，review-fix commit
+已准备，等待新一轮 review`
+Open review items: `11 个原始 threads 无法通过匿名 public API 回复或 resolve；fix push
+后会变为 outdated，但 PR owner 仍需在 GitHub UI 中处理 thread 状态`
+
+- `2026-08-17`, head `f44831d21999e8686c9b8f8a59eefdb1ab5a3a30`, Copilot review
+  `4949789603`: accepted all 3 findings.
+  - `renderer.cpp`, comment `3794888484`: accepted hot-path URI lookup/allocation
+    concern. Added a per-frame `HyperlinkId` decision cache shared by render engines;
+    cache/lookup failures continue to fall back to ordinary hyperlink decoration.
+  - `action_links.rs`, comment `3794888526`: accepted duplicate steady-state repaint.
+    Persistent geometry is no longer cleared before action repaint; removed/changed
+    geometry still clears. Focused RED failed at `persistent geometry must not be drawn
+    once to clear and again`; action overlay GREEN `4/4`.
+  - `ui/chat.rs`, comment `3794888563`: accepted clipped-header correctness bug.
+    Focused RED found visible `CLIPPED_PROMPT_ROW_5` without a hit target; prompt rows now
+    clip independently from the triangle/header. Focused GREEN `1/1`.
+- `2026-08-17`, Advanced Security spelling review `4949744870` and check run
+  `95329000847`: accepted all 8 current alerts (15 annotations across repeated PR
+  revisions), all the same `multiclick/MULTICLICK` token. Renamed prose/identifiers/
+  markers to `multi-click`, `multi_click`, and `MULTI_CLICK`; no dictionary allowlist.
+  The separate 54 dictionary-download 404 notices came from external cspell dictionary
+  URLs and the workflow still concluded success; no repository config change warranted.
+- No suppressed Copilot findings were present in the review body. Anonymous REST access
+  can read all review/check data but cannot reply to or resolve threads; no login was
+  attempted. Review-fix validation before package/E2E: WTA `1522/1522`, explicit-target
+  build success, Control build `0 errors`, requested TAEF `3/3`. Publish review-fix
+  commit `7cb94900132f8e3442cbe8e5d9da9d610b2f63da` passed full WTA `1522/1522`,
+  mixed build `169 warnings, 0 errors`, host `3/3`, packaged E2E `2/2`, and fresh
+  C264 `[x]`. Exact publish/deployed identities: `wta.exe` 32,461,312 bytes,
+  SHA-256 `0268C9EBADCBD30519093713FE87DF8C3101D574A3A089C15D9D42CC71BC3635`;
+  `Microsoft.Terminal.Control.dll` 14,638,080 bytes, SHA-256
+  `E2A29A4FB84A9B2A594FD62DC3C29BE41CCA2CBE404EA4DFE5A4DA5D638C9BA5`.
 
 ### Local-Only Evidence
 
