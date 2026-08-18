@@ -13,9 +13,108 @@ Describe 'Feature: agent pane mouse interactions' -Tag 'Feature' -Skip:(-not $sc
     BeforeAll {
         Import-Module (Join-Path $PSScriptRoot '..\ItE2E\ItE2E.psd1') -Force
         $script:app = Start-Terminal -Package (Get-ItTestPackage) -PassFre $true -Settings @{ acpAgent = 'copilot' }
+        $script:shellPane = Get-ActivePane -App $script:app
+        $windowMarker = "ite2e-agent-mouse-$([guid]::NewGuid().ToString('N'))"
+        Invoke-RunCommand -App $script:app -SessionId $script:shellPane.session_id `
+            -Command "`$host.UI.RawUI.WindowTitle = '$windowMarker'" | Out-Null
+        $targetWindow = Wait-Until -TimeoutSec 10 -IntervalSec 0.25 -Because 'the active agent-mouse window HWND' -Condition {
+            Get-WtWindowHwnds -App $script:app | Where-Object { $_.title -eq $windowMarker } | Select-Object -First 1
+        }
+        $script:app.Hwnd = $targetWindow.hwnd
+        Invoke-RunCommand -App $script:app -SessionId $script:shellPane.session_id `
+            -Command "`$host.UI.RawUI.WindowTitle = 'PowerShell'" | Out-Null
         Open-AgentPane -App $script:app | Out-Null
-        Wait-AgentReady -App $script:app -TimeoutSec 60 |
+        $script:realAgentPane = Wait-NewAgentPaneSession -App $script:app `
+            -OwnerPaneSessionId $script:shellPane.session_id -TimeoutSec 30
+        Invoke-WtCli -App $script:app -Arguments @(
+            'focus-pane', '-t', $script:realAgentPane.PaneSessionId
+        ) | Out-Null
+        Wait-AgentReady -App $script:app -PaneSessionId $script:realAgentPane.PaneSessionId -TimeoutSec 60 |
             Should -BeTrue -Because 'the agent pane must be connected before exercising its TUI'
+
+        function Save-RealAgentWindowCandidates {
+            param(
+                [Parameter(Mandatory)][string]$EvidenceDir,
+                [Parameter(Mandatory)][string]$Stage
+            )
+
+            Start-Sleep -Milliseconds 500
+            $candidateDir = Join-Path $EvidenceDir 'window-candidates'
+            New-Item -ItemType Directory -Force -Path $candidateDir | Out-Null
+            $originalHwnd = $script:app.Hwnd
+            try {
+                $windows = @(Get-WtWindowHwnds -App $script:app |
+                        Where-Object { [int]$_.pid -eq [int]$script:app.Pid } |
+                        Sort-Object hwnd)
+                $windows.Count | Should -BeGreaterOrEqual 1 -Because 'the real-agent run must expose at least one WT window'
+                foreach ($window in $windows) {
+                    $script:app.Hwnd = $window.hwnd
+                    Save-UiScreenshot -App $script:app `
+                        -Path (Join-Path $candidateDir "real-$Stage-hwnd-$($window.hwnd).png") | Out-Null
+                }
+            }
+            finally {
+                $script:app.Hwnd = $originalHwnd
+            }
+        }
+
+        function Publish-RealAgentCanonicalScreenshots {
+            param([Parameter(Mandatory)][string]$EvidenceDir)
+
+            $stages = @('before-prompt-click', 'after-prompt-click', 'after-prompt-enter', 'after-input-focus')
+            $candidateDir = Join-Path $EvidenceDir 'window-candidates'
+            $screenshots = @(Get-ChildItem -LiteralPath $candidateDir -Filter 'real-*-hwnd-*.png' -File)
+            $candidates = @(
+                $screenshots |
+                    ForEach-Object {
+                        if ($_.Name -match '^real-(.+)-hwnd-(\d+)\.png$') {
+                            [pscustomobject]@{
+                                Stage = $Matches[1]
+                                Hwnd = $Matches[2]
+                                Path = $_.FullName
+                                Hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
+                            }
+                        }
+                    } |
+                    Group-Object Hwnd |
+                    Where-Object {
+                        $groupStages = @($_.Group.Stage | Sort-Object -Unique)
+                        $groupHashes = @($_.Group.Hash | Sort-Object -Unique)
+                        $groupStages.Count -eq $stages.Count -and
+                            $groupHashes.Count -eq $stages.Count
+                    }
+            )
+            $candidates.Count | Should -Be 1 -Because 'exactly one WT window must visibly reflect all four real-agent interaction states'
+
+            $selected = $candidates[0].Group
+            foreach ($stage in $stages) {
+                $source = ($selected | Where-Object Stage -eq $stage).Path
+                $destination = Join-Path $EvidenceDir "real-$stage.png"
+                Copy-Item -LiteralPath $source -Destination $destination -Force
+
+                Add-Type -AssemblyName System.Drawing.Common
+                $bitmap = [System.Drawing.Bitmap]::new($destination)
+                try {
+                    $sampled = 0
+                    $nonBlack = 0
+                    for ($y = 0; $y -lt $bitmap.Height; $y += 16) {
+                        for ($x = 0; $x -lt $bitmap.Width; $x += 16) {
+                            $pixel = $bitmap.GetPixel($x, $y)
+                            $sampled++
+                            if ([Math]::Max($pixel.R, [Math]::Max($pixel.G, $pixel.B)) -ge 24) {
+                                $nonBlack++
+                            }
+                        }
+                    }
+                    ($nonBlack / $sampled) | Should -BeGreaterThan 0.01 -Because "the $stage screenshot must show recognizable nonblack product UI"
+                }
+                finally {
+                    $bitmap.Dispose()
+                }
+            }
+            Set-Content -LiteralPath (Join-Path $EvidenceDir 'selected-window.txt') `
+                -Value "HWND $($candidates[0].Name)" -Encoding utf8NoBOM
+        }
     }
 
     AfterAll {
@@ -35,7 +134,7 @@ Describe 'Feature: agent pane mouse interactions' -Tag 'Feature' -Skip:(-not $sc
         $id = [guid]::NewGuid().ToString('N')
         $topMarker = "MOUSE_SCROLL_TOP_$id"
         $bottomMarker = "MOUSE_SCROLL_BOTTOM_$id"
-        $session = Get-AgentPaneSession -App $script:app
+        $session = Get-AgentPaneSession -App $script:app -PaneSessionId $script:realAgentPane.PaneSessionId
         $viewportLines = @((
             Get-AgentPaneText -App $script:app -PaneSessionId $session.PaneSessionId -MaxLines 500
         ) -split "`r?`n")
@@ -165,7 +264,7 @@ Describe 'Feature: agent pane mouse interactions' -Tag 'Feature' -Skip:(-not $sc
         )
         $secondRows.Count | Should -Be 1 -Because 'the real completed turn must visibly preserve its second prompt row'
         Set-Content -LiteralPath (Join-Path $evidenceDir 'real-before-prompt-click.txt') -Value $before -Encoding utf8NoBOM
-        Save-UiScreenshot -App $script:app -Path (Join-Path $evidenceDir 'real-before-prompt-click.png') | Out-Null
+        Save-RealAgentWindowCandidates -EvidenceDir $evidenceDir -Stage 'before-prompt-click'
 
         Send-AgentMouseClick -App $script:app -PaneSessionId $session.PaneSessionId `
             -Column ($secondRows[0].Column + 2) -Row $secondRows[0].Row | Out-Null
@@ -176,7 +275,7 @@ Describe 'Feature: agent pane mouse interactions' -Tag 'Feature' -Skip:(-not $sc
         }
         $afterClick = Get-AgentPaneText -App $script:app -PaneSessionId $session.PaneSessionId -MaxLines 100
         Set-Content -LiteralPath (Join-Path $evidenceDir 'real-after-prompt-click.txt') -Value $afterClick -Encoding utf8NoBOM
-        Save-UiScreenshot -App $script:app -Path (Join-Path $evidenceDir 'real-after-prompt-click.png') | Out-Null
+        Save-RealAgentWindowCandidates -EvidenceDir $evidenceDir -Stage 'after-prompt-click'
         $collapsed | Should -BeTrue -Because 'clicking the second real prompt row must collapse and select its completed turn'
 
         Send-AgentKey -App $script:app -PaneSessionId $session.PaneSessionId -Key Enter | Out-Null
@@ -187,7 +286,7 @@ Describe 'Feature: agent pane mouse interactions' -Tag 'Feature' -Skip:(-not $sc
         }
         $afterEnter = Get-AgentPaneText -App $script:app -PaneSessionId $session.PaneSessionId -MaxLines 100
         Set-Content -LiteralPath (Join-Path $evidenceDir 'real-after-prompt-enter.txt') -Value $afterEnter -Encoding utf8NoBOM
-        Save-UiScreenshot -App $script:app -Path (Join-Path $evidenceDir 'real-after-prompt-enter.png') | Out-Null
+        Save-RealAgentWindowCandidates -EvidenceDir $evidenceDir -Stage 'after-prompt-enter'
         $reexpanded | Should -BeTrue -Because 'Enter must re-expand the real turn selected by mouse'
 
         Send-AgentMouseClick -App $script:app -PaneSessionId $session.PaneSessionId `
@@ -219,8 +318,9 @@ Describe 'Feature: agent pane mouse interactions' -Tag 'Feature' -Skip:(-not $sc
         }
         $afterInputFocus = Get-AgentPaneText -App $script:app -PaneSessionId $session.PaneSessionId -MaxLines 100
         Set-Content -LiteralPath (Join-Path $evidenceDir 'real-after-input-focus.txt') -Value $afterInputFocus -Encoding utf8NoBOM
-        Save-UiScreenshot -App $script:app -Path (Join-Path $evidenceDir 'real-after-input-focus.png') | Out-Null
+        Save-RealAgentWindowCandidates -EvidenceDir $evidenceDir -Stage 'after-input-focus'
         $inputFocused | Should -BeTrue -Because 'clicking the real input dialog must restore draft input after mouse turn selection'
+        Publish-RealAgentCanonicalScreenshots -EvidenceDir $evidenceDir
         Clear-AgentInput -App $script:app -PaneSessionId $session.PaneSessionId | Out-Null
     }
 }
