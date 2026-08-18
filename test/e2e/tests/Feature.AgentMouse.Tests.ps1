@@ -116,6 +116,113 @@ Describe 'Feature: agent pane mouse interactions' -Tag 'Feature' -Skip:(-not $sc
         (Get-AgentPaneText -App $script:app -PaneSessionId $session.PaneSessionId -MaxLines 30) |
             Should -Not -Match ('(?m)^\s*[│║|]\s*>\s*' + [regex]::Escape($marker)) -Because 'the next Ctrl+C must resume the normal nonempty-draft clear behavior'
     }
+
+    It 'Real agent completed turn supports prompt-row mouse toggle and input focus recovery' -Tag 'RealAgentCompletedTurnMouse' {
+        $id = [guid]::NewGuid().ToString('N')
+        $lineOne = "REAL_AGENT_MOUSE_FIRST_$id"
+        $reply = "REAL_AGENT_MOUSE_ACK_$id"
+        $lineTwo = "Reply with exactly $reply and nothing else."
+        $replyPattern = [regex]::Escape($reply)
+        $readyPattern = Get-WtaLocalizedTextRegex -Key 'input.placeholder.connected'
+        if (-not $readyPattern) {
+            $readyPattern = '(?i)Ask anything.*for commands'
+        }
+        $evidenceDir = if ($env:ITE2E_REAL_AGENT_EVIDENCE_DIR) {
+            $env:ITE2E_REAL_AGENT_EVIDENCE_DIR
+        }
+        else {
+            Join-Path $PSScriptRoot '..\artifacts\mouse-interactions\real-agent-current'
+        }
+        New-Item -ItemType Directory -Force -Path $evidenceDir | Out-Null
+
+        $session = Get-AgentPaneSession -App $script:app
+        Send-AgentPrompt -App $script:app -PaneSessionId $session.PaneSessionId -Text $lineOne -NoSubmit | Out-Null
+        Send-AgentShiftEnter -App $script:app -PaneSessionId $session.PaneSessionId | Out-Null
+        Send-AgentPrompt -App $script:app -PaneSessionId $session.PaneSessionId -Text $lineTwo -NoSubmit | Out-Null
+        Send-AgentKey -App $script:app -PaneSessionId $session.PaneSessionId -Key Enter | Out-Null
+
+        $turnCompleted = Test-Until -TimeoutSec 150 -IntervalSec 0.5 -Condition {
+            $text = Get-AgentPaneText -App $script:app -PaneSessionId $session.PaneSessionId -MaxLines 100
+            $text -match $readyPattern -and
+                ([regex]::Matches($text, $replyPattern)).Count -ge 2
+        }
+        $turnCompleted | Should -BeTrue -Because 'the real Copilot agent must complete the unique turn before final mouse acceptance'
+
+        $completedHeaderPattern = '(?m)^\s*\S+\s*>\s*' + [regex]::Escape($lineOne)
+        $completedTurnRendered = Test-Until -TimeoutSec 10 -IntervalSec 0.25 -Condition {
+            (Get-AgentPaneText -App $script:app -PaneSessionId $session.PaneSessionId -MaxLines 100) -match $completedHeaderPattern
+        }
+        $completedTurnRendered | Should -BeTrue -Because 'the real turn must paint its completed-turn triangle before hit-testing'
+
+        $before = Get-AgentPaneText -App $script:app -PaneSessionId $session.PaneSessionId -MaxLines 100
+        $beforeLines = $before -split "`r?`n"
+        $secondRows = @(
+            for ($row = 0; $row -lt $beforeLines.Count; $row++) {
+                if ($beforeLines[$row].Contains($lineTwo)) {
+                    [pscustomobject]@{ Row = $row; Column = $beforeLines[$row].IndexOf($lineTwo) }
+                }
+            }
+        )
+        $secondRows.Count | Should -Be 1 -Because 'the real completed turn must visibly preserve its second prompt row'
+        Set-Content -LiteralPath (Join-Path $evidenceDir 'real-before-prompt-click.txt') -Value $before -Encoding utf8NoBOM
+        Save-UiScreenshot -App $script:app -Path (Join-Path $evidenceDir 'real-before-prompt-click.png') | Out-Null
+
+        Send-AgentMouseClick -App $script:app -PaneSessionId $session.PaneSessionId `
+            -Column ($secondRows[0].Column + 2) -Row $secondRows[0].Row | Out-Null
+        $collapsed = Test-Until -TimeoutSec 8 -IntervalSec 0.25 -Condition {
+            $text = Get-AgentPaneText -App $script:app -PaneSessionId $session.PaneSessionId -MaxLines 100
+            ([regex]::Matches($text, $replyPattern)).Count -eq 1 -and
+                $text -match [regex]::Escape($lineOne)
+        }
+        $afterClick = Get-AgentPaneText -App $script:app -PaneSessionId $session.PaneSessionId -MaxLines 100
+        Set-Content -LiteralPath (Join-Path $evidenceDir 'real-after-prompt-click.txt') -Value $afterClick -Encoding utf8NoBOM
+        Save-UiScreenshot -App $script:app -Path (Join-Path $evidenceDir 'real-after-prompt-click.png') | Out-Null
+        $collapsed | Should -BeTrue -Because 'clicking the second real prompt row must collapse and select its completed turn'
+
+        Send-AgentKey -App $script:app -PaneSessionId $session.PaneSessionId -Key Enter | Out-Null
+        $reexpanded = Test-Until -TimeoutSec 8 -IntervalSec 0.25 -Condition {
+            $text = Get-AgentPaneText -App $script:app -PaneSessionId $session.PaneSessionId -MaxLines 100
+            ([regex]::Matches($text, $replyPattern)).Count -ge 2 -and
+                $text -match [regex]::Escape($lineTwo)
+        }
+        $afterEnter = Get-AgentPaneText -App $script:app -PaneSessionId $session.PaneSessionId -MaxLines 100
+        Set-Content -LiteralPath (Join-Path $evidenceDir 'real-after-prompt-enter.txt') -Value $afterEnter -Encoding utf8NoBOM
+        Save-UiScreenshot -App $script:app -Path (Join-Path $evidenceDir 'real-after-prompt-enter.png') | Out-Null
+        $reexpanded | Should -BeTrue -Because 'Enter must re-expand the real turn selected by mouse'
+
+        Send-AgentMouseClick -App $script:app -PaneSessionId $session.PaneSessionId `
+            -Column ($secondRows[0].Column + 2) -Row $secondRows[0].Row | Out-Null
+        $collapsedAgain = Test-Until -TimeoutSec 8 -IntervalSec 0.25 -Condition {
+            $text = Get-AgentPaneText -App $script:app -PaneSessionId $session.PaneSessionId -MaxLines 100
+            ([regex]::Matches($text, $replyPattern)).Count -eq 1
+        }
+        $collapsedAgain | Should -BeTrue
+
+        $collapsedCapture = Get-AgentPaneText -App $script:app -PaneSessionId $session.PaneSessionId -MaxLines 100
+        $collapsedLines = $collapsedCapture -split "`r?`n"
+        $inputRows = @(
+            for ($row = 0; $row -lt $collapsedLines.Count; $row++) {
+                if ($collapsedLines[$row] -match $readyPattern) {
+                    [pscustomobject]@{ Row = $row }
+                }
+            }
+        )
+        $inputRows.Count | Should -Be 1 -Because 'the real connected input dialog must remain visible after collapse'
+        Send-AgentMouseClick -App $script:app -PaneSessionId $session.PaneSessionId -Column 8 -Row $inputRows[0].Row | Out-Null
+
+        $draft = "REAL_AGENT_INPUT_DRAFT_$id"
+        Send-AgentPrompt -App $script:app -PaneSessionId $session.PaneSessionId -Text $draft -NoSubmit | Out-Null
+        $inputFocused = Test-Until -TimeoutSec 5 -IntervalSec 0.25 -Condition {
+            $text = Get-AgentPaneText -App $script:app -PaneSessionId $session.PaneSessionId -MaxLines 100
+            $text -match ('(?m)^.*>\s*' + [regex]::Escape($draft)) -and
+                ([regex]::Matches($text, $replyPattern)).Count -eq 1
+        }
+        $afterInputFocus = Get-AgentPaneText -App $script:app -PaneSessionId $session.PaneSessionId -MaxLines 100
+        Set-Content -LiteralPath (Join-Path $evidenceDir 'real-after-input-focus.txt') -Value $afterInputFocus -Encoding utf8NoBOM
+        Save-UiScreenshot -App $script:app -Path (Join-Path $evidenceDir 'real-after-input-focus.png') | Out-Null
+        $inputFocused | Should -BeTrue -Because 'clicking the real input dialog must restore draft input after mouse turn selection'
+        Clear-AgentInput -App $script:app -PaneSessionId $session.PaneSessionId | Out-Null
+    }
 }
 
 BeforeDiscovery {
