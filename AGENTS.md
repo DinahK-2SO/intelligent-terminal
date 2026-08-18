@@ -1,6 +1,6 @@
 # 历史对话点击交互交接
 
-> Last synchronized: `2026-08-17`
+> Last synchronized: `2026-08-18`
 >
 > 本地开发区已完成 triangle + user-input 鼠标交互：点击历史 turn 的 `▶` / `▼`
 > 或 user-input 实际渲染区域，都可以选中并展开或折叠该 turn。产品行为与已提交
@@ -116,11 +116,13 @@ publishable commit 已从 dev 直接 cherry-pick 到 clean publish worktree，�
 commit 上完成 full WTA、mixed build、binary hot-refresh/hash、host tests、packaged
 E2E 与 C264 验证。
 
-以上结果只完成 deterministic regression gate。按 `2026-08-18` 新增的 final gate，
-整个 workflow 尚未完成：仍需从 exact publish HEAD 本地部署 Dev package，使用正常
-产品设置中的真实已认证 AI agent 完成最终 E2E，并从该真实流程重新截图。用户手动打开
-当前 local deployment 时观察到全黑窗口，因此此前 mock-fixture GREEN 截图不得作为
-最终验收；本阶段只修订验收要求，不诊断或修改产品代码。
+`2026-08-18`: final real-agent gate 已完成。Real-agent acceptance test及其visual
+hardening仅保留在dev；误cherry-pick到publish的3个本地提交已移除，publish恢复为
+remote HEAD `9c5553857c5fd83324fe88bcd1bf0dbd2475022b`。从该exact publish HEAD重新
+build并部署Dev package、验证三对source/deployed binary hashes后，publish自带的
+deterministic `CompletedTurnMouse`为`2/2` GREEN；随后从dev worktree运行
+`RealAgentCompletedTurnMouse`，使用正常设置中的真实Copilot完成`1/1` GREEN与四状态
+截图。此前手动打开时的全黑窗口及mock-fixture截图均未被用作最终验收证据。
 
 ### User-Visible Contract
 
@@ -344,6 +346,29 @@ cells 与 collapsed summary，并排除 details、分隔行和其他 UI。
   不能作为产品证据；当前自动化只验证 action metadata、URI routing、stale cleanup 与
   underline suppression，不再移动真实鼠标。最终 hand-only 且无 underline 的视觉状态
   在 exact publish build 上保留人工验收。
+- Final branch boundary: real-agent acceptance commits
+  `a8c3c816f28a3e2a7faee64f6c80f19d6d9a243d`,
+  `091f5e7f37de8704faec83debc19ce11bc8800a2`, and
+  `326b010f6c4dafa5e8b5fb72a490cc8de5977f92` are dev-only. Their three
+  publish cherry-picks were never pushed and were removed; publish and its
+  remote both remain at `9c5553857c5fd83324fe88bcd1bf0dbd2475022b`.
+- Final corrected publish package: explicit-target WTA build `51 warnings, 0
+  errors`; mixed Debug build `170 warnings, 0 errors`; deployed package
+  `IntelligentTerminal_0.8.0.2_x64__rd9vj3e6a2mbr`. Source/deployed hashes
+  match for `wta.exe` (`30C5E5C05FBEA603BFE775278DABEE87153837E134A37E4116C3F5B8B24B8B0B`),
+  `Microsoft.Terminal.Control.dll`
+  (`C75F926BFFAFA40F08AD2337B89E6525F275D90A8FEA8DE7B7D34EBF1A1D3700`),
+  and `WindowsTerminal.exe`
+  (`DF773D8F6A11D6045577248B2E920FFF3E9AF63F874619996761E38150F3993E`).
+  The publish-branch deterministic `CompletedTurnMouse` suite passed `2/2`.
+- Final real-agent acceptance: dev-only `RealAgentCompletedTurnMouse` ran
+  against that publish-built package with real `Copilot · Windows v1.0.80` and
+  passed `1/1` in 81.63s; the model was not displayed. Unique HWND `3473924`
+  produced four distinct, nonblack canonical screenshots showing expanded
+  genuine reply, cyan collapsed selection, Enter re-expand, and restored input
+  draft/caret. Manual inspection found recognizable product UI with no overlap
+  or clipping; C264 is `[x]`. Settings restored to `acpAgent=copilot` with an
+  empty custom command, and no Terminal/WTA process remained.
 
 For UI or terminal-rendering changes, screenshots are required evidence, not
 optional decoration. Capture the failing state and the fixed state from the
@@ -366,8 +391,7 @@ completion evidence。自动化应在可用时加入非黑像素/目标窗口校
 验证和 publish commit。
 
 Current review status: `PR #624；第二轮 single suppressed finding 已完成
-triage/fix 与 deterministic exact-publish validation；real-agent final acceptance
-尚未完成，当前 local deployment 手动启动出现全黑窗口`
+triage/fix、deterministic exact-publish validation与real-agent final acceptance`
 Open review items: `11 个原始 threads 无法通过匿名 public API 回复或 resolve；fix push
 后会变为 outdated，但 PR owner 仍需在 GitHub UI 中处理 thread 状态`
 
@@ -452,6 +476,12 @@ Open review items: `11 个原始 threads 无法通过匿名 public API 回复或
   evidence，不再作为最终 real-agent acceptance evidence，workflow 尚未因此完成。
   `publish-9c555385-prior-20260817-1858/` 仅保留此前同 commit 但命名含糊的历史截图，
   不作为 latest iteration evidence。
+- `publish-9c555385-real-agent-final-20260818/`：authoritative final acceptance
+  evidence。Real-agent test source来自dev，app package来自exact publish
+  `9c5553857c5fd83324fe88bcd1bf0dbd2475022b`。根目录4张`real-*.png`及相邻pane
+  captures记录真实Copilot的展开、mouse折叠、Enter展开与input-focus状态；`report/`
+  为`1/1` GREEN且C264 `[x]`，`EVIDENCE.md`记录branch boundary、package/binary
+  hashes、agent/version、sanitized prompt、command、HWND、截图hash和逐图结论。
 
 List ignored screenshots, pane captures, fixture logs, test reports, local E2E
 frameworks, scripts, wire captures, and provider configurations. State which
