@@ -49,6 +49,9 @@ and experiments. 本功能当前没有额外 publish scope 例外。
 - Small deterministic fixtures or helpers may ship with the feature when they
   are narrowly owned by the existing test suite and are required to make the
   regression reliable.
+- Deterministic/mock ACP fixtures are valid for focused RED/GREEN regression,
+  geometry, routing, and failure isolation. They are never sufficient for the
+  final user-visible acceptance run or its screenshots.
 
 ### Public PR review workflow
 
@@ -75,6 +78,21 @@ and experiments. 本功能当前没有额外 publish scope 例外。
   suite that captures images only on failure is not sufficient: run an explicit
   success-state capture workflow or extend the existing test to preserve its
   before/action/after frames.
+- Before the entire workflow may be declared complete, build and locally deploy
+  the exact publish branch HEAD as the Dev package, verify source/deployed binary
+  identity, and run one final E2E through the real product entry point with a
+  real installed and authenticated AI agent selected through normal product
+  settings. Do not use `custom:` mock commands, `Mock-AcpChatAgent.ps1`, replayed
+  responses, injected completed-turn state, or another fake provider in this
+  final run. The workflow is blocked, not complete or skipped, when no real agent
+  is installed/authenticated or the real-agent run cannot finish.
+- The final real-agent E2E must exercise the actual user workflow: launch the
+  exact Dev package, open the agent pane, wait for the real agent to connect,
+  submit a unique harmless prompt, wait for a genuine completed turn, perform
+  the requested mouse/focus interactions, and capture fresh before/action/after
+  screenshots. Assert product-owned UI state and interaction results rather than
+  the model's wording. Record the agent/provider name and model when observable,
+  but never record credentials, tokens, or private prompt content.
 
 ## Current Stage
 
@@ -85,6 +103,12 @@ dialog 会清除历史 turn selection 并恢复输入导航焦点。不显示“
 publishable commit 已从 dev 直接 cherry-pick 到 clean publish worktree，并在该 exact
 commit 上完成 full WTA、mixed build、binary hot-refresh/hash、host tests、packaged
 E2E 与 C264 验证。
+
+以上结果只完成 deterministic regression gate。按 `2026-08-18` 新增的 final gate，
+整个 workflow 尚未完成：仍需从 exact publish HEAD 本地部署 Dev package，使用正常
+产品设置中的真实已认证 AI agent 完成最终 E2E，并从该真实流程重新截图。用户手动打开
+当前 local deployment 时观察到全黑窗口，因此此前 mock-fixture GREEN 截图不得作为
+最终验收；本阶段只修订验收要求，不诊断或修改产品代码。
 
 ### User-Visible Contract
 
@@ -318,6 +342,10 @@ by 上述 User-Visible Contract。每轮最终截图必须来自该轮 exact pub
 已部署 package；按 iteration 使用独立 evidence 目录，并记录 commit、package path、
 source/deployed binary SHA-256、capture command 和截图路径。性能或 lifecycle 修复若
 触及同一 user-visible path，也必须重新捕获；不得用旧截图加新测试报告代替。
+最终验收截图还必须来自上述 real-agent E2E，不得来自 mock/deterministic ACP fixture。
+截图必须显示真实 package 启动后的非空、可辨识产品 UI 和目标交互状态；全黑、全透明、
+错误窗口、启动占位画面、mock agent 内容或无法辨识目标状态的图片一律失败，不能作为
+completion evidence。自动化应在可用时加入非黑像素/目标窗口校验，且仍需人工逐图检查。
 
 ### Review Triage
 
@@ -326,7 +354,8 @@ source/deployed binary SHA-256、capture command 和截图路径。性能或 lif
 验证和 publish commit。
 
 Current review status: `PR #624；第二轮 single suppressed finding 已完成
-triage/fix 与 exact publish validation，等待新一轮 review`
+triage/fix 与 deterministic exact-publish validation；real-agent final acceptance
+尚未完成，当前 local deployment 手动启动出现全黑窗口`
 Open review items: `11 个原始 threads 无法通过匿名 public API 回复或 resolve；fix push
 后会变为 outdated，但 PR owner 仍需在 GitHub UI 中处理 thread 状态`
 
@@ -407,6 +436,8 @@ Open review items: `11 个原始 threads 无法通过匿名 public API 回复或
   `screenshots/` 包含 7 张 20:16 重新捕获的 before/collapse/re-expand/Enter/input-focus
   PNG 与 pane captures，`report/` 为 `CompletedTurnMouse` 2/2 GREEN，`EVIDENCE.md`
   记录 commit、package path、source/deployed hashes、capture command 与逐图结论。
+  该轮使用 deterministic mock ACP fixture；按新的 final gate 仅作为 regression
+  evidence，不再作为最终 real-agent acceptance evidence，workflow 尚未因此完成。
   `publish-9c555385-prior-20260817-1858/` 仅保留此前同 commit 但命名含糊的历史截图，
   不作为 latest iteration evidence。
 
@@ -438,21 +469,28 @@ artifact proves each user-visible assertion.
 5. Apply the smallest implementation at the owning abstraction.
 6. Rerun the same focused and live/E2E checks for GREEN.
 7. Run related tests, the full relevant suite, and required explicit builds.
-8. Deploy the exact validated build using the narrowest supported flow, verify
-  binary identity when applicable, and rerun the full related E2E suite.
-9. From the exact final publish HEAD and its hash-verified deployed package,
-  capture fresh before/action/after success-state screenshots for this
-  iteration, even when the code change is performance-only but touches the same
-  UI or interaction path. Tests that save screenshots only on failure require a
-  separate explicit GREEN capture. Inspect for nonblank output, expected state,
-  stable layout, no overlap, and no clipping; record the commit, binary hashes,
-  capture command, screenshot paths, and inspection result. Never substitute
-  screenshots from an earlier iteration.
-10. Commit product/tests/existing-framework E2E/checklist metadata as the dev
+8. Commit product/tests/existing-framework E2E/checklist metadata as the dev
   publishable commit. Keep large new local test frameworks modular and out of
-  the feature commit; commit this handoff and local-only material separately.
-11. Push dev and confirm remote synchronization, then directly cherry-pick the
-  publishable commit into the publish worktree.
+  the feature commit, then directly cherry-pick that commit into the clean
+  publish worktree so an exact publish HEAD exists for final validation.
+9. From that exact publish HEAD, build and locally deploy the Dev package using
+  the narrowest supported flow, verify source/deployed binary identity, and
+  rerun the deterministic packaged E2E suite. Mock fixtures remain appropriate
+  here for stable regression coverage, but this step is not final acceptance.
+10. As the last E2E gate, use the hash-verified Dev package with a real installed
+  and authenticated AI agent through normal product settings. Launch the real
+  app, connect the real agent, submit a unique harmless prompt, wait for a real
+  completed turn, and execute the actual user interaction. No mock/custom ACP
+  command, replay, injected state, or fake provider may satisfy this gate.
+11. During that real-agent run, capture fresh before/action/after screenshots
+  from the exact final publish HEAD, even when the change is performance-only.
+  Inspect every image for a nonblack and recognizable product UI, expected state,
+  stable layout, no overlap, and no clipping; record publish commit, package path,
+  source/deployed hashes, real agent/model, sanitized prompt description, capture
+  command, screenshot paths, and result. Never substitute fixture screenshots or
+  screenshots from an earlier iteration. If this cannot run, stop as blocked.
+12. Commit this handoff and local-only metadata separately on dev, push dev and
+  confirm remote synchronization, then push the already-validated publish HEAD.
 
 ### Guardrails
 
