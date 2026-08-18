@@ -12,20 +12,26 @@ Branches created from `origin/main@8dfcf91935032e1d6cb9f056f32bcf67329651ad`:
 - publish: `user/DinahK-2SO/mouse-interactions-publish` -> `origin`
 - issue / pull request: `PR #624`
 
-Publish scope excludes this handoff and local-only screenshots, reports, logs,
-and experiments. 本功能当前没有额外 publish scope 例外。
+Publish scope excludes this handoff, local-only screenshots, reports, logs,
+experiments, and all final real-agent acceptance test code/orchestration. The
+real-agent final gate is committed only on dev and must test the package built
+and deployed from the exact publish branch HEAD; it must never be cherry-picked
+into publish.
 
 ### Commit and worktree discipline
 
 - Publishable changes are committed first on dev as one self-contained commit:
   product code, product/Rust tests, tests that live naturally in the existing
-  ItE2E framework, their deterministic fixtures, and release-checklist/ItE2E
-  metadata.
+  ItE2E framework for deterministic regression, their deterministic fixtures,
+  and release-checklist/ItE2E metadata that belongs in the shipped repository.
 - Dev-only changes are committed separately afterward: this `AGENTS.md`
   handoff, progress notes, ignored screenshots/reports/logs, local-only test
-  orchestration, and experiments that do not belong to an existing framework.
+  orchestration, final real-agent acceptance tests and their harness hardening,
+  provider configurations, and experiments that do not belong in publish.
 - The publish worktree must directly cherry-pick the dev publishable commit. Do
-  not cherry-pick a mixed commit and then restore dev-only files.
+  not cherry-pick a mixed commit and then restore dev-only files. Never
+  cherry-pick a real-agent acceptance commit into publish, even when that test
+  is implemented in an existing shared E2E file on dev.
 - Current publishable commit: `aa2c73de7a506b4a0fb67aaa39f04b00701aa770`.
 - Current publish head: `9c5553857c5fd83324fe88bcd1bf0dbd2475022b`.
 - Excluded work: `reply/details、completed-turn 分隔空行及其他非 user-input UI
@@ -52,6 +58,12 @@ and experiments. 本功能当前没有额外 publish scope 例外。
 - Deterministic/mock ACP fixtures are valid for focused RED/GREEN regression,
   geometry, routing, and failure isolation. They are never sufficient for the
   final user-visible acceptance run or its screenshots.
+- Final real-agent acceptance tests, scripts, visual gates, provider selection,
+  and related test-only metadata live on the dev branch only. Run them from the
+  dev worktree while explicitly targeting `ITE2E_PACKAGE=Dev`; before the run,
+  prove that the installed Dev package path and source/deployed binary hashes
+  match the exact publish branch HEAD. Test source comes from dev, but the app
+  under test must come from publish.
 
 ### Public PR review workflow
 
@@ -469,19 +481,22 @@ artifact proves each user-visible assertion.
 5. Apply the smallest implementation at the owning abstraction.
 6. Rerun the same focused and live/E2E checks for GREEN.
 7. Run related tests, the full relevant suite, and required explicit builds.
-8. Commit product/tests/existing-framework E2E/checklist metadata as the dev
-  publishable commit. Keep large new local test frameworks modular and out of
-  the feature commit, then directly cherry-pick that commit into the clean
-  publish worktree so an exact publish HEAD exists for final validation.
+8. Commit product/tests/deterministic existing-framework E2E/checklist metadata
+  as the dev publishable commit. Commit final real-agent acceptance tests,
+  visual gates, provider-specific orchestration, and their metadata separately
+  as dev-only work. Then directly cherry-pick only the publishable commit into
+  the clean publish worktree so an exact publish HEAD exists for validation.
 9. From that exact publish HEAD, build and locally deploy the Dev package using
   the narrowest supported flow, verify source/deployed binary identity, and
   rerun the deterministic packaged E2E suite. Mock fixtures remain appropriate
   here for stable regression coverage, but this step is not final acceptance.
-10. As the last E2E gate, use the hash-verified Dev package with a real installed
-  and authenticated AI agent through normal product settings. Launch the real
-  app, connect the real agent, submit a unique harmless prompt, wait for a real
-  completed turn, and execute the actual user interaction. No mock/custom ACP
-  command, replay, injected state, or fake provider may satisfy this gate.
+10. As the last E2E gate, run the dev-only real-agent acceptance test from the
+  dev worktree against the hash-verified Dev package built and deployed from the
+  exact publish HEAD. Use a real installed and authenticated AI agent through
+  normal product settings. Launch the real app, connect the real agent, submit a
+  unique harmless prompt, wait for a real completed turn, and execute the actual
+  user interaction. No mock/custom ACP command, replay, injected state, or fake
+  provider may satisfy this gate. Do not copy this test into publish.
 11. During that real-agent run, capture fresh before/action/after screenshots
   from the exact final publish HEAD, even when the change is performance-only.
   Inspect every image for a nonblack and recognizable product UI, expected state,
