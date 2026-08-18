@@ -14,6 +14,17 @@ Describe 'Feature: agent pane mouse interactions' -Tag 'Feature' -Skip:(-not $sc
         Import-Module (Join-Path $PSScriptRoot '..\ItE2E\ItE2E.psd1') -Force
         $script:app = Start-Terminal -Package (Get-ItTestPackage) -PassFre $true -Settings @{ acpAgent = 'copilot' }
         $script:shellPane = Get-ActivePane -App $script:app
+        foreach ($window in @(Get-WtWindows -App $script:app)) {
+            foreach ($pane in @(Get-WtPanes -App $script:app -WindowId $window.window_id)) {
+                if ($pane.session_id -ne $script:shellPane.session_id) {
+                    Close-WtPane -App $script:app -SessionId $pane.session_id
+                }
+            }
+        }
+        Set-WtPaneFocus -App $script:app -SessionId $script:shellPane.session_id
+        Wait-Until -TimeoutSec 15 -IntervalSec 0.5 -Because 'one isolated WT window for real-agent acceptance' -Condition {
+            @(Get-WtWindows -App $script:app).Count -eq 1
+        } | Out-Null
         $windowMarker = "ite2e-agent-mouse-$([guid]::NewGuid().ToString('N'))"
         Invoke-RunCommand -App $script:app -SessionId $script:shellPane.session_id `
             -Command "`$host.UI.RawUI.WindowTitle = '$windowMarker'" | Out-Null
@@ -23,7 +34,9 @@ Describe 'Feature: agent pane mouse interactions' -Tag 'Feature' -Skip:(-not $sc
         $script:app.Hwnd = $targetWindow.hwnd
         Invoke-RunCommand -App $script:app -SessionId $script:shellPane.session_id `
             -Command "`$host.UI.RawUI.WindowTitle = 'PowerShell'" | Out-Null
-        Open-AgentPane -App $script:app | Out-Null
+        Invoke-UiElement -App $script:app -Selector 'AgentToggleButton' -TimeoutSec 8 | Out-Null
+        Test-UiElementExists -App $script:app -Selector 'AgentLabelText' -TimeoutSec 15 |
+            Should -BeTrue -Because 'the dedicated tab agent pane must be visibly open in the resolved target window'
         $script:realAgentPane = Wait-NewAgentPaneSession -App $script:app `
             -OwnerPaneSessionId $script:shellPane.session_id -TimeoutSec 30
         Invoke-WtCli -App $script:app -Arguments @(
@@ -359,6 +372,17 @@ Describe 'Feature: completed-turn triangle mouse click' -Tag 'CompletedTurnMouse
             acpCustomCommand = $command
         }
         $shell = Get-ActivePane -App $script:app
+        foreach ($window in @(Get-WtWindows -App $script:app)) {
+            foreach ($pane in @(Get-WtPanes -App $script:app -WindowId $window.window_id)) {
+                if ($pane.session_id -ne $shell.session_id) {
+                    Close-WtPane -App $script:app -SessionId $pane.session_id
+                }
+            }
+        }
+        Set-WtPaneFocus -App $script:app -SessionId $shell.session_id
+        Wait-Until -TimeoutSec 15 -IntervalSec 0.5 -Because 'one isolated WT window for deterministic mouse regression' -Condition {
+            @(Get-WtWindows -App $script:app).Count -eq 1
+        } | Out-Null
         Open-AgentPane -App $script:app | Out-Null
         $script:agentPane = (Wait-NewAgentPaneSession -App $script:app -OwnerPaneSessionId $shell.session_id -TimeoutSec 30).PaneSessionId
         Wait-AgentReady -App $script:app -PaneSessionId $script:agentPane -TimeoutSec 60 |
