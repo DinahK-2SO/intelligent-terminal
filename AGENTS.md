@@ -65,6 +65,18 @@ Clean-main起点没有`tui-markdown`dependency、`agent_markdown_lines`或
   `cgmanifest.json`和`NOTICE.md`；touched Rust files已单独rustfmt。
 - Product commit：`3a94a571d Render finalized agent responses as Markdown`。
 
+#### Phase 1 Step 2：streaming canonical Markdown projection（完成）
+
+- RED：新增`pending_stream_renders_markdown_and_preserves_partial_syntax`；focused test
+  `0 passed, 1 failed`，预期失败为`left: "● # Heading"`, `right: "● Heading"`。
+- GREEN：抽出deterministic `build_pending_stream_lines_for_tab`并把revealed prefix交给同一个
+  `agent_markdown_lines`；raw source、reveal cadence和turn lifecycle不变。
+- Partial syntax contract：未闭合`**bo`保留已显示`bo`且不panic；后续closure由同一renderer
+  重新project。
+- Focused GREEN：`1 passed, 0 failed`；chat module `39 passed, 0 failed`；full WTA
+  `1545 passed, 0 failed`；`chat.rs`已单独rustfmt。
+- Product commit：`283484ad9 Render streaming agent responses as Markdown`。
+
 新的性能与产品设计记录在dev-only：
 
 - `investigation-popular-agent-cli/popular-agent-cli.md`：Codex、goose、ForgeCode、Amazon Q、
