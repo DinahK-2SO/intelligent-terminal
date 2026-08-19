@@ -43,12 +43,13 @@ branch还可以包含调查、tracking和本地workflow。上一个publish branc
 ## 当前follow-up
 
 [2026-08-19] 新`markdown-renderer2`implementation branch已从clean latest main创建；正式TDD
-implementation即将开始。
+implementation即将开始。Dev/publish branches均已创建、关联并push；clean-main explicit-target
+WTA baseline为`1543 passed, 0 failed`。
 
 当前branch的产品源码尚无`tui-markdown`dependency、`agent_markdown_lines`或
 `RenderAgentMarkdown`setting。上一代branch已经证明baseline Markdown behavior可行，但本branch
-必须从RED重新实现，并直接向performance-first目标架构演进。开始第一个behavior step前必须重跑
-当前clean-main WTA tests作为新baseline。
+必须从RED重新实现，并直接向performance-first目标架构演进。新baseline已在
+`origin/main@e870a3630`上完成；后续test count以本branch新增tests后的结果为准。
 
 新的性能与产品设计记录在dev-only：
 
