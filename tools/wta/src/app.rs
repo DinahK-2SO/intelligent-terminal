@@ -60,8 +60,9 @@ pub use crate::turn_context::TurnContext;
 use input_edit::{next_word_boundary, prev_word_boundary, INPUT_HISTORY_MAX_ENTRIES};
 pub(crate) use tab_state::DEFAULT_TAB_ID;
 pub use tab_state::{
-    ChatMessage, CompletedTurn, NoticeKind, PermissionState, RecommendationFocus, TabSession,
-    ToolCallContent, ToolCallKind, ToolCallLocation, ToolCallOutput, UserInputState, View,
+    ChatMessage, CompletedTurn, ConfigPickerState, NoticeKind, PermissionState,
+    RecommendationFocus, TabSession, ToolCallContent, ToolCallKind, ToolCallLocation,
+    ToolCallOutput, UserInputState, View,
 };
 pub use turn_state::{AutofixContext, ChunkKind, SubmittedPrompt, TurnOutcome, TurnState};
 
@@ -907,13 +908,15 @@ pub struct App {
     /// first AgentConnected event with non-empty data; published into the
     /// `agent_status` event so the settings UI can render a dropdown.
     pub available_models: Vec<AcpModelInfo>,
-    /// BYOM-only projection used by the `/model` command. Cloud/native models
+    /// BYOK-only projection used by the `/model` command. Cloud/native models
     /// remain in `available_models` for Settings but are not shown in-pane.
     model_picker_models: Vec<AcpModelInfo>,
     pub current_model_id: Option<String>,
     /// Latest ACP model config for each session. Notifications can race ahead
     /// of the event that attaches their session to a tab.
     session_model_configs: HashMap<String, (Vec<AcpModelInfo>, Option<String>)>,
+    /// Complete ordered ACP select config options, keyed by SessionId.
+    session_config_options: HashMap<String, Vec<crate::app_contracts::AcpSessionConfigOption>>,
     pub prompt_name: Option<String>,
     pub session_id: String,
     #[allow(dead_code)]
@@ -967,6 +970,14 @@ pub struct App {
     pub show_debug_panel: bool,
     pub debug_scroll: usize,
     pub(crate) text_selection: crate::text_selection::TextSelection,
+    pub(crate) completed_turn_hits: Vec<CompletedTurnHitRegion>,
+    pub(crate) pressed_completed_turn: Option<PressedCompletedTurn>,
+    pub(crate) last_completed_turn_click: Option<CompletedTurnClickRecord>,
+    pub(crate) input_dialog_area: Option<Rect>,
+    pub(crate) pressed_input_dialog_tab: Option<String>,
+    pub(crate) completed_turn_action_links: Vec<crate::action_links::CompletedTurnActionLink>,
+    pub(crate) painted_completed_turn_action_links:
+        Vec<crate::action_links::CompletedTurnActionLink>,
     // Pane identity (populated via VT channel)
     pub pane_id: Option<String>,
     pub tab_id: Option<String>,
@@ -1239,6 +1250,7 @@ impl App {
             model_picker_models: Vec::new(),
             current_model_id: None,
             session_model_configs: HashMap::new(),
+            session_config_options: HashMap::new(),
             prompt_name: None,
             session_id: String::new(),
             wt_connected,
@@ -1264,6 +1276,13 @@ impl App {
             show_debug_panel: false,
             debug_scroll: 0,
             text_selection: crate::text_selection::TextSelection::default(),
+            completed_turn_hits: Vec::new(),
+            pressed_completed_turn: None,
+            last_completed_turn_click: None,
+            input_dialog_area: None,
+            pressed_input_dialog_tab: None,
+            completed_turn_action_links: Vec::new(),
+            painted_completed_turn_action_links: Vec::new(),
             pane_id: None,
             tab_id: None,
             owner_tab_id: None,
@@ -1692,7 +1711,7 @@ impl App {
             });
             merged.push(AcpModelInfo {
                 id: custom.selection_id.clone(),
-                name: format!("{} (BYOM)", custom.model_id),
+                name: format!("{} (BYOK)", custom.model_id),
                 description: None,
             });
         }
@@ -2015,6 +2034,7 @@ impl App {
     fn open_agent_picker(&mut self, selected: usize) {
         let tab = self.current_tab_mut();
         tab.model_picker_open = false;
+        tab.config_picker = ConfigPickerState::Closed;
         tab.agent_picker_open = true;
         tab.agent_picker_selected = selected;
     }
@@ -2069,6 +2089,174 @@ impl App {
         tab.scroll_to_bottom();
     }
 
+    // ── /config picker ──────────────────────────────────────────────────
+
+    fn config_picker_visible(&self) -> bool {
+        self.current_tab().config_picker.is_open()
+    }
+
+    fn current_session_config_options(&self) -> &[crate::app_contracts::AcpSessionConfigOption] {
+        self.current_tab()
+            .session_id
+            .as_deref()
+            .and_then(|session_id| self.session_config_options.get(session_id))
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+    }
+
+    fn cmd_config(&mut self) {
+        if self.current_session_config_options().is_empty() {
+            let tab = self.current_tab_mut();
+            tab.messages.push(ChatMessage::info(
+                t!("system.no_config_options").into_owned(),
+            ));
+            tab.scroll_to_bottom();
+            return;
+        }
+        self.open_config_picker();
+    }
+
+    fn open_config_picker(&mut self) {
+        if self.current_session_config_options().is_empty() {
+            return;
+        }
+        let tab = self.current_tab_mut();
+        tab.agent_picker_open = false;
+        tab.model_picker_open = false;
+        tab.config_picker = ConfigPickerState::Options { selected: 0 };
+    }
+
+    fn open_config_value_picker(&mut self, config_id: String) {
+        let Some(option) = self
+            .current_session_config_options()
+            .iter()
+            .find(|option| option.id == config_id)
+        else {
+            return;
+        };
+        let selected = option
+            .values
+            .iter()
+            .position(|value| value.id == option.current_value)
+            .unwrap_or(0);
+        let tab = self.current_tab_mut();
+        tab.agent_picker_open = false;
+        tab.model_picker_open = false;
+        tab.config_picker = ConfigPickerState::Values {
+            option_id: config_id,
+            selected,
+            parent_selected: None,
+        };
+    }
+
+    fn config_picker_row_count(&self) -> usize {
+        let options = self.current_session_config_options();
+        self.current_tab()
+            .config_picker
+            .option_id()
+            .and_then(|config_id| options.iter().find(|option| option.id == config_id))
+            .map(|option| option.values.len())
+            .unwrap_or(options.len())
+    }
+
+    fn config_picker_up(&mut self) {
+        match &mut self.current_tab_mut().config_picker {
+            ConfigPickerState::Options { selected }
+            | ConfigPickerState::Values { selected, .. } => {
+                *selected = selected.saturating_sub(1);
+            }
+            ConfigPickerState::Closed => {}
+        }
+    }
+
+    fn config_picker_down(&mut self) {
+        let max = self.config_picker_row_count().saturating_sub(1);
+        match &mut self.current_tab_mut().config_picker {
+            ConfigPickerState::Options { selected }
+            | ConfigPickerState::Values { selected, .. } => {
+                *selected = (*selected + 1).min(max);
+            }
+            ConfigPickerState::Closed => {}
+        }
+    }
+
+    fn config_picker_escape(&mut self) {
+        let next = match &self.current_tab().config_picker {
+            ConfigPickerState::Values {
+                parent_selected: Some(selected),
+                ..
+            } => ConfigPickerState::Options {
+                selected: *selected,
+            },
+            _ => ConfigPickerState::Closed,
+        };
+        self.current_tab_mut().config_picker = next;
+    }
+
+    fn config_picker_enter(&mut self) {
+        let picker = self.current_tab().config_picker.clone();
+        let options = self.current_session_config_options();
+
+        if let ConfigPickerState::Values {
+            option_id: config_id,
+            selected,
+            parent_selected,
+        } = picker
+        {
+            let Some(option) = options.iter().find(|option| option.id == config_id) else {
+                self.config_picker_escape();
+                return;
+            };
+            let Some(value) = option.values.get(selected) else {
+                return;
+            };
+            if value.id == option.current_value {
+                self.config_picker_escape();
+                return;
+            }
+
+            let session_id = self.current_tab().session_id.clone();
+            let config_id = option.id.clone();
+            let value_id = value.id.clone();
+            if let Some(session_id) = session_id {
+                let tab = self.current_tab_mut();
+                if tab.config_pending_id.is_some() {
+                    return;
+                }
+                tab.config_pending_id = Some(config_id.clone());
+                tab.config_picker = parent_selected
+                    .map(|selected| ConfigPickerState::Options { selected })
+                    .unwrap_or(ConfigPickerState::Closed);
+                let _ = self.master_request_tx.send(
+                    crate::protocol::acp::client::MasterExtRequest::SetSessionConfigOption {
+                        session_id: agent_client_protocol::schema::v1::SessionId::new(session_id),
+                        config_id,
+                        value: value_id,
+                    },
+                );
+            }
+            return;
+        }
+
+        let ConfigPickerState::Options { selected } = picker else {
+            return;
+        };
+        let Some(option) = options.get(selected) else {
+            return;
+        };
+        let value_selected = option
+            .values
+            .iter()
+            .position(|value| value.id == option.current_value)
+            .unwrap_or(0);
+        let option_id = option.id.clone();
+        self.current_tab_mut().config_picker = ConfigPickerState::Values {
+            option_id,
+            selected: value_selected,
+            parent_selected: Some(selected),
+        };
+    }
+
     // ── /model picker ───────────────────────────────────────────────────
 
     /// True while the model picker modal is up for the active tab.
@@ -2077,10 +2265,21 @@ impl App {
     }
 
     /// `/model [id]` — show models from the mode selected in Settings. Cloud
-    /// mode shows only agent/cloud models; local mode shows only BYOM models.
+    /// mode shows only agent/cloud models; custom-provider mode shows only BYOK models.
     /// Crossing modes requires changing Settings and restarting the agent.
     fn cmd_model(&mut self, arg: String) {
         let arg = arg.trim().to_string();
+        let model_config_id = self
+            .current_session_config_options()
+            .iter()
+            .find(|option| option.is_model())
+            .map(|option| option.id.clone());
+        if arg.is_empty() {
+            if let Some(config_id) = model_config_id {
+                self.open_config_value_picker(config_id);
+                return;
+            }
+        }
         if self.model_picker_models.is_empty() {
             let tab = self.current_tab_mut();
             tab.messages
@@ -2137,6 +2336,7 @@ impl App {
             .unwrap_or(0);
         let tab = self.current_tab_mut();
         tab.agent_picker_open = false;
+        tab.config_picker = ConfigPickerState::Closed;
         tab.model_picker_open = true;
         tab.model_picker_selected = selected;
     }
@@ -3618,6 +3818,13 @@ impl App {
             .unwrap_or_else(|| DEFAULT_TAB_ID.to_string())
     }
 
+    fn bound_tab_for_session(&self, session_id: &str) -> Option<String> {
+        self.session_to_tab.get(session_id).cloned().or_else(|| {
+            (self.current_tab().session_id.as_deref() == Some(session_id))
+                .then(|| self.active_tab_key().to_string())
+        })
+    }
+
     /// Mutable view of the tab that owns the given session id. Lazily
     /// creates the `TabSession` if missing.
     pub fn session_tab_mut(&mut self, session_id: &str) -> &mut TabSession {
@@ -3759,6 +3966,11 @@ impl App {
         let render_started = std::time::Instant::now();
         ui::render(&mut frame, self);
         self.text_selection.snapshot_and_render(frame.buffer_mut());
+        let action_overlay = crate::action_links::build_overlay(
+            frame.buffer_mut(),
+            &self.painted_completed_turn_action_links,
+            &self.completed_turn_action_links,
+        );
         ui_trace::log_slow("ui_render", render_started.elapsed(), || self.trace_state());
 
         // The text caret is painted as an inverse buffer cell by `ui::input`
@@ -3776,6 +3988,10 @@ impl App {
         });
 
         terminal.swap_buffers();
+
+        crate::action_links::paint(terminal.backend_mut(), &action_overlay)?;
+        self.painted_completed_turn_action_links
+            .clone_from(&self.completed_turn_action_links);
 
         let backend_flush_started = std::time::Instant::now();
         terminal.backend_mut().flush()?;
@@ -3809,9 +4025,10 @@ impl App {
             AppEvent::UsageCleared { .. } => "usage_cleared",
             AppEvent::ModelConfigUpdated { .. } => "model_config_updated",
             AppEvent::YoloModeChangeCompleted { .. } => "yolo_mode_change_completed",
-            AppEvent::RuntimeYoloReconcileCompleted { .. } => {
-                "runtime_yolo_reconcile_completed"
-            }
+            AppEvent::RuntimeYoloReconcileCompleted { .. } => "runtime_yolo_reconcile_completed",
+            AppEvent::SessionConfigUpdated { .. } => "session_config_updated",
+            AppEvent::SessionConfigSetCompleted { .. } => "session_config_set_completed",
+            AppEvent::SessionConfigSetFailed { .. } => "session_config_set_failed",
             AppEvent::TabError { .. } => "tab_error",
             AppEvent::TabSystemMessage { .. } => "tab_system_message",
             AppEvent::AgentPasteTextReady { .. } => "agent_paste_text_ready",
@@ -4121,6 +4338,44 @@ impl App {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CompletedTurnHitKind {
+    Triangle,
+    UserInput,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CompletedTurnHitRegion {
+    pub(crate) start_column: u16,
+    pub(crate) end_column: u16,
+    pub(crate) row: u16,
+    pub(crate) turn_index: usize,
+    pub(crate) kind: CompletedTurnHitKind,
+}
+
+impl CompletedTurnHitRegion {
+    pub(crate) fn contains(self, column: u16, row: u16) -> bool {
+        self.row == row && column >= self.start_column && column < self.end_column
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PressedCompletedTurn {
+    pub(crate) tab_id: String,
+    pub(crate) hit: CompletedTurnHitRegion,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CompletedTurnClickRecord {
+    pub(crate) tab_id: String,
+    pub(crate) column: u16,
+    pub(crate) row: u16,
+    pub(crate) turn_index: usize,
+    pub(crate) previous_selected_index: Option<usize>,
+    pub(crate) previous_selection_pending: bool,
+    pub(crate) previous_expanded: bool,
+}
+
 #[path = "app_events.rs"]
 mod app_events;
 
@@ -4331,11 +4586,7 @@ impl App {
             candidates,
             selected: tab.command_popup_selected,
             pane_focused: self.pane_focused,
-            command_query: tab
-                .input
-                .trim_start()
-                .strip_prefix('/')
-                .unwrap_or_default(),
+            command_query: tab.input.trim_start().strip_prefix('/').unwrap_or_default(),
             current_model: self.current_model_display(),
         })
     }
@@ -4469,6 +4720,28 @@ impl App {
                 .iter()
                 .map(|model| !self.model_pick_enabled(&model.id))
                 .collect(),
+        })
+    }
+
+    pub fn config_popup_state(&self) -> Option<crate::ui::ConfigPopupState<'_>> {
+        let tab = self.current_tab();
+        if !tab.config_picker.is_open() {
+            return None;
+        }
+        let options = self.current_session_config_options();
+        if options.is_empty() {
+            return None;
+        }
+        let value_option = tab
+            .config_picker
+            .option_id()
+            .and_then(|config_id| options.iter().find(|option| option.id == config_id));
+        Some(crate::ui::ConfigPopupState {
+            options,
+            value_option,
+            selected: tab.config_picker.selected(),
+            pending_config_id: tab.config_pending_id.as_deref(),
+            pane_focused: self.pane_focused,
         })
     }
 
@@ -4645,6 +4918,7 @@ impl App {
             CommandKind::Restart => self.cmd_restart(),
             CommandKind::Agent => self.cmd_agent(cmd.rest),
             CommandKind::Model => self.cmd_model(cmd.rest),
+            CommandKind::Config => self.cmd_config(),
             CommandKind::Move => self.cmd_move(cmd.rest),
             CommandKind::Yolo => self.cmd_yolo(cmd.rest),
         }
@@ -4660,7 +4934,6 @@ impl App {
         let tab = self.current_tab_mut();
         tab.clear_chat_history();
         tab.completed_turns.clear();
-        tab.selected_completed_turn_idx = None;
         tab.scroll_to_bottom();
     }
 
@@ -4710,6 +4983,7 @@ impl App {
         });
         if let Some(session_id) = self.current_tab().session_id.clone() {
             self.session_model_configs.remove(&session_id);
+            self.session_config_options.remove(&session_id);
         }
         let tab = self.current_tab_mut();
         tab.clear_chat_history();
@@ -4732,7 +5006,7 @@ impl App {
     /// `/fix [hint]` — run the auto-fix prompt on demand against the active
     /// terminal pane. Reuses the error-triggered autofix pipeline
     /// (`PromptSubmission::is_autofix`): the agent receives the `auto-fix.md`
-    /// template plus the working pane's recent output, and any `hint` typed
+    /// instruction overlay plus the working pane's recent output, and any `hint` typed
     /// after `/fix` is appended as an extra steer.
     ///
     /// Differences from auto-triggered autofix (`maybe_trigger_autofix`):
@@ -5086,13 +5360,13 @@ impl App {
         self.state = ConnectionState::Connecting("Restarting agent...".to_string());
         self.session_to_tab.clear();
         self.session_model_configs.clear();
+        self.session_config_options.clear();
         self.session_id.clear();
         for (_, tab) in self.tab_sessions.iter_mut() {
             tab.clear_chat_history();
             tab.usage = None;
             tab.usage_staleness = crate::usage::UsageStaleness::default();
             tab.completed_turns.clear();
-            tab.selected_completed_turn_idx = None;
             tab.session_id = None;
         }
         // Every session is about to die with the agent stack; drop any
@@ -5188,6 +5462,9 @@ impl App {
     /// Helpers without an owner (delegate path, legacy `wta` runs) still
     /// follow the active tab.
     fn switch_tab_session(&mut self, new_tab_id: String) {
+        self.pressed_completed_turn = None;
+        self.last_completed_turn_click = None;
+        self.pressed_input_dialog_tab = None;
         if let Some(owner) = self.owner_tab_id.as_deref() {
             if owner != new_tab_id {
                 tracing::debug!(
@@ -5258,6 +5535,7 @@ impl App {
         let removed = self.tab_sessions.remove(closed_tab_id);
         if let Some(session_id) = removed.as_ref().and_then(|tab| tab.session_id.as_ref()) {
             self.session_model_configs.remove(session_id);
+            self.session_config_options.remove(session_id);
         }
         self.session_to_tab.retain(|_, tab| tab != closed_tab_id);
 
@@ -5471,11 +5749,11 @@ impl App {
             tab.usage = None;
             tab.usage_staleness = crate::usage::UsageStaleness::default();
             tab.completed_turns.clear();
-            tab.selected_completed_turn_idx = None;
             tab.scroll_to_bottom();
         }
         if let Some(session_id) = removed_session_id {
             self.session_model_configs.remove(&session_id);
+            self.session_config_options.remove(&session_id);
         }
 
         // Prune the reverse SessionId → tab routing so late ACP chunks for

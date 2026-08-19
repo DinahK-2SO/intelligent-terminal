@@ -1,6 +1,7 @@
 use crate::app::{App, AppMode, View, DEFAULT_TAB_ID};
 use ratatui::prelude::*;
 
+use super::config_popup;
 use super::{
     action_panel, agent_popup, agents_view, auth, chat, command_popup, debug_panel, input,
     model_popup, permission, recommendations, setup, user_input,
@@ -8,6 +9,9 @@ use super::{
 
 pub fn render(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
+    app.completed_turn_hits.clear();
+    app.completed_turn_action_links.clear();
+    app.input_dialog_area = None;
 
     // Auth mode: show auth screen above the input box
     if app.mode == AppMode::Auth {
@@ -252,6 +256,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         recommendations::render_hint(frame, chunks[5]);
     }
     chat::render_activity(frame, app, h_activity[1]);
+    app.input_dialog_area = Some(chunks[7]);
     input::render(frame, app, chunks[7]);
 
     if let Some(debug_area) = debug_area {
@@ -272,6 +277,10 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     // command popup isn't visible while it's up.
     if let Some(model_state) = app.model_popup_state() {
         model_popup::render_popup(frame, model_state, chunks[7]);
+    }
+
+    if let Some(config_state) = app.config_popup_state() {
+        config_popup::render_popup(frame, config_state, chunks[7]);
     }
 
     if let Some(agent_state) = app.agent_popup_state() {

@@ -1094,12 +1094,10 @@ async fn dispatch_prompt_new_session_failure_emits_error_and_releases_slot() {
         .await;
 }
 
-/// Template selection: an autofix prompt (`is_autofix=true`) must be assembled
-/// with the *autofix* template ("Fixing a Failed Terminal Command"), NOT the planner
-/// terminal template. Picking the wrong template would make autofix behave like the
-/// general planner and fail to diagnose the failure.
+/// First-turn autofix installs the base terminal-agent prompt and adds the
+/// autofix instruction overlay.
 #[tokio::test]
-async fn dispatch_prompt_autofix_uses_autofix_template() {
+async fn dispatch_prompt_first_autofix_includes_base_and_overlay() {
     let local = tokio::task::LocalSet::new();
     local
         .run_until(async {
@@ -1136,12 +1134,12 @@ async fn dispatch_prompt_autofix_uses_autofix_template() {
             let seen = h.seen_prompts.lock().unwrap().clone();
             assert_eq!(seen.len(), 1);
             assert!(
-                seen[0].contains("Fixing a Failed Terminal Command"),
-                "autofix prompt must carry the auto-fix template"
+                seen[0].contains("Auto-Fix Instructions"),
+                "autofix prompt must carry the auto-fix instruction overlay"
             );
             assert!(
-                !seen[0].contains("You assist from within Windows Terminal"),
-                "autofix prompt must NOT carry the terminal template"
+                seen[0].contains("You assist from within Windows Terminal"),
+                "first-turn autofix must install the base terminal-agent prompt"
             );
             assert!(
                 seen[0].contains("fix the build"),
@@ -1941,6 +1939,18 @@ async fn session_notification_routes_model_config_update() {
         .unwrap();
 
     match rx.try_recv() {
+        Ok(AppEvent::SessionConfigUpdated {
+            session_id,
+            options,
+        }) => {
+            assert_eq!(session_id, "s1");
+            assert_eq!(options.len(), 1);
+            assert_eq!(options[0].id, "model");
+            assert_eq!(options[0].current_value, "gpt-5.6-sol");
+        }
+        _ => panic!("expected SessionConfigUpdated"),
+    }
+    match rx.try_recv() {
         Ok(AppEvent::ModelConfigUpdated {
             session_id,
             available_models,
@@ -2071,6 +2081,17 @@ async fn session_notification_clears_removed_model_config() {
         .await
         .unwrap();
 
+    match rx.try_recv() {
+        Ok(AppEvent::SessionConfigUpdated {
+            session_id,
+            options,
+        }) => {
+            assert_eq!(session_id, "s1");
+            assert_eq!(options.len(), 1);
+            assert_eq!(options[0].id, "mode");
+        }
+        _ => panic!("expected SessionConfigUpdated"),
+    }
     match rx.try_recv() {
         Ok(AppEvent::ModelConfigUpdated {
             session_id,

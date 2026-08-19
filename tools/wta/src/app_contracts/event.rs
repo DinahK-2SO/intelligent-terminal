@@ -1,6 +1,9 @@
 use crossterm::event::{KeyEvent, MouseEvent};
 
-use super::{AcpModelInfo, AvailableAgent, DebugMessage, PermOption, PlanEntry, PreflightResult};
+use super::{
+    AcpModelInfo, AcpSessionConfigOption, AvailableAgent, DebugMessage, PermOption, PlanEntry,
+    PreflightResult,
+};
 
 pub enum AppEvent {
     Key(KeyEvent),
@@ -50,6 +53,21 @@ pub enum AppEvent {
     RuntimeYoloReconcileCompleted {
         fail_closed: bool,
         result: Result<(), String>,
+    },
+    SessionConfigUpdated {
+        session_id: String,
+        options: Vec<AcpSessionConfigOption>,
+    },
+    SessionConfigSetCompleted {
+        session_id: String,
+        config_id: String,
+        value: String,
+        model_compat: bool,
+    },
+    SessionConfigSetFailed {
+        session_id: String,
+        config_id: String,
+        message: String,
     },
     TabError {
         tab_id: String,

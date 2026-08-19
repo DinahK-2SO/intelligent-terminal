@@ -1,15 +1,17 @@
 use std::borrow::Cow;
+#[cfg(test)]
+use std::cell::Cell;
 
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use unicode_width::UnicodeWidthStr;
 
+#[cfg(test)]
+use crate::app::CompletedTurn;
 use crate::app::{
     App, ChatMessage, NoticeKind, PlanEntryStatus, ToolCallContent, ToolCallKind, ToolCallLocation,
     ToolCallOutput,
 };
-#[cfg(test)]
-use crate::app::CompletedTurn;
 use crate::theme;
 use crate::ui::shimmer;
 use crate::ui_trace;
@@ -24,6 +26,26 @@ const MAX_TOOL_OUTPUT_LINE_CHARS: usize = 240;
 const MAX_TOOL_PREVIEW_LINES: usize = 2;
 const MAX_TOOL_DETAIL_OUTPUT_LINES: usize = 12;
 const MAX_TOOL_DETAIL_LINES: usize = 32;
+
+#[cfg(test)]
+thread_local! {
+    static COMPLETED_TURN_LINE_BUILD_COUNT: Cell<usize> = const { Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn reset_completed_turn_line_build_count() {
+    COMPLETED_TURN_LINE_BUILD_COUNT.with(|count| count.set(0));
+}
+
+#[cfg(test)]
+pub(crate) fn completed_turn_line_build_count() -> usize {
+    COMPLETED_TURN_LINE_BUILD_COUNT.with(Cell::get)
+}
+
+#[cfg(test)]
+fn record_completed_turn_line_build() {
+    COMPLETED_TURN_LINE_BUILD_COUNT.with(|count| count.set(count.get() + 1));
+}
 
 fn tool_output_lines(output: &ToolCallOutput) -> Vec<String> {
     let mut lines = output.text.lines().rev();
@@ -103,7 +125,9 @@ fn tool_detail_lines(
     let mut omitted = false;
     if detailed {
         for location in locations.iter().take(MAX_TOOL_DETAIL_LINES) {
-            let suffix = location.line.map_or_else(String::new, |line| format!(":{line}"));
+            let suffix = location
+                .line
+                .map_or_else(String::new, |line| format!(":{line}"));
             lines.push(format!("    {}{suffix}", location.path));
         }
         omitted = locations.len() > MAX_TOOL_DETAIL_LINES;
@@ -148,7 +172,9 @@ fn tool_detail_lines(
                 }
             }
             ToolCallContent::Attachment { label, uri } => {
-                let target = uri.as_deref().map_or_else(String::new, |uri| format!(" · {uri}"));
+                let target = uri
+                    .as_deref()
+                    .map_or_else(String::new, |uri| format!(" · {uri}"));
                 lines.push(format!("    ↳ {label}{target}"));
             }
         }
@@ -336,11 +362,18 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     let inner_area = inner.inner(area);
     let visible_height = inner_area.height as usize;
     let wrap_width = inner_area.width as usize;
-    let requested_lines = visible_height
-        .saturating_add(app.current_tab().chat_scroll.offset)
+    let selection_pending = app.current_tab().completed_turn_selection_visible_pending;
+    let selection_target_idx = selection_pending
+        .then_some(app.current_tab().selected_completed_turn_idx)
+        .flatten()
+        .filter(|index| *index < app.current_tab().completed_turns.len());
+    let mut effective_offset = app.current_tab().chat_scroll.offset;
+    let mut requested_lines = visible_height
+        .saturating_add(effective_offset)
         .saturating_add(32);
 
     let mut reversed_lines: Vec<Line> = Vec::new();
+    let mut turn_hit_offsets = Vec::new();
 
     let mut pending_lines = build_pending_stream_lines(app, wrap_width);
     reversed_lines.extend(pending_lines.drain(..).rev());
@@ -364,7 +397,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
             wrap_width,
         );
         reversed_lines.extend(message_lines.drain(..).rev());
-        if reversed_lines.len() >= requested_lines {
+        if reversed_lines.len() >= requested_lines && selection_target_idx.is_none() {
             truncated = true;
             break;
         }
@@ -373,12 +406,42 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     if !truncated {
         let selected_idx = app.current_tab().selected_completed_turn_idx;
         let pane_focused = app.pane_focused;
+        let mut selection_reached = selection_target_idx.is_none();
+        let mut rendered_rows_below = rendered_lines_height(&reversed_lines, wrap_width);
         for (idx, turn) in app.current_tab().completed_turns.iter().enumerate().rev() {
             let is_selected = selected_idx == Some(idx);
-            let mut turn_lines =
-                build_completed_turn_lines(turn, is_selected, pane_focused, wrap_width);
+            let (mut turn_lines, prompt_rows) = build_completed_turn_lines_with_prompt_rows(
+                turn,
+                is_selected,
+                pane_focused,
+                wrap_width,
+            );
+            let turn_height = rendered_lines_height(&turn_lines, wrap_width);
+            turn_hit_offsets.push((
+                idx,
+                rendered_rows_below,
+                turn_height,
+                turn.expanded,
+                prompt_rows,
+            ));
+            if selection_target_idx == Some(idx) {
+                let selected_end = rendered_rows_below.saturating_add(turn_height);
+                let viewport_height = visible_height.max(1);
+                effective_offset = if rendered_rows_below < effective_offset {
+                    rendered_rows_below
+                } else if selected_end > effective_offset.saturating_add(viewport_height) {
+                    selected_end.saturating_sub(viewport_height)
+                } else {
+                    effective_offset
+                };
+                requested_lines = visible_height
+                    .saturating_add(effective_offset)
+                    .saturating_add(32);
+                selection_reached = true;
+            }
             reversed_lines.extend(turn_lines.drain(..).rev());
-            if reversed_lines.len() >= requested_lines {
+            rendered_rows_below = rendered_rows_below.saturating_add(turn_height);
+            if reversed_lines.len() >= requested_lines && selection_reached {
                 truncated = true;
                 break;
             }
@@ -403,8 +466,7 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     let lines: Vec<Line> = reversed_lines.into_iter().rev().collect();
 
     let total_lines = rendered_lines_height(&lines, wrap_width);
-    let scroll = total_lines
-        .saturating_sub(visible_height.saturating_add(app.current_tab().chat_scroll.offset));
+    let scroll = total_lines.saturating_sub(visible_height.saturating_add(effective_offset));
 
     let paragraph = Paragraph::new(lines)
         .block(inner)
@@ -413,6 +475,76 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
         .scroll((scroll.min(u16::MAX as usize) as u16, 0));
 
     frame.render_widget(paragraph, area);
+
+    let mut completed_turn_hits = Vec::new();
+    let buffer = frame.buffer_mut();
+    for (turn_index, rows_below, turn_height, expanded, prompt_rows) in turn_hit_offsets {
+        let header_from_top = total_lines.saturating_sub(rows_below.saturating_add(turn_height));
+        if let Some(header_row) = header_from_top
+            .checked_sub(scroll)
+            .filter(|row| *row < visible_height)
+        {
+            let row = inner_area.y.saturating_add(header_row as u16);
+            let symbol = if expanded { "▼" } else { "▶" };
+            if let Some(column) = (inner_area.x..inner_area.x.saturating_add(inner_area.width))
+                .find(|column| {
+                    buffer
+                        .cell((*column, row))
+                        .is_some_and(|cell| cell.symbol() == symbol)
+                })
+            {
+                completed_turn_hits.push(crate::app::CompletedTurnHitRegion {
+                    start_column: column,
+                    end_column: column.saturating_add(1),
+                    row,
+                    turn_index,
+                    kind: crate::app::CompletedTurnHitKind::Triangle,
+                });
+            }
+        }
+
+        for prompt_row in prompt_rows {
+            let Some(visible_row) = header_from_top
+                .saturating_add(prompt_row.row_offset)
+                .checked_sub(scroll)
+            else {
+                continue;
+            };
+            if visible_row >= visible_height {
+                continue;
+            }
+            let start = inner_area.x as usize;
+            let end = inner_area.x.saturating_add(inner_area.width) as usize;
+            if start < end {
+                completed_turn_hits.push(crate::app::CompletedTurnHitRegion {
+                    start_column: start as u16,
+                    end_column: end as u16,
+                    row: inner_area.y.saturating_add(visible_row as u16),
+                    turn_index,
+                    kind: crate::app::CompletedTurnHitKind::UserInput,
+                });
+                app.completed_turn_action_links.push(
+                    crate::action_links::CompletedTurnActionLink {
+                        start_column: start as u16,
+                        end_column: end as u16,
+                        row: inner_area.y.saturating_add(visible_row as u16),
+                        action: if expanded {
+                            crate::action_links::CompletedTurnAction::Collapse
+                        } else {
+                            crate::action_links::CompletedTurnAction::Expand
+                        },
+                    },
+                );
+            }
+        }
+    }
+    app.completed_turn_hits = completed_turn_hits;
+
+    if selection_pending {
+        let tab = app.current_tab_mut();
+        tab.chat_scroll.offset = effective_offset;
+        tab.completed_turn_selection_visible_pending = false;
+    }
 
     // Update the scroll bound only when the build saw all of history;
     // otherwise the true max is still unknown and the stored value (possibly
@@ -440,12 +572,84 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     });
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PromptRowGeometry {
+    row_offset: usize,
+    line_width: usize,
+    body_start: usize,
+    body_width: usize,
+}
+
+fn completed_turn_prompt_rows(lines: &[Line<'_>], wrap_width: usize) -> Vec<PromptRowGeometry> {
+    let width = wrap_width.max(1);
+    let mut rows = Vec::new();
+    for line in lines {
+        let line_width = line
+            .spans
+            .iter()
+            .map(|span| UnicodeWidthStr::width(span.content.as_ref()))
+            .sum::<usize>();
+        let body_start = line
+            .spans
+            .iter()
+            .take(2)
+            .map(|span| UnicodeWidthStr::width(span.content.as_ref()))
+            .sum::<usize>();
+        if line_width <= width {
+            rows.push(PromptRowGeometry {
+                row_offset: rows.len(),
+                line_width,
+                body_start,
+                body_width: line_width.saturating_sub(body_start),
+            });
+            continue;
+        }
+
+        let text = line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+        let pieces = textwrap::wrap(&text, width);
+        if pieces.is_empty() {
+            continue;
+        }
+        for (piece_index, piece) in pieces.into_iter().enumerate() {
+            let line_width = UnicodeWidthStr::width(piece.as_ref()).min(width);
+            let body_start = if piece_index == 0 {
+                body_start.min(line_width)
+            } else {
+                0
+            };
+            rows.push(PromptRowGeometry {
+                row_offset: rows.len(),
+                line_width,
+                body_start,
+                body_width: line_width.saturating_sub(body_start),
+            });
+        }
+    }
+    rows
+}
+
 fn build_completed_turn_lines<'a>(
     turn: &'a crate::app::CompletedTurn,
     is_selected: bool,
     pane_focused: bool,
     wrap_width: usize,
 ) -> Vec<Line<'a>> {
+    build_completed_turn_lines_with_prompt_rows(turn, is_selected, pane_focused, wrap_width).0
+}
+
+fn build_completed_turn_lines_with_prompt_rows<'a>(
+    turn: &'a crate::app::CompletedTurn,
+    is_selected: bool,
+    pane_focused: bool,
+    wrap_width: usize,
+) -> (Vec<Line<'a>>, Vec<PromptRowGeometry>) {
+    #[cfg(test)]
+    record_completed_turn_line_build();
+
     let chevron = if turn.expanded { "▼ " } else { "▶ " };
     // Selected row highlights the current Tab target. When the pane is focused
     // it's the live, active selection (bright SELECTED bar); when the pane is
@@ -507,6 +711,8 @@ fn build_completed_turn_lines<'a>(
         ])]
     };
 
+    let prompt_rows = completed_turn_prompt_rows(&lines, wrap_width);
+
     // Index of the line that should receive an inline trailing marker (eg
     // "(canceled)" / "→ executed: …"). Expanded turns attach it to the
     // first detail row (after all expanded prompt rows); collapsed turns
@@ -545,7 +751,7 @@ fn build_completed_turn_lines<'a>(
     if lines.last().map_or(true, |l| !l.spans.is_empty()) {
         lines.push(Line::default());
     }
-    lines
+    (lines, prompt_rows)
 }
 
 pub fn render_activity(frame: &mut Frame, app: &App, area: Rect) {
@@ -1054,6 +1260,20 @@ mod tests {
     }
 
     #[test]
+    fn completed_turn_build_counter_does_not_leak_across_threads() {
+        reset_completed_turn_line_build_count();
+        std::thread::spawn(|| {
+            reset_completed_turn_line_build_count();
+            record_completed_turn_line_build();
+            assert_eq!(completed_turn_line_build_count(), 1);
+        })
+        .join()
+        .expect("counter thread must finish");
+
+        assert_eq!(completed_turn_line_build_count(), 0);
+    }
+
+    #[test]
     fn notices_render_distinct_markers_and_hanging_indents() {
         let cases = [
             (NoticeKind::Success, "✓"),
@@ -1413,7 +1633,9 @@ mod tests {
 
         assert_eq!(lines.len(), MAX_TOOL_DETAIL_OUTPUT_LINES + 1);
         assert_eq!(lines[0], "    │ …");
-        assert!(lines.last().is_some_and(|line| line.ends_with("object-199.o")));
+        assert!(lines
+            .last()
+            .is_some_and(|line| line.ends_with("object-199.o")));
     }
 
     #[test]
@@ -1541,7 +1763,8 @@ mod tests {
             },
         };
         if !buf.is_empty() {
-            tab.messages.push(crate::app::ChatMessage::Agent(buf.to_string()));
+            tab.messages
+                .push(crate::app::ChatMessage::Agent(buf.to_string()));
         }
         tab.reveal_chars = reveal_chars;
         tab

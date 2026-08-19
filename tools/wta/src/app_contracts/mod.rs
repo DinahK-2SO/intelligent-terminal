@@ -4,6 +4,7 @@
 //! boundaries. Mutable UI state remains owned by `app`.
 
 mod agent;
+mod config;
 mod diagnostics;
 mod event;
 mod model;
@@ -13,6 +14,7 @@ mod preflight;
 mod yolo;
 
 pub use agent::AvailableAgent;
+pub use config::{AcpSessionConfigOption, AcpSessionConfigValue};
 pub use diagnostics::{DebugDir, DebugMessage};
 pub use event::AppEvent;
 pub use model::AcpModelInfo;

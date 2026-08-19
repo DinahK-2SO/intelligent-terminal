@@ -8,9 +8,71 @@
 use super::*;
 
 impl App {
+    fn completed_turn_hit_at(&self, column: u16, row: u16) -> Option<CompletedTurnHitRegion> {
+        let tab = self.current_tab();
+        if self.mode != AppMode::Chat
+            || tab.current_view != View::Chat
+            || self.help_overlay_visible
+            || tab.model_picker_open
+            || tab.agent_picker_open
+            || self.command_popup_visible()
+        {
+            return None;
+        }
+        self.completed_turn_hits
+            .iter()
+            .copied()
+            .find(|hit| hit.contains(column, row))
+    }
+
+    fn active_mouse_tab_id(&self) -> String {
+        self.tab_id
+            .clone()
+            .unwrap_or_else(|| DEFAULT_TAB_ID.to_string())
+    }
+
+    fn input_dialog_at(&self, column: u16, row: u16) -> bool {
+        let tab = self.current_tab();
+        let Some(area) = self.input_dialog_area else {
+            return false;
+        };
+        self.mode == AppMode::Chat
+            && tab.current_view == View::Chat
+            && tab.input_can_receive_nav_focus()
+            && !self.help_overlay_visible
+            && !self.command_popup_visible()
+            && column >= area.x
+            && column < area.x.saturating_add(area.width)
+            && row >= area.y
+            && row < area.y.saturating_add(area.height)
+    }
+
+    fn cancel_completed_turn_click(&mut self) {
+        self.pressed_completed_turn = None;
+        self.last_completed_turn_click = None;
+        self.pressed_input_dialog_tab = None;
+    }
+
+    fn restore_completed_turn_click(&mut self, column: u16, row: u16) {
+        let active_tab_id = self.active_mouse_tab_id();
+        let Some(click) = self.last_completed_turn_click.take().filter(|click| {
+            click.tab_id == active_tab_id && click.column == column && click.row == row
+        }) else {
+            return;
+        };
+        let tab = self.current_tab_mut();
+        let Some(turn) = tab.completed_turns.get_mut(click.turn_index) else {
+            return;
+        };
+        turn.expanded = click.previous_expanded;
+        tab.selected_completed_turn_idx = click.previous_selected_index;
+        tab.completed_turn_selection_visible_pending = click.previous_selection_pending;
+    }
+
     pub(super) fn handle_event(&mut self, event: AppEvent) {
         match event {
             AppEvent::Key(key) => {
+                self.cancel_completed_turn_click();
                 let is_copy = matches!(key.code, KeyCode::Char('c'))
                     && key.modifiers.contains(KeyModifiers::CONTROL);
                 if is_copy {
@@ -43,6 +105,7 @@ impl App {
                 | crossterm::event::MouseEventKind::ScrollDown
                     if self.current_tab().current_view == View::Agents =>
                 {
+                    self.cancel_completed_turn_click();
                     self.text_selection.clear();
                     let code = if matches!(mouse.kind, crossterm::event::MouseEventKind::ScrollUp) {
                         KeyCode::Up
@@ -56,6 +119,7 @@ impl App {
                     if self.mode == AppMode::Chat
                         && self.current_tab().current_view == View::Chat =>
                 {
+                    self.cancel_completed_turn_click();
                     self.text_selection.clear();
                     let lines = if mouse.modifiers.contains(KeyModifiers::ALT) {
                         1
@@ -70,6 +134,74 @@ impl App {
                             self.current_tab_mut().chat_scroll.by(-lines);
                         }
                         _ => {}
+                    }
+                }
+                crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
+                    self.text_selection.handle_mouse(mouse);
+                    let click_count = self.text_selection.click_count().unwrap_or(1);
+                    if click_count > 1 {
+                        self.pressed_completed_turn = None;
+                        if click_count == 2 {
+                            self.restore_completed_turn_click(mouse.column, mouse.row);
+                        }
+                        return;
+                    }
+                    self.last_completed_turn_click = None;
+                    if self.input_dialog_at(mouse.column, mouse.row) {
+                        self.pressed_input_dialog_tab = Some(self.active_mouse_tab_id());
+                        self.pressed_completed_turn = None;
+                        return;
+                    }
+                    self.pressed_completed_turn = self
+                        .completed_turn_hit_at(mouse.column, mouse.row)
+                        .map(|hit| PressedCompletedTurn {
+                            tab_id: self.active_mouse_tab_id(),
+                            hit,
+                        });
+                }
+                crossterm::event::MouseEventKind::Drag(crossterm::event::MouseButton::Left) => {
+                    self.cancel_completed_turn_click();
+                    self.text_selection.handle_mouse(mouse);
+                }
+                crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left) => {
+                    let active_tab_id = self.active_mouse_tab_id();
+                    let input_pressed = self.pressed_input_dialog_tab.take();
+                    if input_pressed.as_deref() == Some(active_tab_id.as_str())
+                        && self.input_dialog_at(mouse.column, mouse.row)
+                    {
+                        self.pressed_completed_turn = None;
+                        self.last_completed_turn_click = None;
+                        self.text_selection.clear();
+                        self.current_tab_mut().clear_completed_turn_selection();
+                        return;
+                    }
+                    let pressed = self.pressed_completed_turn.take();
+                    let released = self.completed_turn_hit_at(mouse.column, mouse.row);
+                    self.text_selection.handle_mouse(mouse);
+                    if let Some(pressed) = pressed.filter(|pressed| {
+                        pressed.tab_id == active_tab_id
+                            && released.is_some_and(|hit| hit.turn_index == pressed.hit.turn_index)
+                    }) {
+                        let tab = self.current_tab_mut();
+                        let previous_selected_index = tab.selected_completed_turn_idx;
+                        let previous_selection_pending =
+                            tab.completed_turn_selection_visible_pending;
+                        let previous_expanded =
+                            tab.completed_turns[pressed.hit.turn_index].expanded;
+                        if tab.select_completed_turn(pressed.hit.turn_index)
+                            && tab.toggle_completed_turn(pressed.hit.turn_index)
+                            && pressed.hit.kind == CompletedTurnHitKind::UserInput
+                        {
+                            self.last_completed_turn_click = Some(CompletedTurnClickRecord {
+                                tab_id: active_tab_id,
+                                column: mouse.column,
+                                row: mouse.row,
+                                turn_index: pressed.hit.turn_index,
+                                previous_selected_index,
+                                previous_selection_pending,
+                                previous_expanded,
+                            });
+                        }
                     }
                 }
                 _ => {
@@ -138,6 +270,7 @@ impl App {
                 }
             }
             AppEvent::Resize(w, h) => {
+                self.cancel_completed_turn_click();
                 self.text_selection.clear();
                 self.terminal_cols = w;
                 self.terminal_rows = h;
@@ -146,6 +279,7 @@ impl App {
                 self.advance_reveal();
             }
             AppEvent::FocusChanged(focused) => {
+                self.cancel_completed_turn_click();
                 self.pane_focused = focused;
             }
             AppEvent::ConnectionStage(stage) => {
@@ -267,6 +401,7 @@ impl App {
                         .unwrap()
                         .remove_session(&replaced_session_id);
                     self.pending_yolo_changes.remove(&replaced_session_id);
+                    self.session_config_options.remove(&replaced_session_id);
                 }
                 self.session_to_tab
                     .insert(session_id.clone(), tab_id.clone());
@@ -379,10 +514,106 @@ impl App {
                     );
                     let _ = self
                         .restart_tx
-                        .send(crate::protocol::acp::client::RestartRequest {
-                            agent_cmd: None,
-                        });
+                        .send(crate::protocol::acp::client::RestartRequest { agent_cmd: None });
                 }
+            }
+            AppEvent::SessionConfigUpdated {
+                session_id,
+                options,
+            } => {
+                self.session_config_options
+                    .insert(session_id.clone(), options);
+                let target_tab = self.bound_tab_for_session(&session_id);
+                let Some(target_tab) = target_tab else {
+                    return;
+                };
+                let options = self
+                    .session_config_options
+                    .get(&session_id)
+                    .map(Vec::as_slice)
+                    .unwrap_or_default();
+                let mut picker = self
+                    .tab_sessions
+                    .get(&target_tab)
+                    .map(|tab| tab.config_picker.clone())
+                    .unwrap_or_default();
+                picker.reconcile(options);
+                self.tab_mut(&target_tab).config_picker = picker;
+            }
+            AppEvent::SessionConfigSetCompleted {
+                session_id,
+                config_id,
+                value,
+                model_compat,
+            } => {
+                let (option_name, value_name) = self
+                    .session_config_options
+                    .get_mut(&session_id)
+                    .and_then(|options| options.iter_mut().find(|option| option.id == config_id))
+                    .map(|option| {
+                        option.current_value = value.clone();
+                        (option.name.clone(), option.current_value_name().to_string())
+                    })
+                    .unwrap_or_else(|| (config_id.clone(), value.clone()));
+                let target_tab = self.bound_tab_for_session(&session_id);
+                let Some(target_tab) = target_tab else {
+                    return;
+                };
+                {
+                    let tab = self.tab_mut(&target_tab);
+                    if tab.config_pending_id.as_deref() == Some(config_id.as_str()) {
+                        tab.config_pending_id = None;
+                    }
+                    let message = if model_compat {
+                        tab.model_override = Some(value.clone());
+                        t!("system.model_set", model = value_name.as_str()).into_owned()
+                    } else {
+                        format!("{option_name}: {value_name}")
+                    };
+                    tab.messages.push(ChatMessage::success(message));
+                    tab.scroll_to_bottom();
+                }
+                if model_compat {
+                    if let Some((_, current_model_id)) =
+                        self.session_model_configs.get_mut(&session_id)
+                    {
+                        *current_model_id = Some(value.clone());
+                    }
+                    if self.current_tab().session_id.as_deref() == Some(session_id.as_str()) {
+                        self.agent_current_model_id = Some(value);
+                        self.rebuild_model_catalog_from_agent_state();
+                        self.publish_agent_status();
+                    }
+                }
+            }
+            AppEvent::SessionConfigSetFailed {
+                session_id,
+                config_id,
+                message,
+            } => {
+                let option_name = self
+                    .session_config_options
+                    .get(&session_id)
+                    .and_then(|options| options.iter().find(|option| option.id == config_id))
+                    .map(|option| option.name.clone())
+                    .unwrap_or(config_id.clone());
+                let target_tab = self.bound_tab_for_session(&session_id);
+                let Some(target_tab) = target_tab else {
+                    return;
+                };
+                let tab = self.tab_mut(&target_tab);
+                if tab.config_pending_id.as_deref() == Some(config_id.as_str()) {
+                    tab.config_pending_id = None;
+                }
+                tab.messages.push(ChatMessage::error(
+                    t!(
+                        "system.config_update_failed",
+                        option = option_name.as_str(),
+                        error = message.as_str()
+                    )
+                    .into_owned(),
+                ));
+                tab.scroll_to_bottom();
             }
             AppEvent::TabError { tab_id, message } => {
                 // Scoped error for a specific tab. Bypasses the global
@@ -973,10 +1204,10 @@ impl App {
                 responder,
             } => {
                 let tab = self.session_tab_mut(&session_id);
-                if !tab.turn.is_in_flight() && !tab.loading_session {
-                    // Auto-deny if the user cancelled before the agent
-                    // got around to asking. Dropping the responder yields
-                    // a Cancelled outcome on the agent side.
+                if !tab.turn.can_service_agent_request() && !tab.loading_session {
+                    // Auto-deny only when no turn remains to own the request.
+                    // A surfaced turn may have released its UI busy gate while
+                    // the Agent continues a multi-step flow.
                     return;
                 }
                 // FIFO push — never overwrite an in-flight request. The
@@ -1002,7 +1233,7 @@ impl App {
                 responder,
             } => {
                 let tab = self.session_tab_mut(&session_id);
-                if !tab.turn.is_in_flight() {
+                if !tab.turn.can_service_agent_request() && !tab.loading_session {
                     return;
                 }
                 tab.user_input.push_back(UserInputState {
@@ -1414,7 +1645,7 @@ impl App {
                         if let Some(target_agent_id) =
                             params.get("target_agent_id").and_then(|v| v.as_str())
                         {
-                        tracing::info!(
+                            tracing::info!(
                             target: "autofix",
                             model = raw,
                                 target_agent_id,
@@ -1444,10 +1675,10 @@ impl App {
                                 Ok(models) => self.set_cloud_models(models),
                                 Err(error) => {
                                     tracing::error!(
-                                        target: "cloud_models",
-                                        %error,
-                                        "invalid cloud model catalog in agent_config_changed"
-                        );
+                                                    target: "cloud_models",
+                                                    %error,
+                                                    "invalid cloud model catalog in agent_config_changed"
+                                    );
                                     return;
                                 }
                             }
@@ -1694,7 +1925,6 @@ impl App {
                         tab.usage = None;
                         tab.usage_staleness = crate::usage::UsageStaleness::default();
                         tab.completed_turns.clear();
-                        tab.selected_completed_turn_idx = None;
                         // Open the replay window: chunk handlers will
                         // now accept session/update events for this
                         // tab even though `turn` stays Idle. Closed by

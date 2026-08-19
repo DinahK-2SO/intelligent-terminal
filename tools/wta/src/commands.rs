@@ -16,7 +16,7 @@ pub enum CommandKind {
     New,
     /// Run the auto-fix prompt on demand.
     ///
-    /// Submits the dedicated `auto-fix.md` template plus the active
+    /// Submits the `auto-fix.md` instruction overlay plus the active
     /// terminal pane's recent output to the agent — the same pipeline the
     /// error-triggered autofix uses (`PromptSubmission::is_autofix`), but
     /// invoked manually. Any text after `/fix` is passed through as an
@@ -47,10 +47,12 @@ pub enum CommandKind {
     Agent,
     /// Pick the ACP model for *this* agent pane.
     ///
-    /// Bare `/model` opens an interactive picker listing configured BYOM
+    /// Bare `/model` opens an interactive picker listing configured BYOK
     /// models. Cloud/native models are intentionally omitted; model changes
     /// are made through Settings because they require an agent restart.
     Model,
+    /// Configure the current ACP session using Agent-provided config options.
+    Config,
     /// Move this tab's agent pane without changing the global pane-position
     /// setting or any other tab.
     Move,
@@ -129,6 +131,11 @@ pub const REGISTRY: &[CommandSpec] = &[
         summary_key: "commands.model.summary",
         // `/model <id>` switches directly; bare `/model` opens the picker.
         kind: CommandKind::Model,
+    },
+    CommandSpec {
+        name: "config",
+        summary_key: "commands.config.summary",
+        kind: CommandKind::Config,
     },
     CommandSpec {
         name: "move",

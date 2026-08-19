@@ -314,6 +314,74 @@ pub(crate) struct PendingTerminalActionProposal {
     pub recommendations: super::RecommendationSet,
 }
 
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub enum ConfigPickerState {
+    #[default]
+    Closed,
+    Options {
+        selected: usize,
+    },
+    Values {
+        option_id: String,
+        selected: usize,
+        parent_selected: Option<usize>,
+    },
+}
+
+impl ConfigPickerState {
+    pub fn is_open(&self) -> bool {
+        !matches!(self, Self::Closed)
+    }
+
+    pub fn selected(&self) -> usize {
+        match self {
+            Self::Closed => 0,
+            Self::Options { selected } | Self::Values { selected, .. } => *selected,
+        }
+    }
+
+    pub fn option_id(&self) -> Option<&str> {
+        match self {
+            Self::Values { option_id, .. } => Some(option_id),
+            _ => None,
+        }
+    }
+
+    pub fn reconcile(&mut self, options: &[crate::app_contracts::AcpSessionConfigOption]) {
+        let next = match std::mem::take(self) {
+            Self::Closed => Self::Closed,
+            Self::Options { selected } if !options.is_empty() => Self::Options {
+                selected: selected.min(options.len() - 1),
+            },
+            Self::Values {
+                option_id,
+                selected,
+                parent_selected,
+            } => {
+                let value_count = options
+                    .iter()
+                    .find(|option| option.id == option_id)
+                    .map(|option| option.values.len());
+                match value_count {
+                    Some(value_count) if value_count > 0 => Self::Values {
+                        option_id,
+                        selected: selected.min(value_count - 1),
+                        parent_selected,
+                    },
+                    _ => parent_selected
+                        .filter(|_| !options.is_empty())
+                        .map(|selected| Self::Options {
+                            selected: selected.min(options.len() - 1),
+                        })
+                        .unwrap_or(Self::Closed),
+                }
+            }
+            Self::Options { .. } => Self::Closed,
+        };
+        *self = next;
+    }
+}
+
 /// Everything that conceptually belongs to one tab's conversation: the
 /// message history, the streaming buffer of the in-flight prompt, the
 /// pending tool calls, the recommendations panel state, etc.
@@ -338,6 +406,10 @@ pub struct TabSession {
     /// toggles `CompletedTurn.expanded`. None means no selection — Enter
     /// goes to the input/prompt path as before.
     pub selected_completed_turn_idx: Option<usize>,
+    /// Set when keyboard navigation changes the completed-turn selection.
+    /// The chat render pass consumes it after adjusting scroll just enough to
+    /// reveal the selected turn.
+    pub completed_turn_selection_visible_pending: bool,
     pub chat_scroll: Scroll,
 
     // Session replay state. These buffers are used only while loading_session
@@ -422,6 +494,10 @@ pub struct TabSession {
     pub model_picker_open: bool,
     /// Highlighted row in the open model picker.
     pub model_picker_selected: usize,
+    /// Navigation state for the ACP session configuration picker.
+    pub config_picker: ConfigPickerState,
+    /// Config option currently awaiting a `session/set_config_option` response.
+    pub config_pending_id: Option<String>,
     /// True while the `/agent` picker is open for this tab.
     pub agent_picker_open: bool,
     /// Highlighted row in `App::available_agents`.
@@ -467,13 +543,17 @@ impl TabSession {
 
     /// Whether the input box is the live, enterable caret target.
     pub fn input_has_nav_focus(&self) -> bool {
-        self.selected_completed_turn_idx.is_none()
-            && (self.turn.recommendations().is_none()
+        self.selected_completed_turn_idx.is_none() && self.input_can_receive_nav_focus()
+    }
+
+    pub fn input_can_receive_nav_focus(&self) -> bool {
+        (self.turn.recommendations().is_none()
                 || self.recommendation_focus == RecommendationFocus::Input)
             && self.permission.is_empty()
             && self.user_input.is_empty()
             && !self.paste_pending
             && !self.model_picker_open
+            && !self.config_picker.is_open()
             && !self.agent_picker_open
     }
 
@@ -516,6 +596,7 @@ impl TabSession {
         self.chat_scroll.reset();
         self.timing_note = None;
         self.selection_visible_pending = false;
+        self.clear_completed_turn_selection();
         self.turn = TurnState::Idle;
         self.clear_recommendations();
         self.attachments
@@ -625,7 +706,7 @@ impl TabSession {
     pub fn select_older_completed_turn(&mut self) {
         let len = self.completed_turns.len();
         if len == 0 {
-            self.selected_completed_turn_idx = None;
+            self.clear_completed_turn_selection();
             return;
         }
         self.selected_completed_turn_idx = match self.selected_completed_turn_idx {
@@ -633,12 +714,13 @@ impl TabSession {
             Some(0) => None,
             Some(index) => Some(index - 1),
         };
+        self.completed_turn_selection_visible_pending = self.selected_completed_turn_idx.is_some();
     }
 
     pub fn select_newer_completed_turn(&mut self) {
         let len = self.completed_turns.len();
         if len == 0 {
-            self.selected_completed_turn_idx = None;
+            self.clear_completed_turn_selection();
             return;
         }
         self.selected_completed_turn_idx = match self.selected_completed_turn_idx {
@@ -646,17 +728,39 @@ impl TabSession {
             Some(index) if index + 1 >= len => None,
             Some(index) => Some(index + 1),
         };
+        self.completed_turn_selection_visible_pending = self.selected_completed_turn_idx.is_some();
+    }
+
+    pub fn clear_completed_turn_selection(&mut self) {
+        self.selected_completed_turn_idx = None;
+        self.completed_turn_selection_visible_pending = false;
+    }
+
+    pub fn select_completed_turn(&mut self, index: usize) -> bool {
+        if index >= self.completed_turns.len() {
+            return false;
+        }
+        self.selected_completed_turn_idx = Some(index);
+        self.completed_turn_selection_visible_pending = true;
+        true
+    }
+
+    pub fn toggle_completed_turn(&mut self, index: usize) -> bool {
+        let Some(turn) = self.completed_turns.get_mut(index) else {
+            return false;
+        };
+        turn.expanded = !turn.expanded;
+        true
     }
 
     pub fn toggle_selected_completed_turn(&mut self) {
         let Some(index) = self.selected_completed_turn_idx else {
             return;
         };
-        if let Some(turn) = self.completed_turns.get_mut(index) {
-            turn.expanded = !turn.expanded;
+        if self.toggle_completed_turn(index) {
+            self.completed_turn_selection_visible_pending = true;
         }
     }
-
 }
 
 /// Top-level UI view selector. Toggled with Ctrl+Shift+/.

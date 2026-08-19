@@ -519,6 +519,17 @@ impl App {
             return;
         }
 
+        if self.config_picker_visible() {
+            match key.code {
+                KeyCode::Up => self.config_picker_up(),
+                KeyCode::Down => self.config_picker_down(),
+                KeyCode::Enter => self.config_picker_enter(),
+                KeyCode::Esc => self.config_picker_escape(),
+                _ => {}
+            }
+            return;
+        }
+
         if self.current_tab().paste_pending {
             tracing::debug!(target: "agent_paste", "ignoring key while paste is pending");
             return;
@@ -608,7 +619,7 @@ impl App {
             KeyCode::Esc if self.current_tab().selected_completed_turn_idx.is_some() => {
                 // Esc clears the past-turn selection without any other side
                 // effect. Lets the user back out of the history nav cleanly.
-                self.current_tab_mut().selected_completed_turn_idx = None;
+                self.current_tab_mut().clear_completed_turn_selection();
             }
             KeyCode::Up if self.current_tab().selected_completed_turn_idx.is_some() => {
                 self.current_tab_mut().select_older_completed_turn();
