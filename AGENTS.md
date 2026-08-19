@@ -43,15 +43,36 @@
 
 ## Current Stage
 
-`2026-08-19`: Investigation。尚未修改 product/test code。源码历史已确认 first-bad 为
+`2026-08-19`: Investigation。尚未修改 product/test code。源码历史与用户手动 binary A/B 均已确认 first-bad 为
 `d4b436a809b87f4e1e247d6f385785dabee1842b`（`Implement WTA chat mouse interactions and
 text selection (#506)`）：其 first parent `12c66272848e98d1f47cc1a833bb0eb487284f31`
 保持 mouse capture 关闭，而该 commit 重新发送 `EnableMouseCapture`，同时 `event.rs` 仅转发
 ScrollUp/ScrollDown 与 Left Down/Drag/Up，右键事件因此被丢弃。`08957118a` 只扩展 completed-turn
 左键交互，不是回归起点。`d4b436a809` 是 parent 的直接子 commit，且已确认属于
 `v0.2@513808751cf7d8db0fe53ff52b5d234dd0185780`；从该 commit 到 v0.2 没有右键转发或复制修复。
-下一步 build/deploy exact baseline 与 parent，并从真实窗口完成 binary A/B，取得 clipboard
-sentinel 未变化的 RED、截图和 binary identity。
+手动验证结果为 parent 版本右键复制正常、`d4b436a809` 版本右键复制失效。下一步在 exact baseline
+上把该行为固化为自动化 RED，并记录 clipboard sentinel、截图和 binary identity。
+
+同日已完成当前 dev HEAD `c612a48353aacbf93ab5009d3cc4b90a9b637180` 的本地 baseline
+验收：merge 后重新生成并部署 Dev package，Cargo/intermediate/AppX/deployed `wta.exe` 均为
+32,687,616 bytes，SHA-256 `116927FFDB785F1FFBE81FB28533B9D75E4580B022B6F4118EFECE09486B7A85`。
+真实 `Copilot · Windows v1.0.81-2` 完成唯一 marker 对话；物理拖拽选区后右键使 clipboard
+sentinel 保持不变且选区仍可见，键盘 `Ctrl+C` 能复制同一选区，点击输入框后
+`Ctrl+Shift+V` 能把唯一 clipboard marker 精确粘贴到 draft。步骤 2–8 的截图和 pane captures
+保存在 `test/e2e/artifacts/right-click-copy/baseline-real-copilot/`。测试结束后 Dev 进程已停止，
+settings/state 备份已恢复。下一步把该真实 RED 固化为现有 suite 中的自动化 case。
+
+## Regression Analysis
+
+回归由 mouse selection ownership 迁移不完整造成：在 `d4b436a809` 之前，WTA 不启用 mouse
+capture，拖拽选区由 TerminalControl/TerminalCore 管理，因此右键可直接走 host 已有的 copy
+selection 路径。该 commit 为支持 WTA chat 滚轮和自有文本选择重新启用 `EnableMouseCapture`，
+此后物理右键优先被 TerminalControl 编码成 VT mouse input 发给 WTA，而 host 不再处理 copy。
+
+WTA 同一 commit 新增的 `event.rs::map_crossterm_event` allowlist 只接受滚轮与 Left
+Down/Drag/Up，没有接受 Right Down/Up；所以右键在进入 WTA 后被静默丢弃。与此同时，可见选区
+已经属于 WTA `TextSelection`，TerminalCore 没有对应 selection 可供 host 复制。结果是拖拽选择和
+`Ctrl+C` 正常，但右键既不会触发 host copy，也不会触发 WTA copy，OS clipboard 保持不变。
 
 ## Scope And Contract
 
@@ -216,12 +237,12 @@ Ownership Hypothesis 并说明哪个 check 改变了判断。
 |---|---|---|---|---|
 | Focused RED | 新 Rust right-click mapping/copy tests | 右键被丢弃或不复制 | 待运行 | 待生成 |
 | Focused GREEN | `cargo test ... right_click` | mapping + copy lifecycle pass | 待实现后运行 | 待生成 |
-| Neighboring tests | mouse/selection/event focused filters | No regression | 待运行 | 待生成 |
-| Full relevant suite | `cargo test --target x86_64-pc-windows-msvc --manifest-path tools/wta/Cargo.toml` | All pass | 环境未就绪 | 待生成 |
-| Explicit build | explicit-target WTA + Debug x64 package build | 0 errors | 环境检查中 | 待生成 |
-| Packaged / deployed E2E | `Feature.AgentMouse.Tests.ps1` against explicit Dev package | 右键复制并清除选区 | 待运行 | 待生成 |
+| Neighboring tests | event/text-selection baseline filters | No regression | `7/7` + `13/13` passed | local cargo output |
+| Full relevant suite | `cargo test --target x86_64-pc-windows-msvc --manifest-path tools/wta/Cargo.toml` | All pass | baseline `1543/1543` passed；实现后重跑 | local cargo output |
+| Explicit build | explicit-target WTA + Debug x64 package build | 0 errors | build `0 errors`；四方 WTA hash 一致 | `baseline-real-copilot/01-build-deploy.txt` |
+| Packaged / deployed E2E | real Dev UI + OS clipboard baseline workflow | 当前代码按 right-click oracle RED | RED confirmed；Ctrl+C/Ctrl+Shift+V controls GREEN | `baseline-real-copilot/` |
 | Static analysis | fresh release checklist/report + compiler warnings review | 无新增相关告警 | 待运行 | 待生成 |
-| Real integration `[可选]` | 不适用：行为不依赖外部 agent/model | N/A | N/A | deterministic fixture evidence |
+| Real integration `[可选]` | 真实 Copilot CLI 对话仅验证 UI 操作能力 | genuine completed turn | passed with Copilot v1.0.81-2 | `baseline-real-copilot/04-real-copilot-reply.png` |
 
 ### Exact Publish Identity
 
@@ -250,7 +271,7 @@ Ownership Hypothesis 并说明哪个 check 改变了判断。
   透明/全黑帧、错误窗口、启动占位画面或 mock 内容冒充真实验收。
 - Automated checks: 在可行时加入 target HWND、nonblack pixel、dimensions 和 distinct-frame checks；
   自动检查不能替代逐图人工检查。
-- Latest evidence directory: `test/e2e/artifacts/right-click-copy/<iteration>/screenshots/`（待生成）
+- Latest evidence directory: `test/e2e/artifacts/right-click-copy/baseline-real-copilot/`
 
 每轮触及同一 user-visible path 的修复都要重新截图。不得用旧截图加新测试报告代替本轮证据。
 
@@ -258,7 +279,8 @@ Ownership Hypothesis 并说明哪个 check 改变了判断。
 
 Current review status: 尚未创建 PR / 尚未请求 review
 
-Open review items: first-bad 尚待 live baseline/parent binary A/B 佐证；真实 UI 右键注入 helper 能力待确认。
+Open review items: 真实 UI baseline RED 已确认；尚需把物理拖拽/右键 primitive 与 clipboard oracle
+固化为现有 E2E suite 的自动化 regression case。
 
 每轮 review 追加一条记录：
 
@@ -281,11 +303,11 @@ Evidence root: `test/e2e/artifacts/right-click-copy/`
 
 | Artifact | Path | Proves | Commit/package identity |
 |---|---|---|---|
-| RED screenshot/log | `red/`（待生成） | selection 正常但右键不改 clipboard | baseline identity 待记录 |
+| RED screenshot/log | `baseline-real-copilot/05-history-text-selected.png`、`06-right-click-no-op.png` | selection 正常但右键不改 clipboard | dev `c612a483` / WTA `116927FF...B7A85` |
 | Focused test report | `focused/`（待生成） | event mapping 与 shared copy lifecycle | commit 待记录 |
-| E2E report | `report/`（待生成） | real pointer -> package -> clipboard | package identity 待记录 |
+| E2E baseline controls | `baseline-real-copilot/06b-keyboard-copy-positive-control.png`、`07-chat-input-focused.png`、`08-ctrl-shift-v-paste.png` | keyboard copy、focus 与 paste 正常 | Dev package `0.8.0.2` |
 | GREEN screenshots | `green/screenshots/`（待生成） | copy/clear/hint/no-replay | publish identity 待记录 |
-| Real integration evidence `[可选]` | 不适用 | 不依赖外部 agent/model | deterministic fixture |
+| Real integration evidence `[可选]` | `baseline-real-copilot/03-agent-pane-open-connected.png`、`04-real-copilot-reply.png` | installed/authenticated Copilot connected and replied | Copilot Windows v1.0.81-2 |
 | Fixture/provider/wire log `[可选]` | `logs/`（待生成） | unique marker 与 right-button event path | package identity 待记录 |
 
 - 列出 ignored screenshots、pane captures、fixture logs、test reports、local harness、scripts、
