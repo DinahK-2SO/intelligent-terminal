@@ -77,6 +77,17 @@ Clean-main起点没有`tui-markdown`dependency、`agent_markdown_lines`或
   `1545 passed, 0 failed`；`chat.rs`已单独rustfmt。
 - Product commit：`283484ad9 Render streaming agent responses as Markdown`。
 
+#### Phase 1 Step 3：default-on Settings model contract（完成）
+
+- RED：新增`RenderAgentMarkdownRoundtripsAndDefaultsOn`；focused
+  `UnitTests_SettingsModel` build按预期失败，`C2039: RenderAgentMarkdown is not a member of
+  GlobalAppSettings`。
+- GREEN：新增global setting `RenderAgentMarkdown` / JSON `renderAgentMarkdown`，default
+  `true`，并投影到`GlobalAppSettings.idl`。
+- Validation：focused project build成功（5 warnings、0 errors）；focused TAEF
+  `1 passed, 0 failed`，覆盖显式`false`和missing-key default `true`。
+- Product commit：`cd514fe17 Add Markdown rendering setting contract`。
+
 新的性能与产品设计记录在dev-only：
 
 - `investigation-popular-agent-cli/popular-agent-cli.md`：Codex、goose、ForgeCode、Amazon Q、
