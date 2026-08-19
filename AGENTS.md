@@ -46,10 +46,24 @@ branch还可以包含调查、tracking和本地workflow。上一个publish branc
 implementation即将开始。Dev/publish branches均已创建、关联并push；clean-main explicit-target
 WTA baseline为`1543 passed, 0 failed`。
 
-当前branch的产品源码尚无`tui-markdown`dependency、`agent_markdown_lines`或
+Clean-main起点没有`tui-markdown`dependency、`agent_markdown_lines`或
 `RenderAgentMarkdown`setting。上一代branch已经证明baseline Markdown behavior可行，但本branch
-必须从RED重新实现，并直接向performance-first目标架构演进。新baseline已在
+从RED重新实现，并直接向performance-first目标架构演进。新baseline已在
 `origin/main@e870a3630`上完成；后续test count以本branch新增tests后的结果为准。
+
+### `markdown-renderer2` implementation progress
+
+#### Phase 1 Step 1：finalized canonical Markdown projection（完成）
+
+- RED：新增`agent_message_renders_multiline_markdown_with_theme_relative_styles`；focused test
+  `0 passed, 1 failed`，预期失败为`left: "● # Heading"`, `right: "● Heading"`。
+- GREEN：新增`tui-markdown 0.3.9`（关闭default features）、pane-relative Markdown styles和
+  `agent_markdown_lines`，finalized `ChatMessage::Agent`切到canonical projection。
+- Focused GREEN：`1 passed, 0 failed`；`ui::chat::tests`为`38 passed, 0 failed`。
+- Full WTA：`1544 passed, 0 failed`。
+- Dependency compliance：`Generate-WtaThirdPartyNotices.ps1`成功，更新`Cargo.lock`、
+  `cgmanifest.json`和`NOTICE.md`；touched Rust files已单独rustfmt。
+- Product commit：`3a94a571d Render finalized agent responses as Markdown`。
 
 新的性能与产品设计记录在dev-only：
 
