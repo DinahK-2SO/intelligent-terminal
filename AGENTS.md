@@ -8,22 +8,22 @@
 当前 dev/publish branches:
 
 - dev branch：`user/DinahK-2SO/markdown-renderer2`, remotely push to "Dinah".
-- publish branch：`user/DinahK-2SO/markdown-renderer2-publish`, remotely push to "origin".
+- publish branch：`user/DinahK-2SO/markdown-renderer2-publish`, remotely push to "origin"
+  （本次同步时尚未创建）。
 
-这两个branch最初从`main@0c683a00e`创建，之后都已merge
-`origin/main@08957118a`（`Enable mouse interactions for collapsing/expanding completed turns
-(#624)`）：
+当前dev branch从最新`origin/main@e870a3630`（`Wait for terminal window before COM probe
+(#629)`）创建：
 
-- dev merge：`ff59e1e50 Merge origin/main into markdown renderer`；当前已提交HEAD为
-  `969b98cbd investigation`，包含dev-only调查目录`investigation-popular-agent-cli/`。
-- publish merge：`b0ceb8856 Merge origin/main into markdown renderer`；相对当前
-  `origin/main`的review diff仍只有`NOTICE.md`、`tools/wta/Cargo.lock`、`Cargo.toml`、
-  `cgmanifest.json`、`src/theme.rs`和`src/ui/chat.rs`六个产品文件。
-- 两个local branch的上述最新HEAD在本次同步时都尚未push到各自tracking upstream。
+- dev HEAD为`52024f043 init`，其唯一parent是`e870a3630`；包含本handoff和dev-only
+  `investigation-popular-agent-cli/`，没有上一代Markdown产品代码。
+- 当前dev branch尚未设置tracking upstream；完成本次handoff同步后应push到
+  `Dinah/user/DinahK-2SO/markdown-renderer2`。
+- 新publish branch必须直接从同一个`origin/main@e870a3630`创建，不包含`AGENTS.md`、调查目录或
+  其他dev-only tracking，并关联`origin/user/DinahK-2SO/markdown-renderer2-publish`。
 
-下一阶段正式implementation不要继续在这两个review branch上叠加。请从届时最新
-`origin/main`创建新的dev branch；若继续双branch workflow，再创建只包含产品代码、正式tests和
-必需localization/notice的publish branch，并把本文件copy到新dev branch后更新branch名称。
+本branch是下一阶段正式implementation branch。每个TDD step的产品代码与正式tests先形成独立
+product commit，再用单独dev-only commit更新本handoff；product commit同步到publish branch，
+dev-only commit不进入publish。
 
 如果下一阶段仍使用dev/publish双branch：publish branch用于正式产品代码和code review，dev
 branch还可以包含调查、tracking和本地workflow。上一个publish branch不包含：
@@ -42,13 +42,13 @@ branch还可以包含调查、tracking和本地workflow。上一个publish branc
 
 ## 当前follow-up
 
-[2026-08-19] Performance-first Markdown follow-up design complete；baseline Markdown rendering已
-实现，performance/cache/settings follow-up implementation尚未开始。
+[2026-08-19] 新`markdown-renderer2`implementation branch已从clean latest main创建；正式TDD
+implementation即将开始。
 
-Baseline产品behavior已完成：finalized与streaming agent response使用同一个`tui-markdown`
-projection，支持GFM table，height与render共享语义，且styles跟随agent pane自己的palette。在
-2026-08-19 merge-main验证快照中，dev与publish worktree的完整WTA tests均为
-`1547 passed, 0 failed`；创建下一implementation branch后必须重新运行。
+当前branch的产品源码尚无`tui-markdown`dependency、`agent_markdown_lines`或
+`RenderAgentMarkdown`setting。上一代branch已经证明baseline Markdown behavior可行，但本branch
+必须从RED重新实现，并直接向performance-first目标架构演进。开始第一个behavior step前必须重跑
+当前clean-main WTA tests作为新baseline。
 
 新的性能与产品设计记录在dev-only：
 
@@ -82,9 +82,10 @@ projection，支持GFM table，height与render共享语义，且styles跟随agen
 方案。Phase 0/1/2可以拆成多个TDD commit/PR以控制风险，但Phase 2 source-prefix cache属于目标，
 不是可选research。
 
-### Baseline实现与历史调查
+### 上一代Baseline实现与历史调查
 
-下面Step 1-5记录已经完成的baseline TDD与OpenCode技术调查。它们是历史evidence；若与上面的
+下面Step 1-5记录上一代`user/DinahK-2SO/markdown-renderer`branch已经完成的baseline TDD与
+OpenCode技术调查。它们是历史evidence，不代表当前`markdown-renderer2`源码已经实现；若与上面的
 2026-08-19 decision冲突，以上面decision和当前源码为准。
 
 ### Implementation调查结论
@@ -124,7 +125,7 @@ Step 1只改变finalized `ChatMessage::Agent`：
 - Dependency compliance：新增`tui-markdown 0.3.9`且关闭default features；已运行
   `Generate-WtaThirdPartyNotices.ps1`更新`Cargo.lock`、`cgmanifest.json`和`NOTICE.md`。
 - Commit/push：`27ba52552 Render finalized agent responses as Markdown`已推送到
-  `Dinah/user/DinahK-2SO/markdown-renderer2`并确认同步。
+  上一代`Dinah/user/DinahK-2SO/markdown-renderer`并确认同步。
 
 Step 2让streaming pending buffer复用同一个renderer：
 
@@ -255,13 +256,11 @@ runtime。只有出现经fixture证明的`pulldown-cmark`与agent输出不兼容
   证明`Color::Reset`跟随agent pane自己的scheme而非普通terminal/app theme。
 - Local screenshots保留在ignored `test/e2e/artifacts/markdown-renderer/`，未加入feature commit；其中包含
   local paths，分享或复制到review evidence前必须清理。
-- Baseline publish feature commit为`31b96784b Render agent responses as Markdown`；merge main后的
-  local publish HEAD为`b0ceb8856`。相对`origin/main@08957118a`的publish review diff仍只包含
+- 上一代baseline publish feature commit为`31b96784b Render agent responses as Markdown`；merge
+  main后的local publish HEAD为`b0ceb8856`。相对`origin/main@08957118a`的review diff只包含
   六个产品文件，不含本handoff、调查目录或local artifacts；publish worktree full WTA tests为
   `1547 passed, 0 failed`。
-- Dev local HEAD为`969b98cbd`，其产品blob与publish一致；dev额外包含调查/tracking。当前
-  `popular-agent-cli.md`最终设计更新和本`AGENTS.md`同步在本次记录时仍是dev working-tree
-  changes。
+- 上一代dev local HEAD为`969b98cbd`，其产品blob与publish一致；dev额外包含调查/tracking。
 
 下一阶段允许扩展`tui-markdown`的streaming projection API以暴露pulldown-cmark block offsets；
 这不等于扩展Markdown syntax或引入第二个parser。Publish只带产品代码、正式tests、localization和
