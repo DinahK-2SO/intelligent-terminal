@@ -1,0 +1,32 @@
+Line count: 814
+H3s count: 13
+H3: ### 原生 Windows 第一梯队
+H3: ### WSL / Docker 更稳妥
+H3: ### 下一批最值得接入
+H3: ### 产品趋势
+H3: ### 分层结论
+H3: ### OpenAI Codex CLI
+H3: ### goose
+H3: ### ForgeCode
+H3: ### Amazon Q Developer CLI
+H3: ### Warp
+H3: ### oh-my-pi (`omp`)
+H3: ### 跨仓实现对比
+H3: ### 对WTA的综合结论
+Hash 14a8ac89af0a3c9033c1fa4d747ec5d6333e9890 count: 1
+Hash 9f941fbfc5f479d26747d13147457138163ab94e count: 1
+Hash 6ed5d37b6b45a2b6220877fd9aec5ba4c4b7f3c0 count: 1
+Hash 15cc8f3cd18c4272925ce1c7053268eedff1ea0a count: 1
+Hash 04a7f8342c0b78978f12ecd2a3e032ff439bd56f count: 1
+Hash 565d53515b54df32fada2564d1fe9caf1a17b738 count: 1
+Conflict markers count: 0
+Table lines starting with pipe: 8
+Data rows count (excluding headers/separators): 8
+Pipes count for '| 项目 | Markdown parser | Streaming模型 | 显示backend | Table策略 | Finalized/history策略 |': 0
+Pipes count for '|---|---|---|---|---|---|': 0
+Pipes count for '| Codex | `pulldown-cmark 0.10.3` + 自有Ratatui projector | newline gate；stable block提交；mutable suffix重parse；open fence窄fast path | Ratatui retained TUI + OSC-8 + Syntect | 整体mutable；完成后grid，窄宽度stacked fallback | 保存raw source；completion canonical full render；按width/theme重render |': 0
+Pipes count for '| goose | 自定义安全边界scanner；fragment交给`bat 0.26.1` | checkpoint增量扫描；clean fragment独立交给bat；结束raw flush | Direct ANSI/stdout；terminal scrollback | 独立`comfy-table`字符串renderer | 保存raw source；无canonical final replacement；desktop另用React Markdown |': 0
+Pipes count for '| ForgeCode | `streamdown-parser 0.1.4` stateful parser | newline-gated incremental parser state；无full reparse | Direct ANSI/stdout；Syntect | 到`TableEnd`后box grid；按宽度收缩 | 保存raw source；live无final rerender；`conversation show`另用termimad |': 0
+Pipes count for '| Amazon Q | 自定义`winnow::Partial` grammar | token级persistent ParseState；Incomplete等待下一delta | Direct Crossterm ANSI/stdout | 不支持 | 保存raw source；结束追加newline flush；无final rerender |': 0
+Pipes count for '| Warp | 自有`nom` parser -> shared `FormattedText` | 当前累计snapshot完整重parse；block dirty/repaint | WarpUI GPU GUI或自定义TUI cell tree | 提升为structured section；responsive grid；窄宽度record fallback | 保存raw source + semantic cache；GUI/TUI共享semantics，surface各自layout |': 0
+Pipes count for '| oh-my-pi | TypeScript marked-compatible lexer + `pi-tui.Markdown` | visible prefix重parse；safe block freeze；mutable tail重lex；grapheme reveal | TypeScript ANSI TUI；Rust Syntect N-API仅高亮code | width-aware cell wrap；进入native scrollback后锁column geometry | 保存raw source；stream/final共享renderer；history replay重parse |': 0
