@@ -8,18 +8,18 @@
 当前 dev/publish branches:
 
 - dev branch：`user/DinahK-2SO/markdown-renderer2`, remotely push to "Dinah".
-- publish branch：`user/DinahK-2SO/markdown-renderer2-publish`, remotely push to "origin"
-  （本次同步时尚未创建）。
+- publish branch：`user/DinahK-2SO/markdown-renderer2-publish`, remotely push to "origin"；local
+  worktree为`C:\ado\intelligent-terminal-markdown2-publish`。
 
 当前dev branch从最新`origin/main@e870a3630`（`Wait for terminal window before COM probe
 (#629)`）创建：
 
 - dev HEAD为`52024f043 init`，其唯一parent是`e870a3630`；包含本handoff和dev-only
   `investigation-popular-agent-cli/`，没有上一代Markdown产品代码。
-- 当前dev branch尚未设置tracking upstream；完成本次handoff同步后应push到
-  `Dinah/user/DinahK-2SO/markdown-renderer2`。
-- 新publish branch必须直接从同一个`origin/main@e870a3630`创建，不包含`AGENTS.md`、调查目录或
-  其他dev-only tracking，并关联`origin/user/DinahK-2SO/markdown-renderer2-publish`。
+- dev已关联并push到`Dinah/user/DinahK-2SO/markdown-renderer2`。
+- publish已直接从同一个`origin/main@e870a3630`创建并push/关联
+  `origin/user/DinahK-2SO/markdown-renderer2-publish`；初始tree不含`AGENTS.md`变更、调查目录或
+  其他dev-only tracking。
 
 本branch是下一阶段正式implementation branch。每个TDD step的产品代码与正式tests先形成独立
 product commit，再用单独dev-only commit更新本handoff；product commit同步到publish branch，
