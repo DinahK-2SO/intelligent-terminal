@@ -236,6 +236,21 @@ Clean-main起点没有`tui-markdown`dependency、`agent_markdown_lines`或
   `completed_turns`仍是crate内可直接mutation，后续应收紧API并按tab namespace保留多个bounded index。
 - Product commit：`6ea610f0c Retain completed turn height index`。
 
+#### Phase 3 Step 1：grapheme-safe streaming reveal（完成）
+
+- RED：新增ZWJ fixture `👩‍💻 ready`且reveal cursor为1；旧`.chars().take(1)`实际显示`👩`，expected
+  完整`👩‍💻`grapheme cluster。
+- GREEN：App backlog length、adaptive reveal cursor和pending renderer统一改为extended grapheme count；
+  raw source与finalized message不变，typewriter不会拆开ZWJ/combining cluster。
+- Tests：renderer fixture和App cursor/backlog fixture均focused GREEN；`ui::chat::tests`为
+  `42 passed, 0 failed`；full WTA为`1554 passed, 0 failed`。
+- Dependency compliance：`unicode-segmentation`已在resolved graph中，本step提升为direct dependency；
+  `Cargo.lock`只新增WTA root edge。third-party generator成功（294 crates、12 unique licenses），
+  `cgmanifest.json`和`NOTICE.md`内容无变化。
+- Remaining performance work：grapheme iteration目前仍从stream prefix开头计数/截取；下一step需要append
+  lineage与byte cursor，避免长stream每tick O(prefix)重扫，并为Markdown source-prefix cache提供revision。
+- Product commit：`cfea1f4f5 Reveal streaming text by grapheme`。
+
 新的性能与产品设计记录在dev-only：
 
 - `investigation-popular-agent-cli/popular-agent-cli.md`：Codex、goose、ForgeCode、Amazon Q、
