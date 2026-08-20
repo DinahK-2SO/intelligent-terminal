@@ -204,6 +204,21 @@ Clean-main起点没有`tui-markdown`dependency、`agent_markdown_lines`或
   下一step必须只clone/materialize visible + overscan，并进一步收紧`completed_turns`直接mutation surface。
 - Product commit：`3423e6c33 Retain completed turn layouts across frames`。
 
+#### Phase 2 Step 3：viewport + overscan retained materialization（完成）
+
+- RED：新增200-turn、16-row bottom-viewport counter test；当前prepare即使cache hit仍deep-clone全部
+  retained lines，actual materialized 200，expected只覆盖viewport + 32-row overscan。
+- GREEN：cache entry改为`Rc<CachedCompletedTurn>`；prepare只持cheap descriptor并读取cached height，
+  `chat::render`按existing viewport/scroll/selection budget到达item时才clone lines和prompt geometry。
+- Budget contract：focused test要求16-row viewport最多materialize 48个turn并保持最新turn可见；实际通过。
+  Keyboard selection到oldest仍允许按需materialize到target，second-frame 0 rebuild和single-item invalidation
+  contract保持GREEN。
+- Validation：viewport materialization和selection/cache tests均focused GREEN；`ui::chat::tests`为
+  `41 passed, 0 failed`；full WTA为`1551 passed, 0 failed`。
+- Remaining performance work：prepare仍O(history)遍历cheap descriptors并为每项做LRU lookup/Rc clone；下一step
+  需要retained height index和semantic scroll anchor，才能做到normal bottom frame不遍历完整conversation。
+- Product commit：`3336b73e6 Materialize retained chat turns on demand`。
+
 新的性能与产品设计记录在dev-only：
 
 - `investigation-popular-agent-cli/popular-agent-cli.md`：Codex、goose、ForgeCode、Amazon Q、
