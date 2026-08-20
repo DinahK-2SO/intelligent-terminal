@@ -37,10 +37,11 @@
 - Base: `origin/main@e870a3630a785a44cbd22190b5c8808c7084b31f`（包含 ItE2E window-before-COM fix #629）
 - Dev branch: `user/DinahK-2SO/resume-right-click-copy` -> `Dinah`
 - Publish branch: `user/DinahK-2SO/resume-right-click-copy-publish` -> `origin`（本地 worktree
-  `C:\ado\right-click-copy-publish`，exact publish validation 已完成，待最终 push）
+  `C:\ado\right-click-copy-publish`，exact publish validation、push与 remote verification已完成）
 - Issue / pull request: 未创建（N/A）
 - Evidence root: `test/e2e/artifacts/right-click-copy/`
-- Current dev head: `e717a37d889d4eaf535a142af3d8f360755ba8cd`（publishable feature commit；本文件另作 dev-only handoff commit）
+- Current dev branch: 包含 publishable feature commit `e717a37d889d4eaf535a142af3d8f360755ba8cd`
+  与后续 dev-only handoff records；以 `Dinah/user/DinahK-2SO/resume-right-click-copy`为 authoritative head。
 - Current publishable commit: `e717a37d889d4eaf535a142af3d8f360755ba8cd`
 - Current publish head: `c4b84ff28012a6a1fc9e86f08d60e08edadb1b3a`
 - Out of scope: 不改变普通 terminal pane 的右键 copy/paste/context-menu 语义；不移除 WTA mouse
@@ -57,7 +58,7 @@ package 上通过：`Feature.Paste` `5/5`，`RightClickCopy` `1/1`；release rep
 截图已逐图检查且全部为 1734x955、非黑非空、无 overlap/clipping。首次 publish paste run 在
 `BeforeAll` setup race 中未进入 case，clean retry `5/5`；首次 right-click run 的 Ctrl+C geometry
 control 只选到部分 marker，未发送右键，clean retry 在 exact-selection control 后 `1/1`。两次均未
-把 setup failure 当作 product RED。当前只剩 dev/publish remote push 与 remote-head confirmation。
+把 setup failure 当作 product RED。dev/publish branches均已 push，并用 `git ls-remote`确认 remote heads。
 
 `2026-08-19`: Investigation。源码历史与用户手动 binary A/B 均已确认 first-bad 为
 `d4b436a809b87f4e1e247d6f385785dabee1842b`（`Implement WTA chat mouse interactions and
@@ -473,7 +474,7 @@ Evidence root: `test/e2e/artifacts/right-click-copy/`
 - [x] UI/渲染/交互的 fresh screenshots 已逐图检查并记录 provenance。
 - [x] Review findings 已逐条 triage，accepted fixes 有 RED/GREEN evidence。
 - [x] Evidence inventory 能映射全部 user-visible assertions。
-- [ ] Dev 与 publish remote heads 已 push 并确认。
+- [x] Dev 与 publish remote heads 已 push 并确认。
 
 ## Optional Follow-Ups
 
