@@ -174,6 +174,20 @@ Clean-main起点没有`tui-markdown`dependency、`agent_markdown_lines`或
   `2 passed, 0 failed, 0 skipped`。
 - Product commit：`f5514b2da Hot-reload Markdown setting from Terminal`。
 
+#### Phase 2 Step 1：frame-scoped PreparedChatLayout（完成）
+
+- RED：收紧现有keyboard-selection render counter，要求12个completed turns在同一frame只构建12次；
+  focused test按预期失败为actual 24、expected 12，证明height estimate与render各做一次projection。
+- GREEN：新增owned `PreparedChatLayout`，同一次prepare生成pending、finalized messages、completed turns、
+  welcome lines、natural height与completed-turn prompt geometry；`ui::layout`先读取height，再把同一对象交给
+  `chat::render`消费。
+- Geometry contract：selection follow、manual scroll、completed-turn triangle/prompt hit offsets继续从同一批
+  prepared lines计算；focused viewport/counter test为`1 passed, 0 failed`。
+- Validation：`ui::chat::tests`为`40 passed, 0 failed`；full WTA为`1548 passed, 0 failed`，无新增warning。
+- Remaining performance work：本step把每frame projection从两次降为一次，但仍materialize全history；下一步
+  需要stable item height cache和visible + overscan retained materialization，不能把本step视为最终cache架构。
+- Product commit：`57406acf8 Prepare chat layout once per frame`。
+
 新的性能与产品设计记录在dev-only：
 
 - `investigation-popular-agent-cli/popular-agent-cli.md`：Codex、goose、ForgeCode、Amazon Q、
