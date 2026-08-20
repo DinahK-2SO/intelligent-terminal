@@ -157,6 +157,23 @@ Clean-main起点没有`tui-markdown`dependency、`agent_markdown_lines`或
   shared master不包含。
 - Product commit：`30774e4b2 Pass Markdown setting to WTA helpers`。
 
+#### Phase 1 Step 9：Terminal live Markdown mode propagation（完成）
+
+- RED：扩展desktop E2E `hot-updates Markdown mode without restarting the helper or master`；在
+  `false -> true`首次切换后15秒内没有helper runtime-update日志，证明Terminal尚未发送新field。
+- GREEN：把`renderAgentMarkdown`加入现有`AgentRuntimeConfigSnapshot`，只在值变化时随统一
+  `agent_config_changed`event发送`render_agent_markdown`；未新增平行event route或rebuild path。
+- Shell contract：Store和Dev package使用独立settings；Store default改为PowerShell 7不会改变Dev。
+  focused test临时把Dev `defaultProfile`设为现有PowerShell 7 GUID，并断言active pane
+  `shell == pwsh`，测试结束后由harness恢复原设置。
+- Identity contract：E2E覆盖`false -> true -> false`，两次更新均收到WTA runtime日志；helper/master
+  PID集合与helper bootstrap command line保持不变，且原`--no-agent-markdown`argv不被改写。
+- Build/deploy：focused `TerminalApp`为39 warnings、0 errors；Debug x64 `CascadiaPackage`为
+  107 warnings、0 errors；loose Debug deployment成功。
+- GREEN：focused pwsh live test为`1 passed, 0 failed, 0 skipped`；完整Markdown integration文件为
+  `2 passed, 0 failed, 0 skipped`。
+- Product commit：`f5514b2da Hot-reload Markdown setting from Terminal`。
+
 新的性能与产品设计记录在dev-only：
 
 - `investigation-popular-agent-cli/popular-agent-cli.md`：Codex、goose、ForgeCode、Amazon Q、
@@ -178,10 +195,10 @@ Clean-main起点没有`tui-markdown`dependency、`agent_markdown_lines`或
   retained history按stable item identity缓存，只materialize visible + overscan items。
 5. Stream输入采用append lineage、约33ms上限coalescing、structure-event ordering barrier和
   grapheme-safe reveal/wrap；cache必须有entry/total/per-entry三重上限。
-6. **下一阶段目标**：Settings model和Settings > Agents toggle `RenderAgentMarkdown` / JSON
-  `renderAgentMarkdown`已完成且默认`true`。当前源码尚无helper bootstrap flag或live event field；
-  实现后关闭时绕过Markdown parser/cache并显示raw markers，通过helper bootstrap flag和
-  `agent_config_changed`live update原地切换，不restart agent/helper/session。
+6. Settings model、Settings > Agents toggle、helper bootstrap flag、raw projection和
+  `agent_config_changed`live update均已完成；关闭时绕过Markdown parser并显示raw markers，切换不
+  restart agent/helper/session。**下一阶段目标**转到`PreparedChatLayout`、retained viewport、
+  append-aware streaming和bounded source-prefix cache。
 7. Table执行natural/preferred widths -> bounded shrink -> stacked fallback；code highlighting是
   独立、bounded、pane-theme-aware、versioned的后续层。
 
