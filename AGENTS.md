@@ -219,6 +219,23 @@ Clean-main起点没有`tui-markdown`dependency、`agent_markdown_lines`或
   需要retained height index和semantic scroll anchor，才能做到normal bottom frame不遍历完整conversation。
 - Product commit：`3336b73e6 Materialize retained chat turns on demand`。
 
+#### Phase 2 Step 4：generation-driven retained height index（完成）
+
+- RED：扩展200-turn viewport test；相同bottom frame虽然只materialize visible + overscan，prepare仍做
+  200次descriptor/cache lookup，expected 0。
+- GREEN：`TabSession`新增bounded generation/change log；UI保留active namespace的height/descriptors和
+  total height，相同generation直接复用，append、expanded和marker dirty只更新对应index。
+- Counter contract：unchanged 200-turn frame为0 descriptor lookup；append 1个turn为1 lookup；collapse、
+  expand和marker mutation各为1 lookup，同时viewport materialization继续限制在48 turns以内。
+- Safety：change log限制2048 entries；consumer落后时fallback full rebuild；`u64` generation wrap会renew
+  namespace并强制rebuild。clear同样renew namespace；tests覆盖wrap、overflow、append、dirty和clear。
+- Regression repair：旧action-link test是唯一直接写`completed_turns[0].expanded`的路径，已改为使用
+  revision-aware product API；full suite捕获并验证hit/action-link geometry恢复。
+- Validation：focused height-index/action-link/lifecycle tests均GREEN；full WTA为`1552 passed, 0 failed`。
+- Remaining performance work：retained height index当前是UI thread-local single slot，切tab后首帧会全重建；
+  `completed_turns`仍是crate内可直接mutation，后续应收紧API并按tab namespace保留多个bounded index。
+- Product commit：`6ea610f0c Retain completed turn height index`。
+
 新的性能与产品设计记录在dev-only：
 
 - `investigation-popular-agent-cli/popular-agent-cli.md`：Codex、goose、ForgeCode、Amazon Q、
