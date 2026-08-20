@@ -296,6 +296,28 @@ Clean-main起点没有`tui-markdown`dependency、`agent_markdown_lines`或
 - Product commits：`ffafaef1e Vendor tui-markdown 0.3.9 unchanged`；
   `33e585330 Expose Markdown source ranges from canonical render`。
 
+#### Phase 3 Step 4：bounded stable-block streaming Markdown cache（完成）
+
+- RED：新增`streaming_markdown_reuses_stable_blocks_and_matches_cold_projection`；focused compile按预期
+  失败为缺少projection cache、parsed-byte counter和full-recompute counter APIs。
+- GREEN：pending Markdown按process-unique source generation/revision缓存canonical logical lines；相同visible
+  prefix 0 parse，增长只parse `stable_source_len..visible_prefix_end`。cache与wrap width无关，最终仍走同一
+  `wrap_agent_markdown_lines`，disabled/raw mode保持parser/cache 0调用。
+- Mutable tail：source-map line boundary改为`pre_event_line_count + needs_newline`，保证block separator可组合；
+  cache保留最后两个top-level blocks为mutable tail。这个保守边界覆盖GFM partial row先被识别为paragraph、
+  后续append再并回前一个table的跨block rewrite，不自行推进parser提供的source boundary。
+- Global rewrite：suffix检测到reference definition时立即对current response full recompute；之后每次growth
+  继续full fallback。cache source slicing检查generation、revision、length和UTF-8 boundary；同长度不同tab
+  generation隔离，legacy generation 0直接cold render。
+- Bounds：single streaming entry限制256 KiB，按line/span/String capacity保守计费，oversized projection
+  bypass retained cache。raw mode test断言parsed bytes保持0。
+- Differential coverage：每个growth point逐span比较incremental与cold canonical，覆盖heading、paragraph、
+  nested list、GFM table、fenced code、CRLF、无尾随newline、ZWJ/combining Unicode、forward reference；
+  completion cold render与最后incremental projection parity。
+- Validation：streaming cache focused tests `4 passed, 0 failed`；`ui::chat::tests`为`47 passed, 0 failed`；
+  vendored renderer保持`138 passed, 2 ignored` + 5 doc tests；full WTA为`1560 passed, 0 failed`。
+- Product commit：`31068dbfd Cache stable streaming Markdown blocks`。
+
 新的性能与产品设计记录在dev-only：
 
 - `investigation-popular-agent-cli/popular-agent-cli.md`：Codex、goose、ForgeCode、Amazon Q、
