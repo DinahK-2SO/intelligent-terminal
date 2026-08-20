@@ -270,6 +270,32 @@ Clean-main起点没有`tui-markdown`dependency、`agent_markdown_lines`或
   rewrite回退current-response full recompute。
 - Product commit：`169f36e65 Index streaming graphemes incrementally`。
 
+#### Phase 3 Step 3：canonical same-pass Markdown source map（完成）
+
+- RED：新增`canonical_markdown_projection_exposes_top_level_source_ranges`；focused compile按预期失败，
+  `tui_markdown::from_str_with_options_and_source_map`不存在。
+- GREEN：vendored exact `tui-markdown 0.3.9`并最小fork canonical `TextWriter`；同一个pulldown-cmark
+  `OffsetIter` event loop同时输出Ratatui `Text`、top-level source ranges、rendered line ranges、
+  `last_top_level_block_start`和reference-definition presence，不引入第二parser。
+- Compatibility：旧`from_str_with_options`继续走Event→None zero-map path，不为现有finalized/history render
+  分配source blocks；新API才启用offset tracking。fixture覆盖heading/paragraph/list exact ranges、line range、
+  reference definition和old/new canonical text parity。
+- Provenance split：`ffafaef1e Vendor tui-markdown 0.3.9 unchanged`先提交crates.io归档的全部34个
+  文件；archive SHA-256为`A0C95AFC7B66008823DEA2614A800D944E18990690DB47517EFC66CD01FF9CEE`，
+  sorted path/file-hash manifest SHA-256为`FCA45F363927F0A8A30809D5448FB6FA03A2594B9368846E18842EDA48CF2139`。
+- Fork audit：customization相对纯导入为22 files、431 insertions、48 deletions；其中upstream Rust delta为
+  14 files、123 insertions、44 deletions，集中在`renderer/mod.rs`source-map逻辑、`lib.rs`export和12个
+  child renderer shared iterator bound/import。vendor保留release自带`.cargo_vcs_info.json`、`Cargo.lock`、
+  upstream tests/snapshots，并补充MIT/Apache licenses和`VENDORING.md`升级说明；无target/cache artifacts。
+- Validation：vendored crate `138 passed, 2 ignored` + `5 doc tests passed`；WTA chat `43 passed, 0 failed`；
+  full WTA `1556 passed, 0 failed`。
+- Compliance：notice generator只纳入`tools/wta/vendor/**` path crates，仍排除first-party path packages；
+  idempotent output为294 registrations、12 licenses，`tui-markdown 0.3.9`恰好1条registration。
+- Remaining performance work：WTA pending path尚未消费source map；下一step实现stable blocks + mutable final block
+  projection cache，reference definitions触发current-response full recompute，completion做cold parity render。
+- Product commits：`ffafaef1e Vendor tui-markdown 0.3.9 unchanged`；
+  `33e585330 Expose Markdown source ranges from canonical render`。
+
 新的性能与产品设计记录在dev-only：
 
 - `investigation-popular-agent-cli/popular-agent-cli.md`：Codex、goose、ForgeCode、Amazon Q、
