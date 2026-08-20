@@ -18,12 +18,10 @@
 5. 本回归不依赖模型输出。focused/live regression 使用 deterministic ACP fixture；真实 agent
   不是完成该 product-owned mouse/clipboard contract 的前置条件。
 
-### Placeholder 清单
+### Record Status
 
-- `[持续更新]` Current publishable commit、Current publish head、package identity、binary hash、
-  test result、截图路径、review ID 和 open items。
-- `[调查后补充]` issue / pull request、confirmed first-bad live build、最终 implementation record。
-- 当前文档中的 `待确认` / `待生成` / `尚未创建` 必须在对应阶段取得真实证据后替换；不得猜测。
+- Publishable/publish commits、package identity、binary hashes、tests、screenshots和 review triage均已记录。
+- 本 feature未创建 issue或 PR；review ID不适用。first-bad与最终 implementation均有可复现证据。
 
 ## Feature Metadata
 
@@ -39,27 +37,37 @@
 - Base: `origin/main@e870a3630a785a44cbd22190b5c8808c7084b31f`（包含 ItE2E window-before-COM fix #629）
 - Dev branch: `user/DinahK-2SO/resume-right-click-copy` -> `Dinah`
 - Publish branch: `user/DinahK-2SO/resume-right-click-copy-publish` -> `origin`（本地 worktree
-  `C:\ado\right-click-copy-publish` 已创建，尚未 push）
-- Issue / pull request: 待确认
+  `C:\ado\right-click-copy-publish`，exact publish validation 已完成，待最终 push）
+- Issue / pull request: 未创建（N/A）
 - Evidence root: `test/e2e/artifacts/right-click-copy/`
-- Current dev head: `c612a48353aacbf93ab5009d3cc4b90a9b637180`
-- Current publishable commit: 尚未生成
-- Current publish head: `e870a3630a785a44cbd22190b5c8808c7084b31f`（尚无 feature changes）
+- Current dev head: `e717a37d889d4eaf535a142af3d8f360755ba8cd`（publishable feature commit；本文件另作 dev-only handoff commit）
+- Current publishable commit: `e717a37d889d4eaf535a142af3d8f360755ba8cd`
+- Current publish head: `c4b84ff28012a6a1fc9e86f08d60e08edadb1b3a`
 - Out of scope: 不改变普通 terminal pane 的右键 copy/paste/context-menu 语义；不移除 WTA mouse
   capture；不重做 text selection、completed-turn click、滚轮或 clipboard 基础设施；不改变
   Alt+V image paste；不依赖模型回答；不把 agent pane 无选区右键 paste 纳入本次 contract。
 
 ## Current Stage
 
-`2026-08-19`: Investigation。尚未修改 product/test code。源码历史与用户手动 binary A/B 均已确认 first-bad 为
+`2026-08-20`: Implementation and exact-publish validation complete。publishable changes 已提交为
+`e717a37d889d4eaf535a142af3d8f360755ba8cd`，并 clean cherry-pick 到 publish HEAD
+`c4b84ff28012a6a1fc9e86f08d60e08edadb1b3a`。exact publish HEAD 的 explicit-target WTA build、
+Debug x64 full build/deploy、source/deployed hash comparison 均完成。最终 packaged E2E 在同一 deployed
+package 上通过：`Feature.Paste` `5/5`，`RightClickCopy` `1/1`；release reports 均为零失败。
+截图已逐图检查且全部为 1734x955、非黑非空、无 overlap/clipping。首次 publish paste run 在
+`BeforeAll` setup race 中未进入 case，clean retry `5/5`；首次 right-click run 的 Ctrl+C geometry
+control 只选到部分 marker，未发送右键，clean retry 在 exact-selection control 后 `1/1`。两次均未
+把 setup failure 当作 product RED。当前只剩 dev/publish remote push 与 remote-head confirmation。
+
+`2026-08-19`: Investigation。源码历史与用户手动 binary A/B 均已确认 first-bad 为
 `d4b436a809b87f4e1e247d6f385785dabee1842b`（`Implement WTA chat mouse interactions and
 text selection (#506)`）：其 first parent `12c66272848e98d1f47cc1a833bb0eb487284f31`
 保持 mouse capture 关闭，而该 commit 重新发送 `EnableMouseCapture`，同时 `event.rs` 仅转发
 ScrollUp/ScrollDown 与 Left Down/Drag/Up，右键事件因此被丢弃。`08957118a` 只扩展 completed-turn
 左键交互，不是回归起点。`d4b436a809` 是 parent 的直接子 commit，且已确认属于
 `v0.2@513808751cf7d8db0fe53ff52b5d234dd0185780`；从该 commit 到 v0.2 没有右键转发或复制修复。
-手动验证结果为 parent 版本右键复制正常、`d4b436a809` 版本右键复制失效。下一步在 exact baseline
-上把该行为固化为自动化 RED，并记录 clipboard sentinel、截图和 binary identity。
+手动验证结果为 parent 版本右键复制正常、`d4b436a809` 版本右键复制失效。该阶段随后在 exact
+baseline上把行为固化为自动化 RED，并记录 clipboard sentinel、截图和 binary identity。
 
 同日已完成当前 dev HEAD `c612a48353aacbf93ab5009d3cc4b90a9b637180` 的本地 baseline
 验收：merge 后重新生成并部署 Dev package，Cargo/intermediate/AppX/deployed `wta.exe` 均为
@@ -68,7 +76,7 @@ ScrollUp/ScrollDown 与 Left Down/Drag/Up，右键事件因此被丢弃。`08957
 sentinel 保持不变且选区仍可见，键盘 `Ctrl+C` 能复制同一选区，点击输入框后
 `Ctrl+Shift+V` 能把唯一 clipboard marker 精确粘贴到 draft。步骤 2–8 的截图和 pane captures
 保存在 `test/e2e/artifacts/right-click-copy/baseline-real-copilot/`。测试结束后 Dev 进程已停止，
-settings/state 备份已恢复。下一步把右键与 Ctrl+V 的真实 RED 分别固化为现有 suite 中的自动化 case。
+settings/state 备份已恢复。该阶段随后把右键与 Ctrl+V 的真实 RED分别固化为现有 suite自动化 case。
 
 同一 baseline 还确认了 Ctrl+V paste regression：物理 Ctrl+V 在 agent input 中只插入 literal `v`，
 没有读取 OS clipboard；物理 Ctrl+Shift+V 则能把唯一 marker 精确粘贴到 draft。用户已通过
@@ -291,7 +299,8 @@ Ctrl+V 不再由 host action map 消费；具体 owner 必须用 key/action trac
   能复制 marker，证明 clipboard 与 selection setup 正常。
 - Expected failure location/message: live E2E 只失败于“right-click must copy the exact WTA selection”；
   Rust focused RED 只失败于 Right Down 被 `map_crossterm_event` 丢弃/未触发 shared copy path。
-- Setup evidence: 待 exact baseline 运行后记录 package、process path、marker、selection、clipboard 和 log。
+- Setup evidence: `baseline-real-copilot/01-build-deploy.txt`、pane captures和步骤截图记录 package、
+  process path、marker、selection与 clipboard controls。
 - RED artifact paths: manual packaged baseline 位于
   `test/e2e/artifacts/right-click-copy/baseline-real-copilot/`；自动化 RED 使用独立 `red/` iteration。
 - Ctrl+V RED oracle: Ctrl+V 后 input 只新增 literal `v`，唯一 clipboard marker 未出现在 draft，且
@@ -335,16 +344,22 @@ Ctrl+V 不再由 host action map 消费；具体 owner 必须用 key/action trac
 
 ## Implementation Record
 
-- Behavioral change: 尚未实现；候选为 Right Down 在存在 WTA selection 时复用既有 copy lifecycle，
-  并恢复 focused agent pane 的 Ctrl+V -> `Terminal.PasteFromClipboard` routing。
-- State / API changes: 预计不新增持久状态或跨进程 API；Ctrl+V 应复用已有 `agent_paste_text` event。
+- Behavioral change: WTA event mapping 只转发 Right Down；`AppEvent::Mouse` 与 Ctrl+C 共用
+  `copy_text_selection()`。成功时精确写 clipboard、清除 selection并显示既有 copied hint；失败时
+  保留 selection、清除 stale hint并记录 warning。AgentPaneContent 根据 effective Ctrl+V action
+  启用 TermControl native-key fallback；fallback 只消费 bare Ctrl+V keydown/up并请求既有 clipboard
+  paste event，因此不再向 WTA输入 literal `v`。
+- State / API changes: TermControl 新增 transient `EnableAgentPasteShortcutFallback(Boolean)` 开关；
+  无持久状态或新跨进程 protocol。AgentPaneContent wrapper 创建后立即应用当前 settings。显式 unbind
+  或 custom Ctrl+V action 会关闭 fallback；普通 terminal pane从不启用该开关。
 - Preserved invariants: WTA mouse capture、左键 selection、Ctrl+C、wheel、completed-turn、Ctrl+Shift+V、
   Alt+V image paste 与普通 terminal keybindings 行为不变。
-- Performance implications: 预计每次右键只增加一次现有 selection 检查；无持续 polling/redraw。
-- Security / privacy implications: 仅把用户显式选择的本地文本写入 OS clipboard，与既有 Ctrl+C 相同。
+- Performance implications: 每次 Right Down 只增加一次现有 selection 检查；无持续 polling/redraw。
+- Security / privacy implications: 仅把用户显式选择的本地文本写入 OS clipboard，与既有 Ctrl+C相同。
 - Rejected alternatives and rationale: 已拒绝关闭 mouse capture 与 TerminalControl agent special case；
-  前者回归 #506，后者无法读取 WTA-owned selection。Ctrl+V 暂不接受在 WTA generic Char 分支读取
-  clipboard 的 workaround，因为它绕过 configurable action map 并有双重 paste 风险。
+  前者回归 #506，后者无法读取 WTA-owned selection。已拒绝 global defaults Ctrl+V binding，因为会
+  改变普通 terminal语义；已拒绝 wrapper-level routed handler，因为 prototype触发 startup access
+  violation；未在 WTA generic Char分支读取 clipboard，避免绕过 configurable action map和双重 paste。
 
 记录最终实现的事实，不保留已经失效的设计猜测。若 ownership hypothesis 被证伪，更新
 Ownership Hypothesis 并说明哪个 check 改变了判断。
@@ -353,25 +368,27 @@ Ownership Hypothesis 并说明哪个 check 改变了判断。
 
 | Layer | Command / Method | Expected | Result | Evidence |
 |---|---|---|---|---|
-| Focused RED | 新 Rust right-click mapping/copy tests | 右键被丢弃或不复制 | 待运行 | 待生成 |
-| Ctrl+V focused RED | key/action routing + input-refocus regression | Ctrl+V 未触发 paste action并落入 literal `v` | 待运行 | 待生成 |
-| Focused GREEN | `cargo test ... right_click` + paste/focus filters | 两个 regression 的 local ownership tests pass | 待实现后运行 | 待生成 |
+| Focused RED | 新 Rust right-click mapping/copy tests | 右键被丢弃或不复制 | `2/2` expected failures confirmed before product edit | local cargo output |
+| Ctrl+V focused RED | physical Ctrl+V single/multiline + Ctrl+Shift+V control | Ctrl+V无 structured event并落入 literal `v` | single/multiline RED；Ctrl+Shift+V GREEN | `baseline-real-copilot/` + RED run output |
+| Focused GREEN | `cargo test ... right_click` + paste focused filters | local ownership tests pass | right-click `2/2`；PasteCore `3/3` | local cargo/Pester output |
 | Neighboring tests | event/text-selection baseline filters | No regression | `7/7` + `13/13` passed | local cargo output |
-| Full relevant suite | `cargo test --target x86_64-pc-windows-msvc --manifest-path tools/wta/Cargo.toml` | All pass | baseline `1543/1543` passed；实现后重跑 | local cargo output |
-| Explicit build | explicit-target WTA + Debug x64 package build | 0 errors | build `0 errors`；四方 WTA hash 一致 | `baseline-real-copilot/01-build-deploy.txt` |
+| Full relevant suite | `cargo test --target x86_64-pc-windows-msvc --manifest-path tools/wta/Cargo.toml` | All pass | `1545/1545` passed；0 failed | local cargo output |
+| Explicit build | explicit-target WTA + Debug x64 package build | 0 errors | WTA build passed；full publish build `0 errors` / 218 existing warnings | exact publish build output |
 | Packaged / deployed baseline | real Dev UI + OS clipboard workflow | right-click 与 Ctrl+V 各自在独立 oracle RED | 两个 RED confirmed；Ctrl+C/Ctrl+Shift+V controls GREEN | `baseline-real-copilot/` |
-| Automated right-click E2E | `Feature.AgentMouse.Tests.ps1` against explicit Dev | copy/clear/hint/no-replay | 待实现 | 待生成 |
-| Automated Ctrl+V E2E | `Feature.Paste.Tests.ps1` single/multiline/refocus/isolation | structured trigger + exact draft；无 literal `v` | 待实现 | 待生成 |
-| Static analysis | fresh release checklist/report + compiler warnings review | 无新增相关告警 | 待运行 | 待生成 |
+| Automated right-click E2E | `Feature.AgentMouse.Tests.ps1` against explicit Dev | copy/clear/hint/no-replay | exact publish `1/1` passed | `right-click-copy/publish/right-click-c4b84ff2-retry/` + `green/*.png` |
+| Automated Ctrl+V E2E | `Feature.Paste.Tests.ps1` single/multiline/refocus/isolation | structured trigger + exact draft；无 literal `v` | exact publish `5/5` passed | `right-click-copy/publish/paste-full-c4b84ff2-retry/` + `green/*.png` |
+| Static analysis | compiler/VS diagnostics, diff check, review, release report | 无新增相关告警 | VS diagnostics clean；diff check clean；release reports 0 failed automation | local output/reports |
 | Real integration `[可选]` | 真实 Copilot CLI 对话仅验证 UI 操作能力 | genuine completed turn | passed with Copilot v1.0.81-2 | `baseline-real-copilot/04-real-copilot-reply.png` |
 
 ### Exact Publish Identity
 
-- Publish commit: 尚未生成
-- Package identity/path: 待 exact publish build/deploy 后记录
-- Source binaries and SHA-256: 待生成
-- Deployed/live binaries and SHA-256: 待生成
-- Identity conclusion: 待验证 source/deployed/live 三方一致
+- Publish commit: `c4b84ff28012a6a1fc9e86f08d60e08edadb1b3a`
+- Package identity/path: `IntelligentTerminal_0.8.0.2_x64__rd9vj3e6a2mbr` / `C:\ado\right-click-copy-publish\src\cascadia\CascadiaPackage\bin\x64\Debug\AppX`
+- Source/deployed `wta.exe`: 32,688,128 bytes / `42E5C1B57D6CD2CC1E97C6041093402D8755663500C2F22C90EAD467B3B2A3AC`
+- Source/deployed `Microsoft.Terminal.Control.dll`: 14,501,888 bytes / `87DF2C9CD958E54A01DBEC1E2A4C33ED0DF791C6B45B2281868B609F561F04E2`
+- Source/deployed `TerminalApp.dll`: 30,354,432 bytes / `E2C95FFF54C0EDB2B34A6AFB4FB171A57F63301416EEDD65E244E636A4F7E4AB`
+- Source/deployed `WindowsTerminal.exe`: 6,080,512 bytes / `9A2BDDC18B668419B83B81A7D328A06A25E14912F0008701CDF7F9A166F9C621`
+- Identity conclusion: Cargo/intermediate/AppX/deployed relevant binaries一致；E2E结束后无 Dev/WTA process或 e2ebak残留。
 
 测试 source 可以来自 dev-only harness，但被测 app/package 必须来自 exact publish HEAD。
 显式设置 package selector，避免 harness 自动选择 Store、Release 或其他已安装版本。
@@ -393,28 +410,28 @@ Ownership Hypothesis 并说明哪个 check 改变了判断。
   透明/全黑帧、错误窗口、启动占位画面或 mock 内容冒充真实验收。
 - Automated checks: 在可行时加入 target HWND、nonblack pixel、dimensions 和 distinct-frame checks；
   自动检查不能替代逐图人工检查。
-- Latest evidence directory: `test/e2e/artifacts/right-click-copy/baseline-real-copilot/`
+- Latest evidence directories: `test/e2e/artifacts/right-click-copy/green/`、
+  `test/e2e/artifacts/right-click-copy/publish/paste-full-c4b84ff2-retry/`、
+  `test/e2e/artifacts/right-click-copy/publish/right-click-c4b84ff2-retry/`
 
 每轮触及同一 user-visible path 的修复都要重新截图。不得用旧截图加新测试报告代替本轮证据。
 
 ## Review Triage
 
-Current review status: 尚未创建 PR / 尚未请求 review
+Current review status: 尚未创建 PR；已完成 local senior review和复核，最终无 blocking findings。
 
-Open review items: 两个真实 UI baseline RED 已确认；尚需把物理拖拽/右键 primitive 与 clipboard
-oracle 固化到 `Feature.AgentMouse`，并把 Ctrl+V structured trigger、literal `v` negative oracle、
-Ctrl+Shift+V control、single/multiline/refocus/isolation 固化到 `Feature.Paste`。
+Open review items: 无 feature blocker。Residual low risk为 explicit custom/unbound Ctrl+V gating只有
+code-path review而无独立 settings E2E；effective action comparison已避免 stable command ID被用户覆盖。
 
-每轮 review 追加一条记录：
+Local review record：
 
-- Date / review ID / head SHA: 待首次 review 后追加
-- Finding path and summary: 待首次 review 后追加
-- Decision: 待首次 review 后追加
-- Technical rationale: 待首次 review 后追加
-- RED evidence: 待首次 review 后追加
-- Fix or response: 待首次 review 后追加
-- GREEN validation: 待首次 review 后追加
-- Publish commit: 待首次 review 后追加
+- Date / review ID / head SHA: `2026-08-20` / local senior review（无 external ID）/ pre-commit diff。
+- Finding path and summary: stable command ID可被 custom action覆盖；right-click hint可能沿用 Ctrl+C
+  transient；paste draft断言未严格排除 leaked `v`或 multiline乱序。
+- Decision / rationale: accepted。effective `ShortcutAction::PasteText`才是可执行语义；用户可覆盖 ID。
+- Fix: 比较 resolved action；等待 Ctrl+C hint消失；对 single/multiline rendered draft执行 exact、有序断言。
+- GREEN validation: TerminalApp focused build `0 errors`；exact publish Paste `5/5`、RightClickCopy `1/1`。
+- Publish commit: `c4b84ff28012a6a1fc9e86f08d60e08edadb1b3a`。
 
 Public PR 可在未认证时通过 REST endpoints 读取 pull、issue comments、reviews、review
 comments、files 和 HEAD check-runs。Review body 中的 suppressed comments 也必须逐条 triage。
@@ -429,11 +446,13 @@ Evidence root: `test/e2e/artifacts/right-click-copy/`
 | RED screenshot/log | `baseline-real-copilot/05-history-text-selected.png`、`06-right-click-no-op.png` | selection 正常但右键不改 clipboard | dev `c612a483` / WTA `116927FF...B7A85` |
 | Ctrl+V RED | `baseline-real-copilot/08-keyboard-copy-paste.png` 及 pane capture | Ctrl+V 输入 literal `v`，clipboard marker 未粘贴 | dev `c612a483` / Dev package `0.8.0.2` |
 | Ctrl+Shift+V control | `baseline-real-copilot/08-ctrl-shift-v-paste.png` 及 pane capture | downstream clipboard/protocol/draft path 正常 | marker `CSV_FINAL_...` exactly once |
-| Focused test report | `focused/`（待生成） | event mapping 与 shared copy lifecycle | commit 待记录 |
+| Focused test output | local cargo/Pester output（未单独持久化 report） | event mapping、shared copy lifecycle与 PasteCore | publishable `e717a37d8` |
 | E2E baseline controls | `baseline-real-copilot/06b-keyboard-copy-positive-control.png`、`07-chat-input-focused.png`、`08-ctrl-shift-v-paste.png` | keyboard copy、focus 与 paste 正常 | Dev package `0.8.0.2` |
-| GREEN screenshots | `green/screenshots/`（待生成） | copy/clear/hint/no-replay | publish identity 待记录 |
+| GREEN right-click screenshots | `green/selected-before-right-click.png`、`after-right-click-copy.png`、`after-second-right-click.png` | exact selection、copy/clear/hint/no-replay | publish `c4b84ff2` / hashes见 Exact Publish Identity |
+| GREEN paste screenshots | `green/ctrl-v-single.png`、`ctrl-v-multiline.png`、`ctrl-shift-v-control.png`、`ctrl-v-refocus.png` | single/multiline/control/refocus exact draft | publish `c4b84ff2` / exact Dev package |
+| Publish reports | `publish/paste-full-c4b84ff2-retry/`、`publish/right-click-c4b84ff2-retry/` | packaged `5/5` + `1/1` and release report zero failures | publish `c4b84ff2` |
 | Real integration evidence `[可选]` | `baseline-real-copilot/03-agent-pane-open-connected.png`、`04-real-copilot-reply.png` | installed/authenticated Copilot connected and replied | Copilot Windows v1.0.81-2 |
-| Fixture/provider/wire log `[可选]` | `logs/`（待生成） | unique marker 与 right-button event path | package identity 待记录 |
+| Fixture/provider/wire log `[可选]` | 未保留独立 wire log（N/A） | 最终 contract由 protocol-event oracle、clipboard和rendered UI共同证明 | exact publish package |
 
 - 列出 ignored screenshots、pane captures、fixture logs、test reports、local harness、scripts、
   wire captures 和 provider configurations，并说明每个 artifact 证明哪条 contract。
@@ -442,18 +461,18 @@ Evidence root: `test/e2e/artifacts/right-click-copy/`
 
 ## Completion Checklist
 
-- [ ] 所有必填 placeholder 已替换；不适用章节已删除。
-- [ ] Exact baseline 已 build/deploy，并在预期 behavioral oracle 上 RED。
-- [ ] Right-click 与 Ctrl+V focused regressions 分别先 RED 后 GREEN。
-- [ ] Neighboring tests、full relevant suite、explicit build 和 static analysis 已完成。
-- [ ] Publishable 与 dev-only commits 边界清晰。
-- [ ] Exact publish HEAD 已 build/deploy，source/deployed hashes 一致。
-- [ ] Packaged/deployed E2E 对 exact publish binary GREEN：right-click contract 与 Ctrl+V required matrix
+- [x] 所有必填 placeholder 已替换；不适用项已明确标记 N/A。
+- [x] Exact baseline 已 build/deploy，并在预期 behavioral oracle 上 RED。
+- [x] Right-click 与 Ctrl+V focused regressions 分别先 RED 后 GREEN。
+- [x] Neighboring tests、full relevant suite、explicit build 和 static analysis 已完成。
+- [x] Publishable 与 dev-only commits 边界清晰。
+- [x] Exact publish HEAD 已 build/deploy，source/deployed hashes 一致。
+- [x] Packaged/deployed E2E 对 exact publish binary GREEN：right-click contract 与 Ctrl+V required matrix
   均完成，Ctrl+Shift+V control 不能替代 Ctrl+V。
-- [ ] 真实外部依赖验收已完成，或明确标记 blocked。
-- [ ] UI/渲染/交互的 fresh screenshots 已逐图检查并记录 provenance。
-- [ ] Review findings 已逐条 triage，accepted fixes 有 RED/GREEN evidence。
-- [ ] Evidence inventory 能映射全部 user-visible assertions。
+- [x] 真实外部依赖不属于最终 contract；baseline real Copilot optional acceptance已完成。
+- [x] UI/渲染/交互的 fresh screenshots 已逐图检查并记录 provenance。
+- [x] Review findings 已逐条 triage，accepted fixes 有 RED/GREEN evidence。
+- [x] Evidence inventory 能映射全部 user-visible assertions。
 - [ ] Dev 与 publish remote heads 已 push 并确认。
 
 ## Optional Follow-Ups
