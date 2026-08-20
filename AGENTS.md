@@ -251,6 +251,25 @@ Clean-main起点没有`tui-markdown`dependency、`agent_markdown_lines`或
   lineage与byte cursor，避免长stream每tick O(prefix)重扫，并为Markdown source-prefix cache提供revision。
 - Product commit：`cfea1f4f5 Reveal streaming text by grapheme`。
 
+#### Phase 3 Step 2：append lineage + incremental grapheme byte index（完成）
+
+- RED：新增cross-chunk fixture：先append`👩`，再append ZWJ+`💻x`；缺少source
+  generation/revision、cached grapheme count和prefix byte-end APIs，focused compile按预期失败。
+- GREEN：`TabSession`维护streaming source generation/revision、indexed byte length和grapheme end offsets；
+  normal append只重算上一最后grapheme + 新chunk，App backlog读取cached count，renderer按cached byte end
+  直接借用source prefix。
+- Lineage contract：同一Agent segment append保持generation并递增revision；tool/新Agent segment renew
+  generation；clear/finalize清空active index但保留monotonic generation。字段统一重命名为
+  `reveal_graphemes`，旧`reveal_chars`引用为0。
+- Defensive replacement：若raw source长度与index不符，下一append renew generation并full rebuild；test覆盖
+  replacement、cross-chunk ZWJ、normal append 0 fallback scans和O(1) count/prefix access。
+- Validation：append-lineage和grapheme cursor tests focused GREEN；`ui::chat::tests`为`42 passed, 0 failed`；
+  full WTA为`1555 passed, 0 failed`。
+- Remaining performance work：Markdown projection仍对每个revealed prefix做cold parse；下一step使用
+  generation/revision驱动`stable_source_len + mutable final top-level block`cache，并对reference definition
+  rewrite回退current-response full recompute。
+- Product commit：`169f36e65 Index streaming graphemes incrementally`。
+
 新的性能与产品设计记录在dev-only：
 
 - `investigation-popular-agent-cli/popular-agent-cli.md`：Codex、goose、ForgeCode、Amazon Q、
