@@ -236,6 +236,17 @@ Clean-main起点没有`tui-markdown`dependency、`agent_markdown_lines`或
   `completed_turns`仍是crate内可直接mutation，后续应收紧API并按tab namespace保留多个bounded index。
 - Product commit：`6ea610f0c Retain completed turn height index`。
 
+#### Phase 2 Step 5：bounded cross-tab retained height indices（完成）
+
+- RED：新增A/B各100-turn切tabfixture；A→B→A后single-slot retained index对A重新做100次descriptor lookup，
+  expected 0。
+- GREEN：UI thread-local retained height index改为namespace-keyed LRU，最多保留16个tab；每个namespace只保留
+  当前width/Markdown mode/pane-focus variant，切回unchanged tab直接复用generation/height/descriptors。
+- Bounds：第17个namespace淘汰least-recent index；切回被淘汰tab安全重建1个fixture descriptor而非读取
+  stale state。Completed-turn line cache仍由独立512-entry/4MiB LRU限制。
+- Validation：cross-tab reuse和17-tab eviction focused tests均GREEN；full WTA为`1562 passed, 0 failed`。
+- Product commit：`2bfe8f8ce Retain chat height indices across tabs`。
+
 #### Phase 3 Step 1：grapheme-safe streaming reveal（完成）
 
 - RED：新增ZWJ fixture `👩‍💻 ready`且reveal cursor为1；旧`.chars().take(1)`实际显示`👩`，expected
