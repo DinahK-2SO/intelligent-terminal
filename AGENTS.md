@@ -188,6 +188,22 @@ Clean-main起点没有`tui-markdown`dependency、`agent_markdown_lines`或
   需要stable item height cache和visible + overscan retained materialization，不能把本step视为最终cache架构。
 - Product commit：`57406acf8 Prepare chat layout once per frame`。
 
+#### Phase 2 Step 2：bounded retained completed-turn layout cache（完成）
+
+- RED：扩展同一个viewport/counter test；首帧12个completed turns构建12次，相同state/width第二帧仍
+  构建12次，expected 0，证明frame-scoped prepare尚未跨frame retained。
+- GREEN：`TabSession`新增non-serialized namespace/item-id/revision sidecar；completed-turn projection cache
+  key覆盖namespace、item id/revision、width、Markdown mode、expanded、selected和pane focus。
+- Invalidation contract：production clear、expanded toggle/rollback与trailing-marker更新均走revision-aware
+  helper；相同第二帧0 rebuild，collapse、expand和marker mutation各只重建1个item，clear后同内容获得新id。
+- Bounds：thread-local UI LRU限制512 entries、4 MiB total和256 KiB per entry；oversized entry直接bypass，
+  focused bounds test覆盖entry-count、total-byte、per-entry三重上限和LRU eviction。
+- Validation：retained viewport test、identity renewal和bounds tests均focused GREEN；`ui::chat::tests`为
+  `41 passed, 0 failed`；full WTA为`1550 passed, 0 failed`，无新增warning。
+- Remaining performance work：cache hit仍deep-clone owned Ratatui lines，`prepare`仍遍历/materialize全history；
+  下一step必须只clone/materialize visible + overscan，并进一步收紧`completed_turns`直接mutation surface。
+- Product commit：`3423e6c33 Retain completed turn layouts across frames`。
+
 新的性能与产品设计记录在dev-only：
 
 - `investigation-popular-agent-cli/popular-agent-cli.md`：Codex、goose、ForgeCode、Amazon Q、
