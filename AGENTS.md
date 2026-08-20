@@ -1,6 +1,6 @@
 # Markdown Rendering in Agent Pane Feature Handoff
 
-> Last synchronized: 2026-08-19
+> Last synchronized: 2026-08-20
 >
 > 这个文件只描述 Markdown Rendering in Agent Pane Feature。它应该可以直接复制到新的 dev branch，
 > 让下一阶段不需要重新翻阅旧调查记录。实际代码始终是最终 source of truth。
@@ -88,6 +88,23 @@ Clean-main起点没有`tui-markdown`dependency、`agent_markdown_lines`或
   `1 passed, 0 failed`，覆盖显式`false`和missing-key default `true`。
 - Product commit：`cd514fe17 Add Markdown rendering setting contract`。
 
+#### Phase 1 Step 4：Settings > Agents Markdown toggle（完成）
+
+- RED：新增现有desktop E2E framework test
+  `Markdown rendering toggle defaults on and persists when disabled`；pre-implementation package中
+  `RenderAgentMarkdownToggle`不存在，focused test为`0 passed, 1 failed`。
+- GREEN：把`RenderAgentMarkdown`投影到`AIAgentsViewModel`，新增default-on two-way toggle、
+  Header/HelpText/AutomationProperties.Name，并更新全部16个SettingsEditor locales；三个pseudo-locale
+  使用精确English fallback。
+- Build/deploy：focused `TerminalSettingsEditor` build为50 warnings、0 errors；Debug x64
+  `CascadiaPackage` build为107 warnings、0 errors；loose Debug deployment成功。
+- Focused GREEN：设置`ITE2E_PACKAGE=Dev`后为`1 passed, 0 failed, 0 skipped`；覆盖控件存在、默认on、
+  关闭后保存`renderAgentMarkdown=false`。默认`Auto`会优先已安装Store package，不可用于验证本地
+  Dev deployment。
+- Resource validation：16个`.resw`均保持原line endings和UTF-8 BOM、XML可解析、三个新增key唯一且
+  non-empty；PowerShell test parser为0 errors。
+- Product commit：`fb9e4455e Add Markdown rendering setting UI`。
+
 新的性能与产品设计记录在dev-only：
 
 - `investigation-popular-agent-cli/popular-agent-cli.md`：Codex、goose、ForgeCode、Amazon Q、
@@ -109,9 +126,9 @@ Clean-main起点没有`tui-markdown`dependency、`agent_markdown_lines`或
   retained history按stable item identity缓存，只materialize visible + overscan items。
 5. Stream输入采用append lineage、约33ms上限coalescing、structure-event ordering barrier和
   grapheme-safe reveal/wrap；cache必须有entry/total/per-entry三重上限。
-6. **下一阶段目标**：新增Settings > Agents toggle `RenderAgentMarkdown` / JSON
-  `renderAgentMarkdown`，默认`true`。当前源码尚无该setting、helper bootstrap flag或live event
-  field；实现后关闭时绕过Markdown parser/cache并显示raw markers，通过helper bootstrap flag和
+6. **下一阶段目标**：Settings model和Settings > Agents toggle `RenderAgentMarkdown` / JSON
+  `renderAgentMarkdown`已完成且默认`true`。当前源码尚无helper bootstrap flag或live event field；
+  实现后关闭时绕过Markdown parser/cache并显示raw markers，通过helper bootstrap flag和
   `agent_config_changed`live update原地切换，不restart agent/helper/session。
 7. Table执行natural/preferred widths -> bounded shrink -> stacked fallback；code highlighting是
   独立、bounded、pane-theme-aware、versioned的后续层。
