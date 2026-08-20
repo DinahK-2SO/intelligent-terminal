@@ -132,6 +132,17 @@ Clean-main起点没有`tui-markdown`dependency、`agent_markdown_lines`或
 - Full WTA：`1547 passed, 0 failed`。
 - Product commit：`3c6a11258 Honor Markdown rendering mode in agent chat`。
 
+#### Phase 1 Step 7：WTA live Markdown mode update（完成）
+
+- RED：新增`markdown_rendering_hot_update_preserves_helper_and_session_identity`；focused test在首次
+  `render_agent_markdown=false`后按预期失败，因为现有`agent_config_changed`handler忽略该field。
+- GREEN：现有统一runtime config reducer读取optional bool并原地更新`App.render_agent_markdown`；
+  日志仅记录old/new bool，不记录prompt、Markdown source或usage。
+- Identity contract：测试覆盖`false -> true`切换，helper owner tab、agent id、ACP session id和raw
+  `ChatMessage::Agent`均保持不变。
+- Focused GREEN：`1 passed, 0 failed`；full WTA：`1548 passed, 0 failed`。
+- Product commit：`0104bbaa6 Hot-reload Markdown rendering mode`。
+
 新的性能与产品设计记录在dev-only：
 
 - `investigation-popular-agent-cli/popular-agent-cli.md`：Codex、goose、ForgeCode、Amazon Q、
