@@ -105,6 +105,18 @@ Clean-main起点没有`tui-markdown`dependency、`agent_markdown_lines`或
   non-empty；PowerShell test parser为0 errors。
 - Product commit：`fb9e4455e Add Markdown rendering setting UI`。
 
+#### Phase 1 Step 5：helper bootstrap Markdown flag（完成）
+
+- RED：新增`cli_agent_markdown_defaults_on_and_can_be_disabled_for_helpers`；focused compile按预期
+  失败为`HelperConfig`没有`render_agent_markdown`field。
+- GREEN：新增hidden helper flag `--no-agent-markdown`，并在`Cli -> HelperConfig`边界转换为正向
+  `render_agent_markdown`bool；未把presentation setting加入master config或agent identity。
+- Focused GREEN：`1 passed, 0 failed`，覆盖无flag默认on和显式flag disabled。
+- Full WTA：`1546 passed, 0 failed`；四个touched files保持各自原line endings，最终diff为18行新增。
+- Formatting guardrail：直接对WTA entry/module files运行`rustfmt`会递归格式化module tree；本step已
+  清除该机械churn。后续必须在format后立即检查dirty paths和diff stat。
+- Product commit：`3d8e29d59 Add Markdown helper bootstrap flag`。
+
 新的性能与产品设计记录在dev-only：
 
 - `investigation-popular-agent-cli/popular-agent-cli.md`：Codex、goose、ForgeCode、Amazon Q、
