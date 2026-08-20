@@ -143,6 +143,20 @@ Clean-main起点没有`tui-markdown`dependency、`agent_markdown_lines`或
 - Focused GREEN：`1 passed, 0 failed`；full WTA：`1548 passed, 0 failed`。
 - Product commit：`0104bbaa6 Hot-reload Markdown rendering mode`。
 
+#### Phase 1 Step 8：Terminal helper bootstrap propagation（完成）
+
+- RED：新增desktop E2E `passes the disabled Markdown mode only to helpers`；Dev package中检测到1个
+  prewarmed helper和1个shared master，helper argv缺少`--no-agent-markdown`，master argv保持无该flag。
+- GREEN：共享helper command builder在`RenderAgentMarkdown=false`时追加hidden
+  `--no-agent-markdown`；prewarm和user-open复用同一路径，`_BuildSharedWtaExtraArgs`/master identity不变。
+- Build：focused `TerminalApp`为39 warnings、0 errors；Debug x64 `CascadiaPackage`为107 warnings、
+  0 errors；loose Debug deployment成功。
+- Packaging guardrail：`cargo test`不保证刷新package优先复制的explicit-target `wta.exe`；C++先传新flag而
+  packaged WTA stale时helper会立即退出。显式`cargo build --target x86_64-pc-windows-msvc`后重新package/deploy。
+- Focused GREEN：`ITE2E_PACKAGE=Dev`下`1 passed, 0 failed, 0 skipped`；断言所有helper包含flag且
+  shared master不包含。
+- Product commit：`30774e4b2 Pass Markdown setting to WTA helpers`。
+
 新的性能与产品设计记录在dev-only：
 
 - `investigation-popular-agent-cli/popular-agent-cli.md`：Codex、goose、ForgeCode、Amazon Q、
