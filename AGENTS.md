@@ -117,6 +117,21 @@ Clean-main起点没有`tui-markdown`dependency、`agent_markdown_lines`或
   清除该机械churn。后续必须在format后立即检查dirty paths和diff stat。
 - Product commit：`3d8e29d59 Add Markdown helper bootstrap flag`。
 
+#### Phase 1 Step 6：helper raw projection mode（完成）
+
+- RED：新增`agent_markdown_can_be_disabled_for_finalized_and_pending_responses`；focused compile按预期
+  失败为缺少mode-aware finalized/pending render helpers。
+- GREEN：新增default-true `App.render_agent_markdown`，helper bootstrap config在UI启动前写入；
+  finalized、pending和expanded completed-turn history均消费同一个mode-aware agent projection。
+- Disabled contract：raw `#`、`**`等markers保留；plain branch直接进入WTA prefixed wrapping，不调用
+  `agent_markdown_lines`/`tui-markdown`，raw `ChatMessage::Agent(String)`不改写。
+- Layout contract：`estimated_block_height`和actual render对finalized、pending、completed turns传入
+  相同projection mode；现有无mode test wrappers保持Markdown-on。
+- Focused GREEN：target test `1 passed, 0 failed`；`ui::chat::tests`为`40 passed, 0 failed`，无新增
+  dead-code warning。
+- Full WTA：`1547 passed, 0 failed`。
+- Product commit：`3c6a11258 Honor Markdown rendering mode in agent chat`。
+
 新的性能与产品设计记录在dev-only：
 
 - `investigation-popular-agent-cli/popular-agent-cli.md`：Codex、goose、ForgeCode、Amazon Q、
