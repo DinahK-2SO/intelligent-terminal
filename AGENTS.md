@@ -785,7 +785,6 @@ command setting.
     "agentPanePosition": "bottom",
     "autoErrorDetectionEnabled": true,
     "autoFixEnabled": false,
-    "showTokenUsageAndCost": false,
     "aiIntegration.coordinator.enabled": false,
     "aiIntegration.coordinator.commandline": "wta",
     "aiIntegration.coordinator.profile": "{fd19208a-412b-4857-8a2d-9ca592b4b16e}",
@@ -904,7 +903,6 @@ Primary logs are:
 - `wta-ensure-host.log`
 - `wta-acp-debug.log`
 - `terminal-agent-pane.log`
-- `hook-trace.log`
 
 Use `WTA_LOG=debug` or `WTA_LOG=trace` for additional Rust tracing. See
 `tools/wta/README.md` for current diagnostics and CLI usage.
