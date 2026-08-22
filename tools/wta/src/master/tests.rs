@@ -17,6 +17,12 @@ struct PendingLoadSessionAgent {
 }
 
 #[derive(Clone)]
+struct ControlledLoadSessionAgent {
+    events: mpsc::UnboundedSender<ReplacementEvent>,
+    live_sessions: Arc<Mutex<HashSet<SessionId>>>,
+}
+
+#[derive(Clone)]
 struct ControlledNewSessionAgent {
     next: Arc<std::sync::atomic::AtomicUsize>,
     events: mpsc::UnboundedSender<ReplacementEvent>,
@@ -50,6 +56,7 @@ enum ReplacementEvent {
     BlockingCancel(SessionId, tokio::sync::oneshot::Sender<()>),
     FailingClose(SessionId, tokio::sync::oneshot::Sender<()>),
     Load(SessionId),
+    BlockingLoad(SessionId, tokio::sync::oneshot::Sender<()>),
     New(usize, tokio::sync::oneshot::Sender<()>),
 }
 
@@ -129,6 +136,41 @@ impl PendingLoadSessionAgent {
             .send(args.mcp_servers.len())
             .map_err(|_| acp::Error::internal_error().data("test arrival receiver dropped"))?;
         futures::future::pending().await
+    }
+}
+
+impl ControlledLoadSessionAgent {
+    async fn cancel(&self, _args: acp::schema::v1::CancelNotification) -> acp::Result<()> {
+        Ok(())
+    }
+
+    async fn load_session(
+        &self,
+        args: acp::schema::v1::LoadSessionRequest,
+    ) -> acp::Result<acp::schema::v1::LoadSessionResponse> {
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+        self.events
+            .send(ReplacementEvent::BlockingLoad(
+                args.session_id.clone(),
+                release_tx,
+            ))
+            .map_err(|_| acp::Error::internal_error().data("test event receiver dropped"))?;
+        release_rx
+            .await
+            .map_err(|_| acp::Error::internal_error().data("test release sender dropped"))?;
+        self.live_sessions.lock().await.insert(args.session_id);
+        Ok(acp::schema::v1::LoadSessionResponse::new())
+    }
+
+    async fn close_session(
+        &self,
+        args: acp::schema::v1::CloseSessionRequest,
+    ) -> acp::Result<acp::schema::v1::CloseSessionResponse> {
+        self.events
+            .send(ReplacementEvent::Close(args.session_id.clone()))
+            .map_err(|_| acp::Error::internal_error().data("test event receiver dropped"))?;
+        self.live_sessions.lock().await.remove(&args.session_id);
+        Ok(acp::schema::v1::CloseSessionResponse::new())
     }
 }
 
@@ -1309,6 +1351,78 @@ fn client_connection_to_pending_load_session_agent(
     client_conn
 }
 
+fn client_connection_to_controlled_load_session_agent(
+    events: mpsc::UnboundedSender<ReplacementEvent>,
+    live_sessions: Arc<Mutex<HashSet<SessionId>>>,
+) -> conn::ClientLink {
+    let (client_pipe, agent_pipe) = tokio::io::duplex(4096);
+    let (client_read, client_write) = tokio::io::split(client_pipe);
+    let (agent_read, agent_write) = tokio::io::split(agent_pipe);
+
+    let mock = ControlledLoadSessionAgent {
+        events,
+        live_sessions,
+    };
+    let agent_builder = acp::Agent
+        .builder()
+        .name("controlled-load-session-agent")
+        .on_receive_request(
+            {
+                let mock = mock.clone();
+                move |req: acp::schema::v1::ClientRequest, responder, _cx| {
+                    let mock = mock.clone();
+                    async move {
+                        use acp::schema::v1::{AgentResponse as R, ClientRequest as Q};
+                        match req {
+                            Q::LoadSessionRequest(args) => conn::respond_enum(
+                                responder,
+                                mock.load_session(args).await.map(R::LoadSessionResponse),
+                            ),
+                            Q::CloseSessionRequest(args) => conn::respond_enum(
+                                responder,
+                                mock.close_session(args).await.map(R::CloseSessionResponse),
+                            ),
+                            _ => responder.respond_with_error(acp::Error::method_not_found()),
+                        }
+                    }
+                }
+            },
+            acp::on_receive_request!(),
+        )
+        .on_receive_notification(
+            {
+                let mock = mock.clone();
+                move |notif: acp::schema::v1::ClientNotification, _cx| {
+                    let mock = mock.clone();
+                    async move {
+                        if let acp::schema::v1::ClientNotification::CancelNotification(args) = notif
+                        {
+                            mock.cancel(args).await?;
+                        }
+                        Ok(())
+                    }
+                }
+            },
+            acp::on_receive_notification!(),
+        );
+    let (_agent_conn, agent_io) = conn::spawn_agent(
+        agent_builder,
+        conn::byte_streams(agent_write.compat_write(), agent_read.compat()),
+    );
+    tokio::task::spawn_local(async move {
+        let _ = agent_io.await;
+    });
+
+    let (client_conn, client_io) = conn::spawn_client(
+        acp::Client.builder().name("controlled-load-session-client"),
+        conn::byte_streams(client_write.compat_write(), client_read.compat()),
+    );
+    tokio::task::spawn_local(async move {
+        let _ = client_io.await;
+    });
+    client_conn
+}
+
 fn client_connection_to_pending_new_session_agent() -> conn::ClientLink {
     let (client_pipe, agent_pipe) = tokio::io::duplex(4096);
     let (client_read, client_write) = tokio::io::split(client_pipe);
@@ -2078,10 +2192,10 @@ async fn master_reset_tab_session_resolves_owner_and_physically_retires_session(
                 cli_source: Some(crate::agent_sessions::CliSource::Copilot),
                 source: crate::agent_source::AgentSource::Host,
                 cmd_key: "sibling-close-agent".to_string(),
-                host_list_cache: Mutex::new(None),
-                listed_ever: Mutex::new(HashSet::new()),
                 cloud_catalog: Mutex::new(NativeCloudCatalogState::Unavailable),
                 bound_helpers: Mutex::new(HashSet::new()),
+                host_list_cache: Mutex::new(None),
+                listed_ever: Mutex::new(HashSet::new()),
             });
             let cell = Arc::new(tokio::sync::OnceCell::new());
             assert!(cell.set(Arc::clone(&agent)).is_ok());
@@ -2264,10 +2378,10 @@ async fn retirement_event_physically_closes_once_and_replays_completion() {
                 cli_source: Some(crate::agent_sessions::CliSource::Copilot),
                 source: crate::agent_source::AgentSource::Host,
                 cmd_key: "retirement-live-agent".to_string(),
-                host_list_cache: Mutex::new(None),
-                listed_ever: Mutex::new(HashSet::new()),
                 cloud_catalog: Mutex::new(NativeCloudCatalogState::Unavailable),
                 bound_helpers: Mutex::new(HashSet::new()),
+                host_list_cache: Mutex::new(None),
+                listed_ever: Mutex::new(HashSet::new()),
             });
             let cell = Arc::new(tokio::sync::OnceCell::new());
             assert!(cell.set(Arc::clone(&agent)).is_ok());
@@ -2854,10 +2968,10 @@ async fn scope_all_retires_ownerless_helper_live_route_directly() {
                 cli_source: Some(crate::agent_sessions::CliSource::Copilot),
                 source: crate::agent_source::AgentSource::Host,
                 cmd_key: "ownerless-live-route-agent".to_string(),
-                host_list_cache: Mutex::new(None),
-                listed_ever: Mutex::new(HashSet::new()),
                 cloud_catalog: Mutex::new(NativeCloudCatalogState::Unavailable),
                 bound_helpers: Mutex::new(HashSet::new()),
+                host_list_cache: Mutex::new(None),
+                listed_ever: Mutex::new(HashSet::new()),
             });
             let cell = Arc::new(tokio::sync::OnceCell::new());
             assert!(cell.set(Arc::clone(&agent)).is_ok());
@@ -2973,10 +3087,10 @@ async fn scope_all_captured_helper_disconnect_still_closes_once() {
                 cli_source: Some(crate::agent_sessions::CliSource::Copilot),
                 source: crate::agent_source::AgentSource::Host,
                 cmd_key: "captured-disconnect-agent".to_string(),
-                host_list_cache: Mutex::new(None),
-                listed_ever: Mutex::new(HashSet::new()),
                 cloud_catalog: Mutex::new(NativeCloudCatalogState::Unavailable),
                 bound_helpers: Mutex::new(HashSet::new()),
+                host_list_cache: Mutex::new(None),
+                listed_ever: Mutex::new(HashSet::new()),
             });
             let cell = Arc::new(tokio::sync::OnceCell::new());
             assert!(cell.set(Arc::clone(&agent)).is_ok());
@@ -3061,10 +3175,10 @@ async fn scope_all_retirement_captures_orphan_after_route_drop_before_connected_
                 cli_source: Some(crate::agent_sessions::CliSource::Copilot),
                 source: crate::agent_source::AgentSource::Host,
                 cmd_key: "disconnect-ordering-agent".to_string(),
-                host_list_cache: Mutex::new(None),
-                listed_ever: Mutex::new(HashSet::new()),
                 cloud_catalog: Mutex::new(NativeCloudCatalogState::Unavailable),
                 bound_helpers: Mutex::new(HashSet::new()),
+                host_list_cache: Mutex::new(None),
+                listed_ever: Mutex::new(HashSet::new()),
             });
             let cell = Arc::new(tokio::sync::OnceCell::new());
             assert!(cell.set(Arc::clone(&agent)).is_ok());
@@ -3129,415 +3243,9 @@ async fn scope_all_retirement_captures_orphan_after_route_drop_before_connected_
         .await;
 }
 
-#[tokio::test(flavor = "current_thread")]
-async fn retirement_completed_after_route_drop_cannot_republish_orphan() {
-    tokio::task::LocalSet::new()
-        .run_until(async {
-            let state = make_state();
-            let mut completions = capture_retirement_completions(&state).await;
-            let helper_id = HelperId(342);
-            let replacement_helper_id = HelperId(343);
-            let tab_id = "tab-disconnect-retirement-race";
-            let session_id = SessionId::new("disconnect-retirement-race");
-            let (events_tx, mut events_rx) = mpsc::unbounded_channel();
-            let live_sessions = Arc::new(Mutex::new(HashSet::from([session_id.clone()])));
-            let mut cached_init_resp =
-                acp::schema::v1::InitializeResponse::new(acp::schema::ProtocolVersion::V1);
-            cached_init_resp
-                .agent_capabilities
-                .session_capabilities
-                .close = Some(acp::schema::v1::SessionCloseCapabilities::new());
-            let agent = Arc::new(AgentCli {
-                instance_id: AgentInstanceId::new_v4(),
-                conn: client_connection_to_controlled_new_session_agent_with_close_result(
-                    events_tx,
-                    Arc::clone(&live_sessions),
-                    None,
-                    false,
-                    true,
-                ),
-                cached_init_resp,
-                cli_source: Some(crate::agent_sessions::CliSource::Copilot),
-                source: crate::agent_source::AgentSource::Host,
-                cmd_key: "disconnect-retirement-race-agent".to_string(),
-                host_list_cache: Mutex::new(None),
-                listed_ever: Mutex::new(HashSet::new()),
-                cloud_catalog: Mutex::new(NativeCloudCatalogState::Unavailable),
-                bound_helpers: Mutex::new(HashSet::new()),
-            });
-            let cell = Arc::new(tokio::sync::OnceCell::new());
-            assert!(cell.set(Arc::clone(&agent)).is_ok());
-            state
-                .agents
-                .lock()
-                .await
-                .insert(agent.cmd_key.clone(), cell);
-            register_retirement_tab(&state, &agent, helper_id, tab_id, &session_id).await;
-            state.orphaned_tabs.lock().await.insert(
-                tab_id.to_string(),
-                (agent.cmd_key.clone(), helper_id, session_id.clone()),
-            );
 
-            let pause = Arc::new(DisconnectOrphanPublicationPause::default());
-            *state.disconnect_orphan_publication_pause.lock().await = Some(Arc::clone(&pause));
-            let disconnect = tokio::task::spawn_local({
-                let state = Arc::clone(&state);
-                let agent = Arc::clone(&agent);
-                let orphan_tab_candidate = (tab_id.to_string(), session_id.clone());
-                async move {
-                    drop_and_publish_disconnected_helper_sessions(
-                        &state,
-                        helper_id,
-                        Some(&agent),
-                        Some(&orphan_tab_candidate),
-                    )
-                    .await
-                }
-            });
 
-            pause.routes_dropped.notified().await;
-            assert!(state.session_to_helper.lock().await.is_empty());
 
-            handle_master_wt_event(
-                &state,
-                serde_json::json!({
-                    "method": "retire_agent_sessions",
-                    "params": {
-                        "operation_id": "retire-disconnect-publication-race",
-                        "scope": "all",
-                        "tab_ids": [],
-                        "reason": "window_close"
-                    }
-                }),
-            )
-            .await;
-            assert!(matches!(
-                events_rx.recv().await,
-                Some(ReplacementEvent::Cancel(ref sid)) if sid == &session_id
-            ));
-            assert!(matches!(
-                events_rx.recv().await,
-                Some(ReplacementEvent::Close(ref sid)) if sid == &session_id
-            ));
-            assert_eq!(completions.recv().await.unwrap()["params"]["success"], true);
-            assert!(live_sessions.lock().await.is_empty());
-
-            pause.resume_publication.notify_one();
-            assert_eq!(
-                disconnect.await.expect("disconnect cleanup should finish"),
-                vec![session_id.clone()]
-            );
-            assert!(
-                state.orphaned_sessions.lock().await.is_empty(),
-                "retired session must not be republished as an orphan"
-            );
-            let (intentional, _) =
-                consume_disconnected_helper_retirement_state(&state, helper_id).await;
-            assert!(intentional);
-
-            let (notif_tx, _notif_rx) = mpsc::channel(NOTIF_CHANNEL_CAPACITY);
-            let agent_slot = Arc::new(OnceLock::new());
-            assert!(agent_slot.set(Arc::clone(&agent)).is_ok());
-            let agent_side_slot = Arc::new(OnceLock::new());
-            agent_side_slot
-                .set(agent_link_to_noop_client())
-                .expect("agent-side forwarder should be set once");
-            let replacement = HelperHandler {
-                helper_id: replacement_helper_id,
-                agent: agent_slot,
-                state: Arc::clone(&state),
-                replacement_gate: Arc::new(Mutex::new(())),
-                notif_tx,
-                agent_side_slot,
-            };
-            replacement
-                .load_session_with_timeout(
-                    acp::schema::v1::LoadSessionRequest::new(
-                        session_id.clone(),
-                        PathBuf::from("C:\\retired"),
-                    ),
-                    std::time::Duration::from_secs(1),
-                )
-                .await
-                .expect("later resume should perform a real session/load");
-            assert!(matches!(
-                events_rx.recv().await,
-                Some(ReplacementEvent::Load(ref sid)) if sid == &session_id
-            ));
-        })
-        .await;
-}
-
-#[tokio::test(flavor = "current_thread")]
-async fn disconnect_orphan_publication_skips_tab_closed_session() {
-    tokio::task::LocalSet::new()
-        .run_until(async {
-            let state = make_state();
-            let helper_id = HelperId(345);
-            let tab_id = "tab-disconnect-ordinary-close-race";
-            let session_id = SessionId::new("disconnect-ordinary-close-race");
-            let (events_tx, mut events_rx) = mpsc::unbounded_channel();
-            let live_sessions = Arc::new(Mutex::new(HashSet::from([session_id.clone()])));
-            let mut cached_init_resp =
-                acp::schema::v1::InitializeResponse::new(acp::schema::ProtocolVersion::V1);
-            cached_init_resp
-                .agent_capabilities
-                .session_capabilities
-                .close = Some(acp::schema::v1::SessionCloseCapabilities::new());
-            let agent = Arc::new(AgentCli {
-                instance_id: AgentInstanceId::new_v4(),
-                conn: client_connection_to_controlled_new_session_agent_with_close_result(
-                    events_tx,
-                    Arc::clone(&live_sessions),
-                    None,
-                    false,
-                    true,
-                ),
-                cached_init_resp,
-                cli_source: Some(crate::agent_sessions::CliSource::Copilot),
-                source: crate::agent_source::AgentSource::Host,
-                cmd_key: "disconnect-ordinary-close-race-agent".to_string(),
-                host_list_cache: Mutex::new(None),
-                listed_ever: Mutex::new(HashSet::new()),
-                cloud_catalog: Mutex::new(NativeCloudCatalogState::Unavailable),
-                bound_helpers: Mutex::new(HashSet::new()),
-            });
-            let cell = Arc::new(tokio::sync::OnceCell::new());
-            assert!(cell.set(Arc::clone(&agent)).is_ok());
-            state
-                .agents
-                .lock()
-                .await
-                .insert(agent.cmd_key.clone(), cell);
-            register_retirement_tab(&state, &agent, helper_id, tab_id, &session_id).await;
-            state.orphaned_tabs.lock().await.insert(
-                tab_id.to_string(),
-                (agent.cmd_key.clone(), helper_id, session_id.clone()),
-            );
-
-            let pause = Arc::new(DisconnectOrphanPublicationPause::default());
-            *state.disconnect_orphan_publication_pause.lock().await = Some(Arc::clone(&pause));
-            let disconnect = tokio::task::spawn_local({
-                let state = Arc::clone(&state);
-                let agent = Arc::clone(&agent);
-                let orphan_tab_candidate = (tab_id.to_string(), session_id.clone());
-                async move {
-                    drop_and_publish_disconnected_helper_sessions(
-                        &state,
-                        helper_id,
-                        Some(&agent),
-                        Some(&orphan_tab_candidate),
-                    )
-                    .await
-                }
-            });
-
-            pause.routes_dropped.notified().await;
-            handle_master_wt_event(
-                &state,
-                serde_json::json!({
-                    "method": "tab_closed",
-                    "params": {
-                        "tab_id": tab_id
-                    }
-                }),
-            )
-            .await;
-
-            assert!(matches!(
-                events_rx.recv().await,
-                Some(ReplacementEvent::Cancel(ref sid)) if sid == &session_id
-            ));
-            assert!(matches!(
-                events_rx.recv().await,
-                Some(ReplacementEvent::Close(ref sid)) if sid == &session_id
-            ));
-            assert!(live_sessions.lock().await.is_empty());
-            assert!(state
-                .closing_session_helpers
-                .lock()
-                .await
-                .contains(&helper_id));
-
-            pause.resume_publication.notify_one();
-            assert_eq!(
-                disconnect.await.expect("disconnect cleanup should finish"),
-                vec![session_id.clone()]
-            );
-            assert!(
-                state.orphaned_sessions.lock().await.is_empty(),
-                "physically closed tab session must not be published as an orphan"
-            );
-
-            let (intentional, _) =
-                consume_disconnected_helper_retirement_state(&state, helper_id).await;
-            assert!(intentional);
-            assert!(state.closing_session_helpers.lock().await.is_empty());
-        })
-        .await;
-}
-
-#[tokio::test(flavor = "current_thread")]
-async fn disconnect_orphan_publication_skips_rebound_session() {
-    tokio::task::LocalSet::new()
-        .run_until(async {
-            let state = make_state();
-            let helper_id = HelperId(346);
-            let replacement_helper_id = HelperId(347);
-            let session_id = SessionId::new("disconnect-rebind-race");
-            let (events_tx, _events_rx) = mpsc::unbounded_channel();
-            let agent = Arc::new(AgentCli {
-                instance_id: AgentInstanceId::new_v4(),
-                conn: client_connection_to_controlled_new_session_agent(
-                    events_tx,
-                    Arc::new(Mutex::new(HashSet::from([session_id.clone()]))),
-                    None,
-                ),
-                cached_init_resp: acp::schema::v1::InitializeResponse::new(
-                    acp::schema::ProtocolVersion::V1,
-                ),
-                cli_source: Some(crate::agent_sessions::CliSource::Copilot),
-                source: crate::agent_source::AgentSource::Host,
-                cmd_key: "disconnect-rebind-race-agent".to_string(),
-                host_list_cache: Mutex::new(None),
-                listed_ever: Mutex::new(HashSet::new()),
-                cloud_catalog: Mutex::new(NativeCloudCatalogState::Unavailable),
-                bound_helpers: Mutex::new(HashSet::new()),
-            });
-            let cell = Arc::new(tokio::sync::OnceCell::new());
-            assert!(cell.set(Arc::clone(&agent)).is_ok());
-            state
-                .agents
-                .lock()
-                .await
-                .insert(agent.cmd_key.clone(), cell);
-            let (original_tx, _original_rx) = mpsc::channel(NOTIF_CHANNEL_CAPACITY);
-            bind_session_route(
-                &state,
-                session_id.clone(),
-                HelperRoute {
-                    helper_id,
-                    agent_instance_id: agent.instance_id,
-                    notif_tx: original_tx,
-                    forwarder: None,
-                    consecutive_drops: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-                },
-            )
-            .await;
-
-            let pause = Arc::new(DisconnectOrphanPublicationPause::default());
-            *state.disconnect_orphan_publication_pause.lock().await = Some(Arc::clone(&pause));
-            let disconnect = tokio::task::spawn_local({
-                let state = Arc::clone(&state);
-                let agent = Arc::clone(&agent);
-                async move {
-                    drop_and_publish_disconnected_helper_sessions(
-                        &state,
-                        helper_id,
-                        Some(&agent),
-                        None,
-                    )
-                    .await
-                }
-            });
-
-            pause.routes_dropped.notified().await;
-            let (replacement_tx, _replacement_rx) = mpsc::channel(NOTIF_CHANNEL_CAPACITY);
-            bind_session_route(
-                &state,
-                session_id.clone(),
-                HelperRoute {
-                    helper_id: replacement_helper_id,
-                    agent_instance_id: agent.instance_id,
-                    notif_tx: replacement_tx,
-                    forwarder: None,
-                    consecutive_drops: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-                },
-            )
-            .await;
-
-            pause.resume_publication.notify_one();
-            assert_eq!(
-                disconnect.await.expect("disconnect cleanup should finish"),
-                vec![session_id.clone()]
-            );
-            assert!(
-                state.orphaned_sessions.lock().await.is_empty(),
-                "a session rebound before publication must not retain an orphan marker"
-            );
-            assert_eq!(
-                state
-                    .session_to_helper
-                    .lock()
-                    .await
-                    .get(&session_id)
-                    .map(|route| route.helper_id),
-                Some(replacement_helper_id)
-            );
-        })
-        .await;
-}
-
-#[tokio::test(flavor = "current_thread")]
-async fn unexpected_disconnect_still_publishes_orphan() {
-    tokio::task::LocalSet::new()
-        .run_until(async {
-            let state = make_state();
-            let helper_id = HelperId(344);
-            let session_id = SessionId::new("unexpected-disconnect-orphan");
-            let (events_tx, _events_rx) = mpsc::unbounded_channel();
-            let live_sessions = Arc::new(Mutex::new(HashSet::from([session_id.clone()])));
-            let agent = Arc::new(AgentCli {
-                instance_id: AgentInstanceId::new_v4(),
-                conn: client_connection_to_controlled_new_session_agent(
-                    events_tx,
-                    live_sessions,
-                    None,
-                ),
-                cached_init_resp: acp::schema::v1::InitializeResponse::new(
-                    acp::schema::ProtocolVersion::V1,
-                ),
-                cli_source: Some(crate::agent_sessions::CliSource::Copilot),
-                source: crate::agent_source::AgentSource::Host,
-                cmd_key: "unexpected-disconnect-agent".to_string(),
-                host_list_cache: Mutex::new(None),
-                listed_ever: Mutex::new(HashSet::new()),
-                cloud_catalog: Mutex::new(NativeCloudCatalogState::Unavailable),
-                bound_helpers: Mutex::new(HashSet::new()),
-            });
-            let cell = Arc::new(tokio::sync::OnceCell::new());
-            assert!(cell.set(Arc::clone(&agent)).is_ok());
-            state
-                .agents
-                .lock()
-                .await
-                .insert(agent.cmd_key.clone(), cell);
-            let (notif_tx, _notif_rx) = mpsc::channel(NOTIF_CHANNEL_CAPACITY);
-            bind_session_route(
-                &state,
-                session_id.clone(),
-                HelperRoute {
-                    helper_id,
-                    agent_instance_id: agent.instance_id,
-                    notif_tx,
-                    forwarder: None,
-                    consecutive_drops: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-                },
-            )
-            .await;
-
-            drop_and_publish_disconnected_helper_sessions(&state, helper_id, Some(&agent), None)
-                .await;
-
-            assert!(state
-                .orphaned_sessions
-                .lock()
-                .await
-                .get(&agent.cmd_key)
-                .is_some_and(|sessions| sessions.contains(&session_id)));
-        })
-        .await;
-}
 
 #[tokio::test(flavor = "current_thread")]
 async fn orphan_retirement_blocked_lifecycle_gate_uses_total_budget() {
@@ -3681,10 +3389,10 @@ async fn orphan_retirement_blocked_cancel_uses_total_budget() {
                 cli_source: Some(crate::agent_sessions::CliSource::Copilot),
                 source: crate::agent_source::AgentSource::Host,
                 cmd_key: "blocked-orphan-cancel-agent".to_string(),
-                host_list_cache: Mutex::new(None),
-                listed_ever: Mutex::new(HashSet::new()),
                 cloud_catalog: Mutex::new(NativeCloudCatalogState::Unavailable),
                 bound_helpers: Mutex::new(HashSet::new()),
+                host_list_cache: Mutex::new(None),
+                listed_ever: Mutex::new(HashSet::new()),
             });
             let cell = Arc::new(tokio::sync::OnceCell::new());
             assert!(cell.set(Arc::clone(&agent)).is_ok());
@@ -3788,10 +3496,10 @@ async fn scope_all_physically_closes_ownerless_orphaned_session() {
                 cli_source: Some(crate::agent_sessions::CliSource::Copilot),
                 source: crate::agent_source::AgentSource::Host,
                 cmd_key: "ownerless-orphan-physical-agent".to_string(),
-                host_list_cache: Mutex::new(None),
-                listed_ever: Mutex::new(HashSet::new()),
                 cloud_catalog: Mutex::new(NativeCloudCatalogState::Unavailable),
                 bound_helpers: Mutex::new(HashSet::new()),
+                host_list_cache: Mutex::new(None),
+                listed_ever: Mutex::new(HashSet::new()),
             });
             let cell = Arc::new(tokio::sync::OnceCell::new());
             assert!(cell.set(Arc::clone(&agent)).is_ok());
@@ -3874,10 +3582,10 @@ async fn scope_all_preserves_ownerless_orphan_claimed_by_replacement_route() {
                 cli_source: Some(crate::agent_sessions::CliSource::Copilot),
                 source: crate::agent_source::AgentSource::Host,
                 cmd_key: "ownerless-orphan-rebound-agent".to_string(),
-                host_list_cache: Mutex::new(None),
-                listed_ever: Mutex::new(HashSet::new()),
                 cloud_catalog: Mutex::new(NativeCloudCatalogState::Unavailable),
                 bound_helpers: Mutex::new(HashSet::new()),
+                host_list_cache: Mutex::new(None),
+                listed_ever: Mutex::new(HashSet::new()),
             });
             let cell = Arc::new(tokio::sync::OnceCell::new());
             assert!(cell.set(Arc::clone(&agent)).is_ok());
@@ -4195,10 +3903,10 @@ async fn scope_all_waits_for_ownerless_pending_transaction_cleanup() {
                 cli_source: Some(crate::agent_sessions::CliSource::Copilot),
                 source: crate::agent_source::AgentSource::Host,
                 cmd_key: "ownerless-pending-agent".to_string(),
-                host_list_cache: Mutex::new(None),
-                listed_ever: Mutex::new(HashSet::new()),
                 cloud_catalog: Mutex::new(NativeCloudCatalogState::Unavailable),
                 bound_helpers: Mutex::new(HashSet::new()),
+                host_list_cache: Mutex::new(None),
+                listed_ever: Mutex::new(HashSet::new()),
             });
             let cell = Arc::new(tokio::sync::OnceCell::new());
             assert!(cell.set(Arc::clone(&agent)).is_ok());
@@ -4303,10 +4011,10 @@ async fn scope_all_unsupported_retirement_reports_failed_owner_tab() {
                 cli_source: Some(crate::agent_sessions::CliSource::Gemini),
                 source: crate::agent_source::AgentSource::Host,
                 cmd_key: "retirement-unsupported-agent".to_string(),
-                host_list_cache: Mutex::new(None),
-                listed_ever: Mutex::new(HashSet::new()),
                 cloud_catalog: Mutex::new(NativeCloudCatalogState::Unavailable),
                 bound_helpers: Mutex::new(HashSet::new()),
+                host_list_cache: Mutex::new(None),
+                listed_ever: Mutex::new(HashSet::new()),
             });
             let cell = Arc::new(tokio::sync::OnceCell::new());
             assert!(cell.set(Arc::clone(&agent)).is_ok());
@@ -4378,10 +4086,10 @@ async fn scope_all_starts_independent_session_closes_concurrently() {
                 cli_source: Some(crate::agent_sessions::CliSource::Copilot),
                 source: crate::agent_source::AgentSource::Host,
                 cmd_key: "retirement-all-agent-a".to_string(),
-                host_list_cache: Mutex::new(None),
-                listed_ever: Mutex::new(HashSet::new()),
                 cloud_catalog: Mutex::new(NativeCloudCatalogState::Unavailable),
                 bound_helpers: Mutex::new(HashSet::new()),
+                host_list_cache: Mutex::new(None),
+                listed_ever: Mutex::new(HashSet::new()),
             });
             let agent_b = Arc::new(AgentCli {
                 instance_id: AgentInstanceId::new_v4(),
@@ -4390,10 +4098,10 @@ async fn scope_all_starts_independent_session_closes_concurrently() {
                 cli_source: Some(crate::agent_sessions::CliSource::Gemini),
                 source: crate::agent_source::AgentSource::Host,
                 cmd_key: "retirement-all-agent-b".to_string(),
-                host_list_cache: Mutex::new(None),
-                listed_ever: Mutex::new(HashSet::new()),
                 cloud_catalog: Mutex::new(NativeCloudCatalogState::Unavailable),
                 bound_helpers: Mutex::new(HashSet::new()),
+                host_list_cache: Mutex::new(None),
+                listed_ever: Mutex::new(HashSet::new()),
             });
             let cell_a = Arc::new(tokio::sync::OnceCell::new());
             let cell_b = Arc::new(tokio::sync::OnceCell::new());
@@ -4517,10 +4225,10 @@ async fn retirement_uses_one_deadline_for_close_wait_and_forced_cleanup() {
                 cli_source: Some(crate::agent_sessions::CliSource::Copilot),
                 source: crate::agent_source::AgentSource::Host,
                 cmd_key: "retirement-single-deadline-agent".to_string(),
-                host_list_cache: Mutex::new(None),
-                listed_ever: Mutex::new(HashSet::new()),
                 cloud_catalog: Mutex::new(NativeCloudCatalogState::Unavailable),
                 bound_helpers: Mutex::new(HashSet::new()),
+                host_list_cache: Mutex::new(None),
+                listed_ever: Mutex::new(HashSet::new()),
             });
             let cell = Arc::new(tokio::sync::OnceCell::new());
             assert!(cell.set(Arc::clone(&agent)).is_ok());
@@ -4621,10 +4329,10 @@ async fn retirement_lifecycle_gate_wait_does_not_renew_close_budget() {
                 cli_source: Some(crate::agent_sessions::CliSource::Copilot),
                 source: crate::agent_source::AgentSource::Host,
                 cmd_key: "retirement-gate-deadline-agent".to_string(),
-                host_list_cache: Mutex::new(None),
-                listed_ever: Mutex::new(HashSet::new()),
                 cloud_catalog: Mutex::new(NativeCloudCatalogState::Unavailable),
                 bound_helpers: Mutex::new(HashSet::new()),
+                host_list_cache: Mutex::new(None),
+                listed_ever: Mutex::new(HashSet::new()),
             });
             let gate = session_lifecycle_gate(&state, &session_id).await;
             let gate_guard = gate.lock().await;
@@ -4695,10 +4403,10 @@ async fn retirement_waits_for_and_retires_late_session_new() {
                 cli_source: Some(crate::agent_sessions::CliSource::Copilot),
                 source: crate::agent_source::AgentSource::Host,
                 cmd_key: "retirement-pending-agent".to_string(),
-                host_list_cache: Mutex::new(None),
-                listed_ever: Mutex::new(HashSet::new()),
                 cloud_catalog: Mutex::new(NativeCloudCatalogState::Unavailable),
                 bound_helpers: Mutex::new(HashSet::new()),
+                host_list_cache: Mutex::new(None),
+                listed_ever: Mutex::new(HashSet::new()),
             });
             let cell = Arc::new(tokio::sync::OnceCell::new());
             assert!(cell.set(Arc::clone(&agent)).is_ok());
@@ -5055,10 +4763,10 @@ async fn active_retirement_follows_tab_rename_and_clears_moved_fence_on_disconne
                 cli_source: Some(crate::agent_sessions::CliSource::Copilot),
                 source: crate::agent_source::AgentSource::Host,
                 cmd_key: "retirement-drag-race-agent".to_string(),
-                host_list_cache: Mutex::new(None),
-                listed_ever: Mutex::new(HashSet::new()),
                 cloud_catalog: Mutex::new(NativeCloudCatalogState::Unavailable),
                 bound_helpers: Mutex::new(HashSet::new()),
+                host_list_cache: Mutex::new(None),
+                listed_ever: Mutex::new(HashSet::new()),
             });
             let cell = Arc::new(tokio::sync::OnceCell::new());
             assert!(cell.set(Arc::clone(&agent)).is_ok());
@@ -5286,6 +4994,408 @@ async fn close_by_tab_retires_session_new_that_finishes_after_tab_destruction() 
                 .lock()
                 .await
                 .contains(&helper_id));
+        })
+        .await;
+}
+
+async fn wait_for_helper_closing(state: &MasterStateInner, helper_id: HelperId) {
+    tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        loop {
+            if state
+                .closing_session_helpers
+                .lock()
+                .await
+                .contains(&helper_id)
+            {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("disconnect cleanup should fence the helper promptly");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn disconnect_during_session_new_fences_late_result() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            let state = make_state();
+            let helper_id = HelperId(124);
+            let agent_instance_id = AgentInstanceId::new_v4();
+            let (notif_tx, _notif_rx) = mpsc::channel(NOTIF_CHANNEL_CAPACITY);
+            let (events_tx, mut events_rx) = mpsc::unbounded_channel();
+            let live_sessions = Arc::new(Mutex::new(HashSet::new()));
+            let mut cached_init_resp =
+                acp::schema::v1::InitializeResponse::new(acp::schema::ProtocolVersion::V1);
+            cached_init_resp
+                .agent_capabilities
+                .session_capabilities
+                .close = Some(acp::schema::v1::SessionCloseCapabilities::new());
+            let agent = Arc::new(AgentCli {
+                instance_id: agent_instance_id,
+                conn: client_connection_to_controlled_new_session_agent(
+                    events_tx,
+                    Arc::clone(&live_sessions),
+                    None,
+                ),
+                cached_init_resp,
+                cli_source: Some(crate::agent_sessions::CliSource::Copilot),
+                source: crate::agent_source::AgentSource::Host,
+                cmd_key: "disconnect-pending-new-agent".to_string(),
+                cloud_catalog: Mutex::new(NativeCloudCatalogState::Unavailable),
+                bound_helpers: Mutex::new(HashSet::new()),
+                host_list_cache: Mutex::new(None),
+                listed_ever: Mutex::new(HashSet::new()),
+            });
+            let agent_slot = Arc::new(OnceLock::new());
+            assert!(agent_slot.set(agent).is_ok());
+            let agent_side_slot = Arc::new(OnceLock::new());
+            agent_side_slot
+                .set(agent_link_to_noop_client())
+                .expect("agent-side forwarder should be set once");
+            let handler = HelperHandler {
+                helper_id,
+                agent: agent_slot,
+                state: Arc::clone(&state),
+                replacement_gate: Arc::new(Mutex::new(())),
+                notif_tx,
+                agent_side_slot,
+            };
+
+            let new_task = tokio::task::spawn_local({
+                let handler = handler.clone();
+                async move {
+                    handler
+                        .new_session(acp::schema::v1::NewSessionRequest::new(PathBuf::from(
+                            "C:\\disconnect-new",
+                        )))
+                        .await
+                }
+            });
+            let ReplacementEvent::New(0, release_new) = events_rx
+                .recv()
+                .await
+                .expect("session/new should reach the controlled agent")
+            else {
+                panic!("expected a blocked session/new request");
+            };
+
+            let cleanup_task = tokio::task::spawn_local({
+                let handler = handler.clone();
+                async move { cleanup_disconnected_helper(&handler).await }
+            });
+            wait_for_helper_closing(&state, helper_id).await;
+            assert!(
+                !cleanup_task.is_finished(),
+                "disconnect cleanup must wait for the replacement transaction"
+            );
+
+            release_new
+                .send(())
+                .expect("the controlled session/new should still be waiting");
+            let mut response = new_task
+                .await
+                .expect("session/new task should finish")
+                .expect("the late provider response should be retired");
+            let Some(ReplacementEvent::Close(closed_session_id)) = events_rx.recv().await else {
+                panic!("disconnect must physically close the late-created session");
+            };
+            assert_eq!(closed_session_id, response.session_id);
+            assert_eq!(
+                crate::session_registry::extract_wta_meta(&mut response.meta)
+                    .session_result
+                    .as_deref(),
+                Some("retired")
+            );
+            cleanup_task
+                .await
+                .expect("disconnect cleanup task should finish");
+
+            assert!(live_sessions.lock().await.is_empty());
+            assert!(state.session_to_helper.lock().await.is_empty());
+            assert!(state.registry.lookup(&response.session_id).await.is_none());
+            assert!(!state.helper_meta.lock().await.contains_key(&helper_id));
+            assert!(!state
+                .pending_session_helpers
+                .lock()
+                .await
+                .contains_key(&helper_id));
+            assert!(!state
+                .pending_session_mcp
+                .lock()
+                .await
+                .contains_key(&helper_id));
+            assert!(state.orphaned_sessions.lock().await.is_empty());
+            assert!(state.orphaned_tabs.lock().await.is_empty());
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn disconnect_tombstone_rejects_queued_replacement_after_in_flight_failure() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            let state = make_state();
+            let helper_id = HelperId(126);
+            let (notif_tx, _notif_rx) = mpsc::channel(NOTIF_CHANNEL_CAPACITY);
+            let (events_tx, mut events_rx) = mpsc::unbounded_channel();
+            let live_sessions = Arc::new(Mutex::new(HashSet::new()));
+            let agent = Arc::new(AgentCli {
+                instance_id: AgentInstanceId::new_v4(),
+                conn: client_connection_to_controlled_new_session_agent(
+                    events_tx,
+                    Arc::clone(&live_sessions),
+                    None,
+                ),
+                cached_init_resp: acp::schema::v1::InitializeResponse::new(
+                    acp::schema::ProtocolVersion::V1,
+                ),
+                cli_source: Some(crate::agent_sessions::CliSource::Copilot),
+                source: crate::agent_source::AgentSource::Host,
+                cmd_key: "disconnect-queued-new-agent".to_string(),
+                cloud_catalog: Mutex::new(NativeCloudCatalogState::Unavailable),
+                bound_helpers: Mutex::new(HashSet::new()),
+                host_list_cache: Mutex::new(None),
+                listed_ever: Mutex::new(HashSet::new()),
+            });
+            let agent_slot = Arc::new(OnceLock::new());
+            assert!(agent_slot.set(agent).is_ok());
+            let agent_side_slot = Arc::new(OnceLock::new());
+            agent_side_slot
+                .set(agent_link_to_noop_client())
+                .expect("agent-side forwarder should be set once");
+            let handler = HelperHandler {
+                helper_id,
+                agent: agent_slot,
+                state: Arc::clone(&state),
+                replacement_gate: Arc::new(Mutex::new(())),
+                notif_tx,
+                agent_side_slot,
+            };
+
+            let first = tokio::task::spawn_local({
+                let handler = handler.clone();
+                async move {
+                    handler
+                        .new_session(acp::schema::v1::NewSessionRequest::new(PathBuf::from(
+                            "C:\\disconnect-first",
+                        )))
+                        .await
+                }
+            });
+            let ReplacementEvent::New(0, fail_first) = events_rx
+                .recv()
+                .await
+                .expect("the first replacement should reach the provider")
+            else {
+                panic!("expected the first blocked session/new request");
+            };
+
+            let second = tokio::task::spawn_local({
+                let handler = handler.clone();
+                async move {
+                    handler
+                        .new_session(acp::schema::v1::NewSessionRequest::new(PathBuf::from(
+                            "C:\\disconnect-second",
+                        )))
+                        .await
+                }
+            });
+            tokio::task::yield_now().await;
+            let cleanup = tokio::task::spawn_local({
+                let handler = handler.clone();
+                async move { cleanup_disconnected_helper(&handler).await }
+            });
+            wait_for_helper_closing(&state, helper_id).await;
+            assert!(state
+                .destructive_session_helpers
+                .lock()
+                .await
+                .contains(&helper_id));
+
+            drop(fail_first);
+            first
+                .await
+                .expect("the first replacement task should finish")
+                .expect_err("dropping its provider release should fail the first replacement");
+            second
+                .await
+                .expect("the second replacement task should finish")
+                .expect_err("the disconnect tombstone must reject the queued replacement");
+            let cleanup = cleanup
+                .await
+                .expect("disconnect cleanup task should finish");
+
+            assert!(
+                matches!(
+                    events_rx.try_recv(),
+                    Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+                ),
+                "the queued replacement must not reach the provider"
+            );
+            assert!(
+                !cleanup.intentional_close,
+                "a disconnect-added tombstone must not count as an intentional close"
+            );
+            assert!(!state
+                .closing_session_helpers
+                .lock()
+                .await
+                .contains(&helper_id));
+            assert!(!state
+                .destructive_session_helpers
+                .lock()
+                .await
+                .contains(&helper_id));
+            assert!(state.session_to_helper.lock().await.is_empty());
+            assert!(live_sessions.lock().await.is_empty());
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn disconnect_during_session_load_fences_late_result() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            let state = make_state();
+            let helper_id = HelperId(125);
+            let session_id = SessionId::new("disconnect-pending-load");
+            let agent_instance_id = AgentInstanceId::new_v4();
+            let (notif_tx, _notif_rx) = mpsc::channel(NOTIF_CHANNEL_CAPACITY);
+            let (events_tx, mut events_rx) = mpsc::unbounded_channel();
+            let live_sessions = Arc::new(Mutex::new(HashSet::new()));
+            let mut cached_init_resp =
+                acp::schema::v1::InitializeResponse::new(acp::schema::ProtocolVersion::V1);
+            cached_init_resp.agent_capabilities.mcp_capabilities.http = true;
+            cached_init_resp
+                .agent_capabilities
+                .session_capabilities
+                .close = Some(acp::schema::v1::SessionCloseCapabilities::new());
+            let agent = Arc::new(AgentCli {
+                instance_id: agent_instance_id,
+                conn: client_connection_to_controlled_load_session_agent(
+                    events_tx,
+                    Arc::clone(&live_sessions),
+                ),
+                cached_init_resp,
+                cli_source: Some(crate::agent_sessions::CliSource::Copilot),
+                source: crate::agent_source::AgentSource::Host,
+                cmd_key: "disconnect-pending-load-agent".to_string(),
+                cloud_catalog: Mutex::new(NativeCloudCatalogState::Unavailable),
+                bound_helpers: Mutex::new(HashSet::new()),
+                host_list_cache: Mutex::new(None),
+                listed_ever: Mutex::new(HashSet::new()),
+            });
+            let agent_slot = Arc::new(OnceLock::new());
+            assert!(agent_slot.set(agent).is_ok());
+            let agent_side_slot = Arc::new(OnceLock::new());
+            agent_side_slot
+                .set(agent_link_to_noop_client())
+                .expect("agent-side forwarder should be set once");
+            let handler = HelperHandler {
+                helper_id,
+                agent: agent_slot,
+                state: Arc::clone(&state),
+                replacement_gate: Arc::new(Mutex::new(())),
+                notif_tx,
+                agent_side_slot,
+            };
+            let mut request = acp::schema::v1::LoadSessionRequest::new(
+                session_id.clone(),
+                PathBuf::from("C:\\disconnect-load"),
+            );
+            crate::session_registry::inject_wta_meta(
+                &mut request.meta,
+                &crate::session_registry::WtaMeta {
+                    proposal_mcp: Some("http-v1".to_string()),
+                    ..Default::default()
+                },
+            );
+
+            let load_task = tokio::task::spawn_local({
+                let handler = handler.clone();
+                async move { handler.load_session(request).await }
+            });
+            let ReplacementEvent::BlockingLoad(blocked_session_id, release_load) = events_rx
+                .recv()
+                .await
+                .expect("session/load should reach the controlled agent")
+            else {
+                panic!("expected a blocked session/load request");
+            };
+            assert_eq!(blocked_session_id, session_id);
+            assert_eq!(
+                state.session_to_helper.lock().await[&session_id].helper_id,
+                helper_id,
+                "load must pre-register its route while the provider request is in flight"
+            );
+            assert!(state
+                .pending_session_mcp
+                .lock()
+                .await
+                .contains_key(&helper_id));
+
+            let cleanup_task = tokio::task::spawn_local({
+                let handler = handler.clone();
+                async move { cleanup_disconnected_helper(&handler).await }
+            });
+            wait_for_helper_closing(&state, helper_id).await;
+            assert!(
+                !cleanup_task.is_finished(),
+                "disconnect cleanup must not race the pre-registered load route"
+            );
+            assert!(state
+                .session_to_helper
+                .lock()
+                .await
+                .contains_key(&session_id));
+
+            release_load
+                .send(())
+                .expect("the controlled session/load should still be waiting");
+            let mut response = load_task
+                .await
+                .expect("session/load task should finish")
+                .expect("the late provider response should be retired");
+            let Some(ReplacementEvent::Close(closed_session_id)) = events_rx.recv().await else {
+                panic!("disconnect must physically close the late-loaded session");
+            };
+            assert_eq!(closed_session_id, session_id);
+            assert_eq!(
+                crate::session_registry::extract_wta_meta(&mut response.meta)
+                    .session_result
+                    .as_deref(),
+                Some("retired")
+            );
+            cleanup_task
+                .await
+                .expect("disconnect cleanup task should finish");
+
+            assert!(live_sessions.lock().await.is_empty());
+            assert!(state.session_to_helper.lock().await.is_empty());
+            assert!(state.registry.lookup(&session_id).await.is_none());
+            assert!(!state.helper_meta.lock().await.contains_key(&helper_id));
+            assert!(!state
+                .pending_session_helpers
+                .lock()
+                .await
+                .contains_key(&helper_id));
+            assert!(!state
+                .pending_session_mcp
+                .lock()
+                .await
+                .contains_key(&helper_id));
+            assert_eq!(
+                state
+                    .session_mcp_capabilities
+                    .remove_owner(agent_instance_id)
+                    .await,
+                0,
+                "disconnect must revoke the late load's MCP capability"
+            );
+            assert!(state.orphaned_sessions.lock().await.is_empty());
+            assert!(state.orphaned_tabs.lock().await.is_empty());
         })
         .await;
 }
@@ -7344,24 +7454,6 @@ async fn prompt_forward_survives_reentrant_permission() {
         .await;
 }
 
-#[test]
-fn restart_agent_pane_event_shape_carries_tab_and_session() {
-    let sid = SessionId::from("sess-abc");
-    let evt = build_restart_agent_pane_event("tab-42", Some(&sid));
-    assert_eq!(evt["type"], "event");
-    assert_eq!(evt["method"], "restart_agent_pane");
-    assert_eq!(evt["params"]["tab_id"], "tab-42");
-    assert_eq!(evt["params"]["session_id"], "sess-abc");
-    assert_eq!(evt["params"]["reason"], "helper_disconnect");
-}
-
-#[test]
-fn restart_agent_pane_event_null_session_when_none() {
-    let evt = build_restart_agent_pane_event("tab-7", None);
-    assert!(evt["params"]["session_id"].is_null());
-    assert_eq!(evt["params"]["tab_id"], "tab-7");
-}
-
 fn make_notif(sid: &SessionId) -> SessionNotification {
     SessionNotification::new(
         sid.clone(),
@@ -7702,13 +7794,17 @@ async fn session_notification_unknown_session_is_noop() {
 #[tokio::test]
 async fn drop_sessions_for_helper_retains_only_other_helpers() {
     let state = make_state();
+    let sid_a1 = SessionId::new("a1");
+    let sid_a2 = SessionId::new("a2");
+    let sid_b1 = SessionId::new("b1");
+    let sid_c1 = SessionId::new("c1");
     let (tx_a, _rx_a) = mpsc::channel(NOTIF_CHANNEL_CAPACITY);
     let (tx_b, _rx_b) = mpsc::channel(NOTIF_CHANNEL_CAPACITY);
     let (tx_c, _rx_c) = mpsc::channel(NOTIF_CHANNEL_CAPACITY);
     {
         let mut map = state.session_to_helper.lock().await;
         map.insert(
-            SessionId::new("a1"),
+            sid_a1.clone(),
             HelperRoute {
                 helper_id: HelperId(1),
                 agent_instance_id: AgentInstanceId::nil(),
@@ -7718,7 +7814,7 @@ async fn drop_sessions_for_helper_retains_only_other_helpers() {
             },
         );
         map.insert(
-            SessionId::new("a2"),
+            sid_a2.clone(),
             HelperRoute {
                 helper_id: HelperId(1),
                 agent_instance_id: AgentInstanceId::nil(),
@@ -7728,7 +7824,7 @@ async fn drop_sessions_for_helper_retains_only_other_helpers() {
             },
         );
         map.insert(
-            SessionId::new("b1"),
+            sid_b1.clone(),
             HelperRoute {
                 helper_id: HelperId(2),
                 agent_instance_id: AgentInstanceId::nil(),
@@ -7738,7 +7834,7 @@ async fn drop_sessions_for_helper_retains_only_other_helpers() {
             },
         );
         map.insert(
-            SessionId::new("c1"),
+            sid_c1.clone(),
             HelperRoute {
                 helper_id: HelperId(3),
                 agent_instance_id: AgentInstanceId::nil(),
@@ -7748,17 +7844,53 @@ async fn drop_sessions_for_helper_retains_only_other_helpers() {
             },
         );
     }
+    let owner = AgentInstanceId::new_v4();
+    let capability_a = state
+        .session_mcp_capabilities
+        .prepare(owner, None)
+        .await;
+    assert!(
+        state
+            .session_mcp_capabilities
+            .bind(&capability_a, sid_a1.clone())
+            .await
+    );
+    let capability_b = state
+        .session_mcp_capabilities
+        .prepare(owner, None)
+        .await;
+    assert!(
+        state
+            .session_mcp_capabilities
+            .bind(&capability_b, sid_b1.clone())
+            .await
+    );
 
     let dropped = drop_sessions_for_helper(&state, HelperId(1)).await;
     assert_eq!(dropped.len(), 2);
-    assert!(dropped.contains(&SessionId::new("a1")));
-    assert!(dropped.contains(&SessionId::new("a2")));
+    assert!(dropped.contains(&sid_a1));
+    assert!(dropped.contains(&sid_a2));
 
     let map = state.session_to_helper.lock().await;
-    assert!(!map.contains_key(&SessionId::new("a1")));
-    assert!(!map.contains_key(&SessionId::new("a2")));
-    assert!(map.contains_key(&SessionId::new("b1")));
-    assert!(map.contains_key(&SessionId::new("c1")));
+    assert!(!map.contains_key(&sid_a1));
+    assert!(!map.contains_key(&sid_a2));
+    assert!(map.contains_key(&sid_b1));
+    assert!(map.contains_key(&sid_c1));
+    drop(map);
+    assert!(
+        !state
+            .session_mcp_capabilities
+            .remove_session(&sid_a1)
+            .await,
+        "disconnect cleanup must revoke the dropped session's MCP capability"
+    );
+    assert!(
+        state
+            .session_mcp_capabilities
+            .remove_session(&sid_b1)
+            .await,
+        "disconnect cleanup must preserve another helper's MCP capability"
+    );
 }
 
 /// Companion invariant to `drop_sessions_for_helper_retains_only_other_helpers`:

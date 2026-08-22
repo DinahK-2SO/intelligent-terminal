@@ -264,7 +264,6 @@ namespace winrt::TerminalApp::implementation
         void OnResumeInNewAgentTabRequested(hstring eventJson);
         void OnAgentChipTargetChanged(hstring eventJson);
         void OnRestartAgentStackRequested(hstring eventJson);
-        void OnAgentPaneRestartRequested(hstring eventJson);
         void OnAgentSessionsRetired(hstring eventJson);
 
         til::property_changed_event PropertyChanged;
@@ -526,15 +525,6 @@ namespace winrt::TerminalApp::implementation
             std::string cwd;
         };
         std::unordered_map<winrt::hstring, _PendingLoadSession> _pendingLoadSessions;
-        // Short-lived marks keyed by tab StableId: set whenever an agent
-        // pane is torn down deliberately (Ctrl+C×2, settings rebuild,
-        // /restart, recovery re-warm). `OnAgentPaneRestartRequested`
-        // consumes a mark to skip respawning a pane the user/we just
-        // closed — the master's `restart_agent_pane` event fires for both
-        // deliberate teardown and genuine crash, so this is how C++
-        // distinguishes them. Entries are consumed on read and otherwise
-        // expire after a few seconds.
-        details::RestartSuppressionTracker _agentPaneRestartSuppression;
         AgentSettingsSnapshot _CaptureAgentSettingsSnapshot() const;
         // Compares only agent-CLI *identity* fields — the change that forces
         // a master respawn. Model/delegate changes are handled by
@@ -556,7 +546,7 @@ namespace winrt::TerminalApp::implementation
                                           std::function<void(std::string_view)> continuation);
         safe_void_coroutine _WaitForAgentSessionRetirement(std::string operationId);
         void _CompleteAgentSessionRetirement(std::string_view operationId, bool timedOut);
-        void _TeardownAgentPane(const winrt::com_ptr<Tab>& tab, bool suppressMasterRestart = true);
+        void _TeardownAgentPane(const winrt::com_ptr<Tab>& tab);
         void _RebuildAgentStack(std::string requestId = {});
         void _RestartAgentStack(std::string requestId);
         // Scoped per-tab rebuild after a tab's agent override changes

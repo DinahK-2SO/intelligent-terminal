@@ -561,20 +561,22 @@ impl CliChannel {
             let _ = previous.send(());
         }
         tokio::spawn(async move {
-            let mut child = match tokio::process::Command::new(&wtcli)
-                .args(["--json", "listen"])
+            let parent_pid = std::process::id();
+            let parent_pid_arg = parent_pid.to_string();
+            let mut command = tokio::process::Command::new(&wtcli);
+            command
+                .args(["--json", "listen", "--parent-pid", &parent_pid_arg])
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::null())
-                .kill_on_drop(true)
-                .spawn()
-            {
+                .kill_on_drop(true);
+            let mut child = match command.spawn() {
                 Ok(child) => child,
-                Err(error) => {
+                Err(err) => {
                     tracing::warn!(
                         target: "wtcli",
                         path = %wtcli,
-                        %error,
-                        "failed to start wtcli event listener"
+                        %err,
+                        "WT protocol event listener spawn failed"
                     );
                     return;
                 }
@@ -582,41 +584,12 @@ impl CliChannel {
             let listener_pid = child.id();
             tracing::info!(
                 target: "wtcli",
-                path = %wtcli,
-                pid = listener_pid,
-                "wtcli event listener started"
+                ?listener_pid,
+                parent_pid,
+                "started WT protocol event listener"
             );
 
-            let Some(stdout) = child.stdout.take() else {
-                tracing::warn!(
-                    target: "wtcli",
-                    pid = listener_pid,
-                    "wtcli event listener stdout unavailable"
-                );
-                if let Err(error) = child.start_kill() {
-                    tracing::debug!(
-                        target: "wtcli",
-                        pid = listener_pid,
-                        %error,
-                        "wtcli event listener kill request was unnecessary or failed"
-                    );
-                }
-                match child.wait().await {
-                    Ok(status) => tracing::info!(
-                        target: "wtcli",
-                        pid = listener_pid,
-                        %status,
-                        "wtcli event listener reaped"
-                    ),
-                    Err(error) => tracing::warn!(
-                        target: "wtcli",
-                        pid = listener_pid,
-                        %error,
-                        "failed to reap wtcli event listener"
-                    ),
-                }
-                return;
-            };
+            let stdout = child.stdout.take().unwrap();
             let mut reader = tokio::io::BufReader::new(stdout);
             let mut line = String::new();
 
@@ -685,6 +658,12 @@ impl CliChannel {
                     "failed to reap wtcli event listener"
                 ),
             }
+            tracing::info!(
+                target: "wtcli",
+                listener_pid = ?child.id(),
+                parent_pid,
+                "WT protocol event listener ended"
+            );
         });
     }
 
