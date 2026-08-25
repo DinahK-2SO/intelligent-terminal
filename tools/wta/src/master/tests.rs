@@ -412,10 +412,6 @@ fn helper_initialize_errors_do_not_expose_provider_credentials() {
     }
 }
 
-
-
-
-
 #[tokio::test(flavor = "current_thread")]
 async fn delayed_clean_probe_does_not_block_initialize_and_notifies_bound_helper() {
     tokio::task::LocalSet::new()
@@ -537,16 +533,14 @@ async fn initialize_response_preserves_ready_cloud_catalog_with_identity_and_pro
                 cli_source: Some(crate::agent_sessions::CliSource::Copilot),
                 source: crate::agent_source::AgentSource::Host,
                 cmd_key: "ready-catalog-agent".to_string(),
-                cloud_catalog: Mutex::new(NativeCloudCatalogState::Ready(
-                    NativeCloudCatalog {
-                        models: vec![crate::app::AcpModelInfo {
-                            id: "cloud-ready".to_string(),
-                            name: "Cloud Ready".to_string(),
-                            description: None,
-                        }],
-                        source: CloudCatalogSource::Helper,
-                    },
-                )),
+                cloud_catalog: Mutex::new(NativeCloudCatalogState::Ready(NativeCloudCatalog {
+                    models: vec![crate::app::AcpModelInfo {
+                        id: "cloud-ready".to_string(),
+                        name: "Cloud Ready".to_string(),
+                        description: None,
+                    }],
+                    source: CloudCatalogSource::Helper,
+                })),
                 bound_helpers: Mutex::new(HashSet::new()),
                 host_list_cache: Mutex::new(None),
                 listed_ever: Mutex::new(HashSet::new()),
@@ -795,12 +789,8 @@ fn provider_binding_isolated_pool_keys_do_not_expose_configuration() {
     assert!(!custom_key.contains("secret-endpoint"));
     assert!(!custom_key.contains("secret-credential"));
     assert!(
-        agent_cmd_key(
-            "custom-agent --model pinned",
-            Some("custom:local"),
-            &source
-        )
-        .starts_with("warm:"),
+        agent_cmd_key("custom-agent --model pinned", Some("custom:local"), &source)
+            .starts_with("warm:"),
         "trusted custom commands are not transient model generations"
     );
 }
@@ -2302,7 +2292,9 @@ async fn failed_pending_cleanup_reads_destructive_marker_under_ownership_gate() 
 
             let ownership_guard = state.tab_ownership_gate.lock().await;
             let cleanup =
-                tokio::task::spawn_local(async move { handler.finish_failed_pending_session().await });
+                tokio::task::spawn_local(
+                    async move { handler.finish_failed_pending_session().await },
+                );
             tokio::task::yield_now().await;
             state
                 .destructive_session_helpers
@@ -3830,8 +3822,7 @@ async fn orphan_retirement_blocked_lifecycle_gate_uses_total_budget() {
                 .get("blocked-orphan-gate-agent")
                 .is_some_and(|sessions| sessions.contains(&session_id)));
             assert!(state.registry.lookup(&session_id).await.is_some());
-            let deferred_cleanup =
-                state.deferred_retirement_cleanup_complete.notified();
+            let deferred_cleanup = state.deferred_retirement_cleanup_complete.notified();
             drop(gate_guard);
             rebind.await.expect("replacement bind must finish");
             tokio::time::timeout(std::time::Duration::from_secs(1), deferred_cleanup)
@@ -4157,9 +4148,8 @@ async fn scope_all_preserves_ownerless_orphan_claimed_by_replacement_route() {
 async fn scope_all_ownerless_orphan_gate_timeout_preserves_queued_rebind() {
     tokio::task::LocalSet::new()
         .run_until(async {
-            let state = make_state_with_retirement_pending_timeout(
-                std::time::Duration::from_millis(40),
-            );
+            let state =
+                make_state_with_retirement_pending_timeout(std::time::Duration::from_millis(40));
             let mut completions = capture_retirement_completions(&state).await;
             let replacement_helper_id = HelperId(351);
             let session_id = SessionId::new("ownerless-orphan-timeout-rebind");
@@ -4238,8 +4228,7 @@ async fn scope_all_ownerless_orphan_gate_timeout_preserves_queued_rebind() {
                 .is_some_and(|sessions| sessions.contains(&session_id)));
             assert!(state.registry.lookup(&session_id).await.is_some());
 
-            let deferred_cleanup =
-                state.deferred_retirement_cleanup_complete.notified();
+            let deferred_cleanup = state.deferred_retirement_cleanup_complete.notified();
             drop(gate_guard);
             rebind.await.expect("replacement bind must finish");
             tokio::time::timeout(std::time::Duration::from_secs(1), deferred_cleanup)
@@ -5040,7 +5029,7 @@ async fn retirement_timeout_cleans_before_completion_and_fences_late_session_new
                 agent: agent_slot,
                 state: Arc::clone(&state),
                 replacement_gate: Arc::new(Mutex::new(())),
-                    notif_tx,
+                notif_tx,
                 agent_side_slot,
             };
             let mut request = acp::schema::v1::NewSessionRequest::new(PathBuf::from("C:\\pending"));
@@ -5138,7 +5127,7 @@ async fn retirement_completion_cache_is_bounded_without_evicting_in_flight_entri
     state.retirement_operations.lock().await.insert(
         "still-running".to_string(),
         RetirementOperationState::InFlight,
-            );
+    );
 
     for index in 0..(RETIREMENT_COMPLETION_CAP + 32) {
         record_retirement_completion(
@@ -5160,7 +5149,7 @@ async fn retirement_completion_cache_is_bounded_without_evicting_in_flight_entri
                     .checked_sub(RETIREMENT_COMPLETION_TTL)
                     .expect("test instant must support TTL subtraction"),
             },
-            );
+        );
         prune_retirement_operations(&mut operations, now);
         assert!(matches!(
             operations.get("still-running"),
@@ -5173,7 +5162,7 @@ async fn retirement_completion_cache_is_bounded_without_evicting_in_flight_entri
                 .filter(|state| matches!(state, RetirementOperationState::Completed { .. }))
                 .count(),
             RETIREMENT_COMPLETION_CAP
-            );
+        );
     }
 }
 
@@ -8361,20 +8350,14 @@ async fn drop_sessions_for_helper_retains_only_other_helpers() {
         );
     }
     let owner = AgentInstanceId::new_v4();
-    let capability_a = state
-        .session_mcp_capabilities
-        .prepare(owner, None)
-        .await;
+    let capability_a = state.session_mcp_capabilities.prepare(owner, None).await;
     assert!(
         state
             .session_mcp_capabilities
             .bind(&capability_a, sid_a1.clone())
             .await
     );
-    let capability_b = state
-        .session_mcp_capabilities
-        .prepare(owner, None)
-        .await;
+    let capability_b = state.session_mcp_capabilities.prepare(owner, None).await;
     assert!(
         state
             .session_mcp_capabilities
@@ -8394,17 +8377,11 @@ async fn drop_sessions_for_helper_retains_only_other_helpers() {
     assert!(map.contains_key(&sid_c1));
     drop(map);
     assert!(
-        !state
-            .session_mcp_capabilities
-            .remove_session(&sid_a1)
-            .await,
+        !state.session_mcp_capabilities.remove_session(&sid_a1).await,
         "disconnect cleanup must revoke the dropped session's MCP capability"
     );
     assert!(
-        state
-            .session_mcp_capabilities
-            .remove_session(&sid_b1)
-            .await,
+        state.session_mcp_capabilities.remove_session(&sid_b1).await,
         "disconnect cleanup must preserve another helper's MCP capability"
     );
 }
@@ -8854,9 +8831,9 @@ async fn physical_close_blocks_rebind_until_retirement_completes() {
             });
             let ReplacementEvent::BlockingClose(closed_sid, release_close) =
                 tokio::time::timeout(std::time::Duration::from_secs(1), events_rx.recv())
-                .await
+                    .await
                     .expect("physical close event must arrive before the test timeout")
-                .expect("physical close must reach the agent")
+                    .expect("physical close must reach the agent")
             else {
                 panic!("expected blocking session/close event");
             };
@@ -9320,7 +9297,10 @@ async fn custom_provider_binding_is_resolved_from_terminal_settings() {
             assert_eq!(selection_id, "custom:provider:model-a");
             assert_eq!(generation, 1);
             assert_eq!(config.base_url, "https://example.test/v1");
-            assert_eq!(config.credential_id.as_deref(), Some("credential-reference"));
+            assert_eq!(
+                config.credential_id.as_deref(),
+                Some("credential-reference")
+            );
         }
         _ => panic!("expected a custom provider binding"),
     }
@@ -10005,9 +9985,7 @@ fn reconcile_never_prunes_a_same_cli_agents_unseen_rows() {
     ));
 
     // The agent that DID list it once, and no longer does, may drop it.
-    let prunable: HashSet<String> = ["in-distro-copilot-row".to_string()]
-        .into_iter()
-        .collect();
+    let prunable: HashSet<String> = ["in-distro-copilot-row".to_string()].into_iter().collect();
     assert!(is_stale_host_history_row(
         &other_agents_row,
         &prunable,

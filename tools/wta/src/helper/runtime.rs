@@ -338,12 +338,10 @@ async fn run_acp_app(
     // One helper-owned policy state is shared by the App reducer and every
     // ACP client connection so settings hot reloads and `/yolo` take effect
     // without process-global state or a helper restart.
-    let yolo_state = Arc::new(std::sync::Mutex::new(
-        crate::app_contracts::YoloState::new(
-            config.auto_approve_tools,
-            config.yolo_command_blocked,
-        ),
-    ));
+    let yolo_state = Arc::new(std::sync::Mutex::new(crate::app_contracts::YoloState::new(
+        config.auto_approve_tools,
+        config.yolo_command_blocked,
+    )));
 
     let local_set = tokio::task::LocalSet::new();
     local_set

@@ -58,17 +58,11 @@ impl PermissionSelectState {
         }
     }
 
-    pub(crate) fn record_from_new_session(
-        &self,
-        resp: &acp::schema::v1::NewSessionResponse,
-    ) {
+    pub(crate) fn record_from_new_session(&self, resp: &acp::schema::v1::NewSessionResponse) {
         self.record_config_options(resp.config_options.as_deref());
     }
 
-    pub(crate) fn record_from_load_session(
-        &self,
-        resp: &acp::schema::v1::LoadSessionResponse,
-    ) {
+    pub(crate) fn record_from_load_session(&self, resp: &acp::schema::v1::LoadSessionResponse) {
         self.record_config_options(resp.config_options.as_deref());
     }
 
@@ -105,9 +99,9 @@ impl PermissionSelectState {
             return Ok(false);
         };
         let value = if enabled { "on" } else { "off" };
-        conn.set_session_config_option(
-            acp::schema::v1::SetSessionConfigOptionRequest::new(session_id, config_id, value),
-        )
+        conn.set_session_config_option(acp::schema::v1::SetSessionConfigOptionRequest::new(
+            session_id, config_id, value,
+        ))
         .await
         .map(|_| true)
     }
@@ -142,8 +136,7 @@ fn allow_all_option_id(opts: &[acp::schema::v1::SessionConfigOption]) -> Option<
                 .collect(),
             _ => return None,
         };
-        (values.contains(&"on") && values.contains(&"off"))
-            .then(|| option.id.0.to_string())
+        (values.contains(&"on") && values.contains(&"off")).then(|| option.id.0.to_string())
     })
 }
 
@@ -202,7 +195,10 @@ mod tests {
         let resp: acp::schema::v1::NewSessionResponse =
             serde_json::from_str(COPILOT_NEW_SESSION).expect("valid new_session");
         state.record_from_new_session(&resp);
-        assert_eq!(state.native_allow_all_config_id().as_deref(), Some("allow_all"));
+        assert_eq!(
+            state.native_allow_all_config_id().as_deref(),
+            Some("allow_all")
+        );
     }
 
     #[test]
@@ -261,7 +257,10 @@ mod tests {
         )
         .expect("valid new_session");
         state.record_from_new_session(&resp);
-        assert_eq!(state.native_allow_all_config_id().as_deref(), Some("allow_all"));
+        assert_eq!(
+            state.native_allow_all_config_id().as_deref(),
+            Some("allow_all")
+        );
     }
 
     #[test]

@@ -54,7 +54,9 @@ enum AgentReconnectState {
 enum AuthRecoveryState {
     #[default]
     Idle,
-    WaitingForMaster { request_id: String },
+    WaitingForMaster {
+        request_id: String,
+    },
     Connecting,
 }
 
@@ -134,8 +136,8 @@ use crate::coordinator::{recommended_choice_index, RecommendationChoice, Recomme
 use crate::pane_context::PaneContext;
 
 use crate::protocol::acp::client::{
-    AgentReconnectRequest, CancelRequest, DropSessionRequest, LoadSessionForTab, NewSessionForTab,
-    AgentLifecycleRequest, PromptSubmission, RenameSessionRequest,
+    AgentLifecycleRequest, AgentReconnectRequest, CancelRequest, DropSessionRequest,
+    LoadSessionForTab, NewSessionForTab, PromptSubmission, RenameSessionRequest,
 };
 use crate::protocol::acp::turn_metrics::prompt_timing_log;
 use crate::ui;
@@ -5053,8 +5055,7 @@ impl App {
         //    this arm is always consumed even if there is no selection.
         if self.command_popup_visible() {
             let selected_agent = self.selected_agent_command_candidate();
-            if let Some(parsed) =
-                agent_command_on_enter(&self.current_tab().input, selected_agent)
+            if let Some(parsed) = agent_command_on_enter(&self.current_tab().input, selected_agent)
             {
                 self.current_tab_mut().clear_input();
                 self.handle_slash_command(parsed);
@@ -5576,7 +5577,7 @@ impl App {
             tab.session_id = None;
         }
         // Every session is about to die with the agent stack; drop any
-    // `/yolo` overrides so a reused session_id cannot inherit stale state.
+        // `/yolo` overrides so a reused session_id cannot inherit stale state.
         self.yolo_state.lock().unwrap().clear_sessions();
         self.pending_yolo_changes.clear();
         let _ = self.restart_tx.send(AgentLifecycleRequest::RestartMaster);

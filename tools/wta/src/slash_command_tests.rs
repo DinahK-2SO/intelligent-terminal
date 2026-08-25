@@ -192,25 +192,14 @@ fn slash_yolo_sets_current_session_and_uses_low_emphasis_status() {
 #[test]
 fn slash_yolo_can_disable_a_globally_enabled_session() {
     let (mut app, mut master_rx) = test_app_with_master_rx();
-    app.yolo_state
-        .lock()
-        .unwrap()
-        .update_runtime(true, false);
+    app.yolo_state.lock().unwrap().update_runtime(true, false);
     app.current_tab_mut().session_id = Some("sid-global-yolo".into());
 
     run_slash_args(&mut app, "yolo", "off");
 
-    assert!(app
-        .yolo_state
-        .lock()
-        .unwrap()
-        .effective("sid-global-yolo"));
+    assert!(app.yolo_state.lock().unwrap().effective("sid-global-yolo"));
     complete_yolo_request(&mut app, &mut master_rx, Ok(()));
-    assert!(!app
-        .yolo_state
-        .lock()
-        .unwrap()
-        .effective("sid-global-yolo"));
+    assert!(!app.yolo_state.lock().unwrap().effective("sid-global-yolo"));
     assert!(matches!(
         app.current_tab().messages.last(),
         Some(ChatMessage::Status(message)) if message == "○ /yolo off"
@@ -225,11 +214,7 @@ fn slash_yolo_without_state_enables_current_session() {
     run_slash(&mut app, "yolo");
 
     complete_yolo_request(&mut app, &mut master_rx, Ok(()));
-    assert!(app
-        .yolo_state
-        .lock()
-        .unwrap()
-        .effective("sid-bare-yolo"));
+    assert!(app.yolo_state.lock().unwrap().effective("sid-bare-yolo"));
     assert!(matches!(
         app.current_tab().messages.last(),
         Some(ChatMessage::Status(message)) if message == "● /yolo on"
@@ -332,10 +317,8 @@ fn session_replacement_cleans_yolo_and_pending_state() {
         .lock()
         .unwrap()
         .set_session_override("old-session".into(), true);
-    app.pending_yolo_changes.insert(
-        "old-session".into(),
-        (true, DEFAULT_TAB_ID.into()),
-    );
+    app.pending_yolo_changes
+        .insert("old-session".into(), (true, DEFAULT_TAB_ID.into()));
 
     app.handle_event(AppEvent::SessionAttached {
         tab_id: DEFAULT_TAB_ID.into(),
@@ -344,11 +327,7 @@ fn session_replacement_cleans_yolo_and_pending_state() {
         current_model_id: None,
     });
 
-    assert!(!app
-        .yolo_state
-        .lock()
-        .unwrap()
-        .effective("old-session"));
+    assert!(!app.yolo_state.lock().unwrap().effective("old-session"));
     assert!(!app.pending_yolo_changes.contains_key("old-session"));
 }
 
