@@ -9,6 +9,7 @@
 #include "CustomModelProviderEntry.g.cpp"
 #include "EnumEntry.h"
 #include "../inc/AcpModelUtils.h"
+#include "../inc/AgentAvailability.h"
 #include "../inc/AgentRegistry.h"
 #include "../inc/AgentHooksStatus.h"
 #include "../inc/CustomAgentId.h"
@@ -171,10 +172,11 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         // installed — the dropdown only offers choices the user can actually
         // launch.
         const auto filteredAcp = Reg::FilteredAcpAgents();
+        const auto availableAcpAgents = ::Microsoft::Terminal::AgentAvailability::ProbeHostAgentIds();
         std::vector<Editor::AgentEntry> acpEntries;
         for (const auto& a : filteredAcp)
         {
-            if (!_IsAgentInstalled(std::wstring{ a.id }.c_str()))
+            if (!availableAcpAgents.contains(std::wstring{ a.id }))
             {
                 continue;
             }
@@ -324,10 +326,9 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         _GlobalSettings.CustomModelProviders(providers);
         _originalCustomModelProviders = std::move(mergedProviders);
 
-        // The clean cloud catalog is independent of configured BYOK providers.
-        // Rebuild the combined list without launching another agent process.
-        _RebuildAcpModelListFromCache();
-        _NotifyChanges(L"CustomModelProviders");
+        // Refresh the clean cloud catalog after adding or removing a provider.
+        _TriggerAcpModelProbe();
+        _NotifyChanges(L"CustomModelProviders", L"ShowCustomModelProvidersExpander");
     }
 
     void AIAgentsViewModel::_RemoveCustomModelProvider(const winrt::hstring& id)
@@ -390,7 +391,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
     {
         IsCustomModelProvidersExpanded(true);
         _isAddingCustomModelProvider = true;
-        _NotifyChanges(L"IsAddingCustomModelProvider");
+        _NotifyChanges(L"IsAddingCustomModelProvider", L"ShowCustomModelProvidersExpander");
     }
 
     bool AIAgentsViewModel::_HasNonWhitespace(const std::wstring_view value) noexcept
@@ -482,6 +483,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         _newCustomModelProviderApiKey.clear();
         _NotifyChanges(
             L"IsAddingCustomModelProvider",
+            L"ShowCustomModelProvidersExpander",
             L"NewCustomModelProviderBaseUrl",
             L"NewCustomModelId",
             L"NewCustomModelProviderApiKey",
@@ -1176,9 +1178,9 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
     // build/scripts/Verify-AgentHooks.ps1 consumes — so the Settings UI
     // and the verify script can never disagree about install state.
     //
-    // The single primary "Install hooks" button still delegates to
-    // `wta install-hooks`; afterwards we re-invoke the status query to
-    // refresh the rows.
+    // The single primary "Install hooks" button delegates to
+    // `wta hooks install --only-missing`; afterwards we re-invoke the status
+    // query to refresh the rows.
 
     // _ResolveWtaExePath and _RunWtaCaptureStdout moved to
     // src/cascadia/inc/WtaProcess.h for shared use.
@@ -1262,7 +1264,6 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
             _showGeminiHookRow = false;
             _showCodexHookRow = false;
             _showOpenCodeHookRow = false;
-            _openCodeHooksPresent = false;
             _copilotHooksSubtitle = {};
             _claudeHooksSubtitle = {};
             _geminiHooksSubtitle = {};
@@ -1283,12 +1284,11 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
             _codexCliDetected = codex && codex->binaryOnPath;
             _openCodeCliDetected = openCode && openCode->binaryOnPath;
 
-            _showCopilotHookRow = AgentHooks::HasHookState(copilot);
-            _showClaudeHookRow = AgentHooks::HasHookState(claude);
-            _showGeminiHookRow = AgentHooks::HasHookState(gemini);
-            _showCodexHookRow = AgentHooks::HasHookState(codex);
-            _openCodeHooksPresent = AgentHooks::HasHookState(openCode);
-            _showOpenCodeHookRow = AgentHooks::ShouldShowDetectedOrConfiguredHookRow(openCode);
+            _showCopilotHookRow = AgentHooks::ShouldShowHookRow(copilot);
+            _showClaudeHookRow = AgentHooks::ShouldShowHookRow(claude);
+            _showGeminiHookRow = AgentHooks::ShouldShowHookRow(gemini);
+            _showCodexHookRow = AgentHooks::ShouldShowHookRow(codex);
+            _showOpenCodeHookRow = AgentHooks::ShouldShowHookRow(openCode);
 
             _copilotHooksSubtitle = _ComputeHooksSubtitle(copilot);
             _claudeHooksSubtitle = _ComputeHooksSubtitle(claude);
@@ -1305,7 +1305,6 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
                        L"IsAnyAgentCliDetected",
                        L"CanInstallAgentHooks",
                        L"CanRemoveAgentHooks",
-                       L"CanRemoveOpenCodeHooks",
                        L"ShowCopilotHookRow",
                        L"ShowClaudeHookRow",
                        L"ShowGeminiHookRow",
@@ -1356,7 +1355,20 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         _installingAgentHooks = true;
         _agentHooksInstallSummary = RS_(L"AIAgents_HooksInstallingSummary");
         _NotifyChanges(L"IsInstallingAgentHooks", L"AgentHooksInstallSummary", L"HasAgentHooksInstallSummary");
-        _RunHooksWtaAsync(L"hooks install");
+        // `--only-missing` builds a per-CLI plan from a status pre-pass:
+        // complete-and-current CLIs are left alone, a complete but
+        // out-of-date bridge is upgraded, and anything missing, partial,
+        // disabled or pointing at a stale path is installed.
+        //
+        // The distinction matters. Re-running `plugin install` on a complete
+        // bridge changes nothing — every CLI answers "already installed" —
+        // costs two Node spawns per CLI, and fails outright when a running
+        // agent CLI holds its plugin directory open, so the button used to be
+        // slow and could report a failure for work that never needed doing.
+        // Routing an out-of-date bridge there would be worse still: it would
+        // no-op and then report success. Upgrading needs `plugin update` /
+        // `extensions update` / a Codex reinstall, which is what wta runs.
+        _RunHooksWtaAsync(L"hooks install --only-missing");
     }
 
     void AIAgentsViewModel::RemoveCopilotHooks()
@@ -1419,9 +1431,10 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         const std::wstring hooksRemovedSummary{ RS_(L"AIAgents_HooksRemovedSummary") };
         const std::wstring hooksInstalledSummary{ RS_(L"AIAgents_HooksInstalledSummary") };
         const auto hooksLogDir = ::IntelligentTerminal::LogDirVersioned();
+        const auto hooksInstallLogPath = (hooksLogDir / L"wta-install-hooks.log").wstring();
         const std::wstring hooksRemovalFailedSummary{ RS_fmt(L"AIAgents_HooksRemovalFailedSummary", hooksLogDir.wstring()) };
         const std::wstring hooksInstallationFailedSummary{
-            RS_fmt(L"AIAgents_HooksInstallationFailedSummary", (hooksLogDir / L"wta-install-hooks.log").wstring())
+            RS_fmt(L"AIAgents_HooksInstallationFailedSummary", hooksInstallLogPath)
         };
         std::wstring summary;
         bool ok = false;
@@ -1433,16 +1446,43 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         {
             summary = locateWtaFailedSummary;
         }
-        else
+        else if (isUninstall)
         {
             ok = ::Microsoft::Terminal::WtaProcess::RunWtaAndWait(wtaPath, wtaArgs, 60'000);
+            summary = ok ? hooksRemovedSummary : hooksRemovalFailedSummary;
+        }
+        else
+        {
+            // Ask for the structured report so a failure can name the CLIs
+            // that failed. wta prints it and *then* exits non-zero, so we
+            // capture output independently of the exit code — and keep
+            // stderr out of it, since the failing run also writes an
+            // `Error: ...` line there that would break the JSON parse.
+            const auto run = ::Microsoft::Terminal::WtaProcess::RunWtaCapture(wtaPath,
+                                                                             wtaArgs + L" --json",
+                                                                             60'000,
+                                                                             nullptr,
+                                                                             /* mergeStderr */ false);
+            ok = run.completed && run.exitCode == 0;
             if (ok)
             {
-                summary = isUninstall ? hooksRemovedSummary : hooksInstalledSummary;
+                summary = hooksInstalledSummary;
             }
             else
             {
-                summary = isUninstall ? hooksRemovalFailedSummary : hooksInstallationFailedSummary;
+                // Fall back to the unattributed message whenever the report
+                // is unreadable or blames no particular CLI — a timeout, a
+                // crash before the report was written, or a failure that
+                // isn't per-CLI all land here.
+                summary = hooksInstallationFailedSummary;
+                if (const auto report = ::Microsoft::Terminal::AgentHooks::ParseInstallReportJson(run.output))
+                {
+                    const auto failed = ::Microsoft::Terminal::AgentHooks::FormatFailedCliList(*report);
+                    if (!failed.empty())
+                    {
+                        summary = RS_fmt(L"AIAgents_HooksInstallationFailedForSummary", failed, hooksInstallLogPath);
+                    }
+                }
             }
         }
 
@@ -1507,6 +1547,15 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         _acpProbing = true;
         _RebuildAcpModelListFromCache();
         const auto cacheRevision = Model::AcpRuntimeState::Current().Revision(agentId);
+        const auto telemetryAgentId = _StartsWithCustom(agentId) ? winrt::hstring{ L"custom" } : agentId;
+        TraceLoggingWrite(
+            g_hTerminalSettingsEditorProvider,
+            "AcpModelProbeStarted",
+            TraceLoggingDescription("A clean ACP model catalog probe started"),
+            TraceLoggingLevel(WINEVENT_LEVEL_INFO),
+            TraceLoggingWideString(telemetryAgentId.c_str(), "AgentId"),
+            TraceLoggingUInt64(cacheRevision, "CacheRevision"),
+            TelemetryPrivacyDataTag(PDT_ProductAndServicePerformance));
         _RunAcpModelProbeAsync(agentId, cmdline, _acpProbeGeneration, cacheRevision);
     }
 
@@ -1559,16 +1608,35 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
 
         co_await wil::resume_foreground(dispatcher);
 
+        const auto telemetryAgentId = _StartsWithCustom(agentId) ? winrt::hstring{ L"custom" } : agentId;
+
         // Drop stale results — a newer probe is already in flight
         // for a different agent and we'd clobber its eventual write.
         if (generation != _acpProbeGeneration)
         {
+            TraceLoggingWrite(
+                g_hTerminalSettingsEditorProvider,
+                "AcpModelProbeDiscarded",
+                TraceLoggingDescription("An ACP model catalog probe result was superseded"),
+                TraceLoggingLevel(WINEVENT_LEVEL_INFO),
+                TraceLoggingWideString(telemetryAgentId.c_str(), "AgentId"),
+                TelemetryPrivacyDataTag(PDT_ProductAndServicePerformance));
             co_return;
         }
 
         _acpProbing = false;
+        const auto probeSucceeded = catalog && !parsed.empty();
+        TraceLoggingWrite(
+            g_hTerminalSettingsEditorProvider,
+            "AcpModelProbeCompleted",
+            TraceLoggingDescription("A clean ACP model catalog probe completed"),
+            TraceLoggingLevel(WINEVENT_LEVEL_INFO),
+            TraceLoggingWideString(telemetryAgentId.c_str(), "AgentId"),
+            TraceLoggingBool(probeSucceeded, "Succeeded"),
+            TraceLoggingUInt32(gsl::narrow_cast<uint32_t>(parsed.size()), "ModelCount"),
+            TelemetryPrivacyDataTag(PDT_ProductAndServicePerformance));
 
-        if (catalog && !parsed.empty())
+        if (probeSucceeded)
         {
             auto view = winrt::single_threaded_vector(std::move(parsed)).GetView();
             if (!Model::AcpRuntimeState::Current().TrySetAvailableModels(agentId, cacheRevision, view, currentId))
