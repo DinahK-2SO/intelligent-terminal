@@ -758,19 +758,17 @@ fn prepare_native_cloud_catalog(
     }
 }
 
-async fn inject_ready_cloud_catalog(
+async fn add_ready_cloud_catalog(
     agent: &AgentCli,
-    meta: &mut Option<acp::schema::v1::Meta>,
+    wta_meta: &mut crate::session_registry::WtaMeta,
 ) -> Result<(), serde_json::Error> {
     let catalog = agent.cloud_catalog.lock().await;
     let NativeCloudCatalogState::Ready(catalog) = &*catalog else {
         return Ok(());
     };
-    crate::protocol::acp::model_select::inject_wta_cloud_catalog(
-        meta,
-        &catalog.models,
-        catalog.source.as_str(),
-    )
+    wta_meta.cloud_models = Some(serde_json::to_string(&catalog.models)?);
+    wta_meta.cloud_models_source = Some(catalog.source.as_str().to_string());
+    Ok(())
 }
 
 async fn initialize_response_for_agent(
@@ -778,15 +776,13 @@ async fn initialize_response_for_agent(
     session_mcp_available: bool,
 ) -> Result<acp::schema::v1::InitializeResponse, serde_json::Error> {
     let mut response = agent.cached_init_resp.clone();
-    inject_ready_cloud_catalog(agent, &mut response.meta).await?;
-    crate::session_registry::inject_wta_meta(
-        &mut response.meta,
-        &crate::session_registry::WtaMeta {
-            resolved_agent_id: Some(agent.resolved_agent_id.clone()),
-            proposal_mcp: session_mcp_available.then(|| "http-v1".to_string()),
-            ..Default::default()
-        },
-    );
+    let mut wta_meta = crate::session_registry::WtaMeta {
+        resolved_agent_id: Some(agent.resolved_agent_id.clone()),
+        proposal_mcp: session_mcp_available.then(|| "http-v1".to_string()),
+        ..Default::default()
+    };
+    add_ready_cloud_catalog(agent, &mut wta_meta).await?;
+    crate::session_registry::inject_wta_meta(&mut response.meta, &wta_meta);
     Ok(response)
 }
 

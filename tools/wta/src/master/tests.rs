@@ -342,6 +342,55 @@ async fn delayed_clean_probe_does_not_block_initialize_and_notifies_bound_helper
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn initialize_response_preserves_ready_cloud_catalog_with_identity_and_proposal_meta() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            let config_hit = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let legacy_hit = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let agent = AgentCli {
+                instance_id: AgentInstanceId::new_v4(),
+                resolved_agent_id: "copilot".to_string(),
+                conn: client_connection_to_model_agent(false, config_hit, legacy_hit),
+                cached_init_resp: acp::schema::v1::InitializeResponse::new(
+                    acp::schema::ProtocolVersion::V1,
+                ),
+                cli_source: Some(crate::agent_sessions::CliSource::Copilot),
+                source: crate::agent_source::AgentSource::Host,
+                cmd_key: "ready-catalog-agent".to_string(),
+                cloud_catalog: Mutex::new(NativeCloudCatalogState::Ready(
+                    NativeCloudCatalog {
+                        models: vec![crate::app::AcpModelInfo {
+                            id: "cloud-ready".to_string(),
+                            name: "Cloud Ready".to_string(),
+                            description: None,
+                        }],
+                        source: CloudCatalogSource::Helper,
+                    },
+                )),
+                bound_helpers: Mutex::new(HashSet::new()),
+            };
+
+            let mut response = initialize_response_for_agent(&agent, true)
+                .await
+                .expect("initialize metadata serializes");
+            let wta_meta = crate::session_registry::extract_wta_meta(&mut response.meta);
+            let catalog =
+                crate::protocol::acp::model_select::cloud_catalog_from_wta_meta(&wta_meta);
+
+            assert_eq!(
+                catalog.models.len(),
+                1,
+                "identity metadata must preserve the catalog"
+            );
+            assert_eq!(catalog.models[0].id, "cloud-ready");
+            assert_eq!(catalog.source.as_deref(), Some("helper"));
+            assert_eq!(wta_meta.resolved_agent_id.as_deref(), Some("copilot"));
+            assert_eq!(wta_meta.proposal_mcp.as_deref(), Some("http-v1"));
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn failed_clean_probe_is_recorded_without_catalog_delivery() {
     tokio::task::LocalSet::new()
         .run_until(async {
