@@ -661,11 +661,7 @@ impl App {
                 for replaced_session_id in replaced_session_ids {
                     self.session_to_tab.remove(&replaced_session_id);
                     self.session_model_configs.remove(&replaced_session_id);
-                    self.yolo_state
-                        .lock()
-                        .unwrap()
-                        .remove_session(&replaced_session_id);
-                    self.pending_yolo_changes.remove(&replaced_session_id);
+                    self.clear_yolo_session_state(&replaced_session_id);
                     self.session_config_options.remove(&replaced_session_id);
                 }
                 self.session_to_tab
@@ -721,6 +717,26 @@ impl App {
                         self.send_session_model(Some(session_id.clone()), model, false);
                     }
                 }
+                let yolo_enabled = self.yolo_state.lock().unwrap().effective(&session_id);
+                let fail_closed = !yolo_enabled;
+                if self
+                    .master_request_tx
+                    .send(
+                        crate::protocol::acp::client::MasterExtRequest::ReconcileSessionYolo {
+                            sessions: vec![(
+                                agent_client_protocol::schema::v1::SessionId::new(
+                                    session_id.clone(),
+                                ),
+                                yolo_enabled,
+                            )],
+                            fail_closed,
+                        },
+                    )
+                    .is_err()
+                    && fail_closed
+                {
+                    let _ = self.restart_tx.send(AgentLifecycleRequest::RestartMaster);
+                }
                 self.publish_agent_status();
             }
             AppEvent::UsageReported {
@@ -775,7 +791,7 @@ impl App {
                     tracing::error!(
                         target: "yolo",
                         error = %result.unwrap_err(),
-                        "cannot disable native allow-all; restarting agent stack fail-closed"
+                        "cannot disable provider-native Yolo; restarting agent stack fail-closed"
                     );
                     let _ = self
                         .restart_tx

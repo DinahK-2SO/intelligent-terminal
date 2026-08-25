@@ -47,8 +47,8 @@ pub enum CommandKind {
     /// Move this tab's agent pane without changing the global pane-position
     /// setting or any other tab.
     Move,
-    /// Enable "yolo mode" (auto-approve tool calls) for this tab's *current*
-    /// ACP session. Bare `/yolo` means on; `/yolo on|off` keeps the state
+    /// Enable the provider-advertised ACP Yolo mode for this tab's current
+    /// session. Bare `/yolo` means on; `/yolo on|off` keeps the state
     /// explicit. Does not persist across `/new` and is refused when the
     /// `AllowYoloMode` admin policy blocks it. See `App::cmd_yolo`.
     Yolo,

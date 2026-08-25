@@ -29,12 +29,12 @@ fn complete_yolo_request(
     result: Result<(), &str>,
 ) {
     let request = master_rx.try_recv().expect("a yolo request was queued");
-    let crate::protocol::acp::client::MasterExtRequest::SetSessionAllowAll {
+    let crate::protocol::acp::client::MasterExtRequest::SetSessionYolo {
         session_id,
         enabled,
     } = request
     else {
-        panic!("expected SetSessionAllowAll");
+        panic!("expected SetSessionYolo");
     };
     app.handle_event(AppEvent::YoloModeChangeCompleted {
         session_id: session_id.to_string(),
@@ -260,12 +260,12 @@ fn runtime_global_change_reconciles_live_sessions_and_preserves_override() {
     app.apply_runtime_yolo_config(Some(true), Some(false));
 
     let request = master_rx.try_recv().expect("reconcile request");
-    let MasterExtRequest::ReconcileSessionAllowAll {
+    let MasterExtRequest::ReconcileSessionYolo {
         sessions,
         fail_closed,
     } = request
     else {
-        panic!("expected ReconcileSessionAllowAll");
+        panic!("expected ReconcileSessionYolo");
     };
     assert!(fail_closed, "the explicit off session must fail closed");
     assert!(sessions
@@ -274,6 +274,34 @@ fn runtime_global_change_reconciles_live_sessions_and_preserves_override() {
     assert!(sessions
         .iter()
         .any(|(session, enabled)| session.0.as_ref() == "explicit-off" && !*enabled));
+}
+
+#[test]
+fn runtime_change_cancels_stale_pending_yolo_ack() {
+    let (mut app, mut master_rx) = test_app_with_master_rx();
+    let session_id = "pending-runtime-session";
+    app.current_tab_mut().session_id = Some(session_id.into());
+    app.session_to_tab
+        .insert(session_id.into(), DEFAULT_TAB_ID.into());
+    app.yolo_state.lock().unwrap().update_runtime(true, false);
+    app.yolo_state
+        .lock()
+        .unwrap()
+        .set_session_override(session_id.into(), false);
+
+    run_slash_args(&mut app, "yolo", "on");
+    let request = master_rx.try_recv().expect("slash request");
+    assert!(matches!(request, MasterExtRequest::SetSessionYolo { .. }));
+
+    app.apply_runtime_yolo_config(Some(false), Some(false));
+    assert!(!app.pending_yolo_changes.contains_key(session_id));
+
+    app.handle_event(AppEvent::YoloModeChangeCompleted {
+        session_id: session_id.into(),
+        enabled: true,
+        result: Ok(()),
+    });
+    assert!(!app.yolo_state.lock().unwrap().effective(session_id));
 }
 
 #[test]
@@ -290,12 +318,12 @@ fn runtime_policy_block_forces_off_and_clears_session_override() {
 
     assert!(!app.yolo_state.lock().unwrap().effective("session"));
     let request = master_rx.try_recv().expect("reconcile request");
-    let MasterExtRequest::ReconcileSessionAllowAll {
+    let MasterExtRequest::ReconcileSessionYolo {
         sessions,
         fail_closed,
     } = request
     else {
-        panic!("expected ReconcileSessionAllowAll");
+        panic!("expected ReconcileSessionYolo");
     };
     assert!(fail_closed);
     assert_eq!(sessions.len(), 1);
@@ -329,6 +357,32 @@ fn session_replacement_cleans_yolo_and_pending_state() {
 
     assert!(!app.yolo_state.lock().unwrap().effective("old-session"));
     assert!(!app.pending_yolo_changes.contains_key("old-session"));
+}
+
+#[test]
+fn session_attach_reconciles_latest_yolo_state() {
+    let (mut app, mut master_rx) = test_app_with_master_rx();
+    app.yolo_state.lock().unwrap().update_runtime(true, false);
+
+    app.handle_event(AppEvent::SessionAttached {
+        tab_id: DEFAULT_TAB_ID.into(),
+        session_id: "new-yolo-session".into(),
+        available_models: Vec::new(),
+        current_model_id: None,
+    });
+
+    let request = master_rx.try_recv().expect("attach reconcile request");
+    let MasterExtRequest::ReconcileSessionYolo {
+        sessions,
+        fail_closed,
+    } = request
+    else {
+        panic!("expected ReconcileSessionYolo");
+    };
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].0 .0.as_ref(), "new-yolo-session");
+    assert!(sessions[0].1);
+    assert!(!fail_closed);
 }
 
 #[test]

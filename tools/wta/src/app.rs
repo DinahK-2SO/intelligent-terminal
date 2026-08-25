@@ -1069,8 +1069,8 @@ pub struct App {
     debug_capture_enabled: Arc<AtomicBool>,
     /// Cached for creating DeferredAcpParams after auth-error recovery.
     shell_mgr: Arc<crate::shell::ShellManager>,
-    /// Global "Yolo mode" — set once at startup from `--auto-approve-tools`
-    /// Helper-owned YOLO policy shared with the ACP client. The global
+    /// Global provider-native Yolo preference, set at startup from
+    /// `--auto-approve-tools`. Helper-owned policy is shared with the ACP client. The global
     /// default is hot-updatable; explicit per-session values override it.
     yolo_state: crate::app_contracts::SharedYoloState,
     /// Native permission-mode changes awaiting an ACP acknowledgement.
@@ -1600,7 +1600,6 @@ impl App {
                             crate::agent_registry::resolve_agent_id_from_cmd(command).to_string()
                         })
                 });
-                let yolo_state = Arc::clone(&self.yolo_state);
 
                 if let Some(pipe_name) = pipe_name_opt {
                     // Pipe-mode reconnect (helper after FRE login).
@@ -1650,7 +1649,6 @@ impl App {
                             shell_mgr,
                             wt_connected,
                             post_login_auth, // only true on genuine LoginComplete reconnects
-                            yolo_state,
                             proposal_channels,
                         )
                         .await
@@ -5225,8 +5223,8 @@ impl App {
         tab.scroll_to_bottom();
         // Drop the stale session_id from the yolo override set: `/yolo`
         // deliberately does not persist across `/new` — a fresh ACP session
-        // means a fresh permission-prompt policy, requiring `/yolo` again if
-        // the user wants auto-approve for the new conversation.
+        // means a fresh provider mode, requiring `/yolo` again if the user
+        // wants provider-native Yolo for the new conversation.
         if let Some(old_sid) = old_sid {
             self.yolo_state.lock().unwrap().remove_session(&old_sid);
             self.pending_yolo_changes.remove(&old_sid);
@@ -5396,7 +5394,7 @@ impl App {
     /// scoped to *this tab's current* ACP session only (keyed by
     /// `session_id`, not `tab_id`). Deliberately does **not** persist across
     /// `/new`: a fresh session gets a fresh session_id, which is simply not
-    /// in the auto-approve set, so no explicit re-`/yolo` bookkeeping is
+    /// in the override map, so no explicit re-`/yolo` bookkeeping is
     /// needed there beyond the cleanup already done in `cmd_new`.
     ///
     /// Refused (with a policy message, no state change) when
@@ -5436,7 +5434,7 @@ impl App {
             if self
                 .master_request_tx
                 .send(
-                    crate::protocol::acp::client::MasterExtRequest::SetSessionAllowAll {
+                    crate::protocol::acp::client::MasterExtRequest::SetSessionYolo {
                         session_id: agent_client_protocol::schema::v1::SessionId::new(sid.clone()),
                         enabled,
                     },
@@ -5452,7 +5450,7 @@ impl App {
         }
         // If there's no session yet (pane still connecting), `/yolo` is a
         // no-op beyond nothing above running: this tab's session_id isn't
-        // known yet, so there is no session override or native allow-all
+        // known yet, so there is no session override or native capability
         // config to update. The current global default is the only state that
         // covers a session created after this point;
         // there is currently no queued/pending state that makes a `/yolo`
@@ -5484,9 +5482,7 @@ impl App {
             let mut state = self.yolo_state.lock().unwrap();
             state.update_runtime(global_default, policy_blocked);
         }
-        if policy_blocked {
-            self.pending_yolo_changes.clear();
-        }
+        self.pending_yolo_changes.clear();
 
         let sessions = {
             let state = self.yolo_state.lock().unwrap();
@@ -5504,7 +5500,7 @@ impl App {
         if self
             .master_request_tx
             .send(
-                crate::protocol::acp::client::MasterExtRequest::ReconcileSessionAllowAll {
+                crate::protocol::acp::client::MasterExtRequest::ReconcileSessionYolo {
                     sessions,
                     fail_closed,
                 },
@@ -5558,6 +5554,11 @@ impl App {
             }
         }
         self.tab_mut(&tab_id).scroll_to_bottom();
+    }
+
+    fn clear_yolo_session_state(&mut self, session_id: &str) {
+        self.yolo_state.lock().unwrap().remove_session(session_id);
+        self.pending_yolo_changes.remove(session_id);
     }
 
     /// `/restart` asks Windows Terminal to replace the shared master and Agent
@@ -5743,6 +5744,7 @@ impl App {
         if let Some(session_id) = removed.as_ref().and_then(|tab| tab.session_id.as_ref()) {
             self.session_model_configs.remove(session_id);
             self.session_config_options.remove(session_id);
+            self.clear_yolo_session_state(session_id);
         }
         self.session_to_tab.retain(|_, tab| tab != closed_tab_id);
 
@@ -5972,6 +5974,7 @@ impl App {
         if let Some(session_id) = removed_session_id {
             self.session_model_configs.remove(&session_id);
             self.session_config_options.remove(&session_id);
+            self.clear_yolo_session_state(&session_id);
         }
 
         // Prune the reverse SessionId → tab routing so late ACP chunks for

@@ -343,12 +343,7 @@ fn connect_with(
         event_tx,
         shell_mgr: Arc::new(ShellManager::new()),
         prompt_timing: Arc::new(PromptTimingState::default()),
-        yolo_state: Arc::new(Mutex::new(crate::app_contracts::YoloState::new(
-            false, false,
-        ))),
-        permission_select: Arc::new(
-            crate::protocol::acp::permission_select::PermissionSelectState::new(),
-        ),
+        native_yolo: Arc::new(crate::protocol::acp::native_yolo::NativeYoloState::new()),
         provider_probe_capture: ProviderProbeCapture::default(),
         standard_usage_sessions: Mutex::new(HashSet::new()),
         proposal_channels: Arc::new(
@@ -712,12 +707,7 @@ fn connect_for_dispatch(behavior: MockBehavior) -> DispatchHarness {
         event_tx: event_tx.clone(),
         shell_mgr: shell_mgr.clone(),
         prompt_timing: prompt_timing.clone(),
-        yolo_state: Arc::new(Mutex::new(crate::app_contracts::YoloState::new(
-            false, false,
-        ))),
-        permission_select: Arc::new(
-            crate::protocol::acp::permission_select::PermissionSelectState::new(),
-        ),
+        native_yolo: Arc::new(crate::protocol::acp::native_yolo::NativeYoloState::new()),
         provider_probe_capture: ProviderProbeCapture::default(),
         standard_usage_sessions: Mutex::new(HashSet::new()),
         proposal_channels: Arc::clone(&proposal_channels),
@@ -1320,6 +1310,7 @@ async fn dispatch_drop_session_closes_unbinds_and_fires_cancel_then_ignores_miss
                 &tab_to_session,
                 &memo,
                 &cancel_signals,
+                &h.client.state,
             )
             .await;
 
@@ -1359,6 +1350,7 @@ async fn dispatch_drop_session_closes_unbinds_and_fires_cancel_then_ignores_miss
                 &tab_to_session,
                 &memo,
                 &cancel_signals,
+                &h.client.state,
             )
             .await;
             assert!(tab_to_session.lock().await.is_empty());
@@ -1395,6 +1387,7 @@ async fn dispatch_drop_session_closes_unbinds_and_fires_cancel_then_ignores_miss
                 &tab_to_session,
                 &memo,
                 &cancel_signals,
+                &h.client.state,
             )
             .await;
 
@@ -1889,28 +1882,21 @@ fn bare_client() -> (WtaClient, mpsc::UnboundedReceiver<AppEvent>) {
     bare_client_with_yolo(false, &[])
 }
 
-/// Like [`bare_client`], but lets tests configure the yolo-mode auto-approve
-/// state exercised by `request_permission`: `global` mirrors the
+/// Like [`bare_client`], but lets tests configure provider-native Yolo state
+/// while proving `request_permission` remains interactive. `global` mirrors the
 /// `--auto-approve-tools` helper flag, and `yolo_session_ids` seeds the
 /// per-session `/yolo` override set (as if `/yolo` had already been run in
 /// those sessions).
 fn bare_client_with_yolo(
-    global: bool,
-    yolo_session_ids: &[&str],
+    _global: bool,
+    _yolo_session_ids: &[&str],
 ) -> (WtaClient, mpsc::UnboundedReceiver<AppEvent>) {
     let (event_tx, event_rx) = mpsc::unbounded_channel();
-    let mut yolo = crate::app_contracts::YoloState::new(global, false);
-    for session_id in yolo_session_ids {
-        yolo.set_session_override((*session_id).to_string(), !global);
-    }
     let state = Arc::new(ClientState {
         event_tx,
         shell_mgr: Arc::new(ShellManager::new()),
         prompt_timing: Arc::new(PromptTimingState::default()),
-        yolo_state: Arc::new(Mutex::new(yolo)),
-        permission_select: Arc::new(
-            crate::protocol::acp::permission_select::PermissionSelectState::new(),
-        ),
+        native_yolo: Arc::new(crate::protocol::acp::native_yolo::NativeYoloState::new()),
         provider_probe_capture: ProviderProbeCapture::default(),
         standard_usage_sessions: Mutex::new(HashSet::new()),
         proposal_channels: Arc::new(
@@ -3109,76 +3095,69 @@ async fn request_permission_cancelled_when_responder_dropped() {
         })
         .await;
 }
-// ── yolo mode (auto-approve tool calls) ──────────────────────────────────
+// ── provider-native Yolo mode ────────────────────────────────────────────
 
-/// Global `--auto-approve-tools` yolo mode: `request_permission` must
-/// resolve immediately with the offered `AllowOnce` option, without ever
-/// emitting a `PermissionRequest` event (i.e. no UI prompt at all).
 #[tokio::test]
-async fn request_permission_global_yolo_auto_approves_without_prompt() {
-    let (client, mut rx) = bare_client_with_yolo(true, &[]);
-    let resp = client
-        .request_permission(permission_request("s1"))
-        .await
-        .unwrap();
-    match resp.outcome {
-        acp::schema::v1::RequestPermissionOutcome::Selected(sel) => {
-            assert_eq!(sel.option_id.to_string(), "allow-once");
-        }
-        _ => panic!("expected Selected outcome"),
-    }
-    // Auto-approval is silent — no chat notification, no PermissionRequest.
-    assert!(
-        rx.try_recv().is_err(),
-        "no event should ever be sent in yolo mode"
-    );
-}
-
-/// Per-session `/yolo`: a session_id present in `yolo_sessions` is
-/// auto-approved even when the global flag is off; a session_id NOT in the
-/// set still goes through the normal interactive `PermissionRequest` flow.
-#[tokio::test]
-async fn request_permission_session_yolo_is_scoped_to_that_session_only() {
-    let (client, mut rx) = bare_client_with_yolo(false, &["s1"]);
-
-    // s1 is in the yolo set → auto-approved, no prompt.
-    let resp = client
-        .request_permission(permission_request("s1"))
-        .await
-        .unwrap();
-    assert!(matches!(
-        resp.outcome,
-        acp::schema::v1::RequestPermissionOutcome::Selected(_)
-    ));
-    // Silent auto-approval — no chat notification sent for s1.
-    assert!(rx.try_recv().is_err());
-
-    // s2 is NOT in the yolo set → falls back to the normal blocking prompt.
+async fn request_permission_yolo_still_prompts_for_provider_permission() {
     let local = tokio::task::LocalSet::new();
     local
         .run_until(async {
+            let (client, mut rx) = bare_client_with_yolo(true, &[]);
             let handle = tokio::task::spawn_local(async move {
-                client.request_permission(permission_request("s2")).await
+                client.request_permission(permission_request("s1")).await
             });
+
             match rx.recv().await {
-                Some(AppEvent::PermissionRequest {
-                    session_id,
-                    responder,
-                    ..
-                }) => {
-                    assert_eq!(session_id, "s2");
+                Some(AppEvent::PermissionRequest { responder, .. }) => {
                     responder.send("allow-once".to_string()).unwrap();
                 }
                 other => panic!(
-                    "expected PermissionRequest for the non-yolo session, got is_some={}",
+                    "expected interactive PermissionRequest, got is_some={}",
                     other.is_some()
                 ),
             }
-            let resp = handle.await.unwrap().unwrap();
+
+            let response = handle.await.unwrap().unwrap();
             assert!(matches!(
-                resp.outcome,
+                response.outcome,
                 acp::schema::v1::RequestPermissionOutcome::Selected(_)
             ));
+        })
+        .await;
+}
+
+#[tokio::test]
+async fn request_permission_session_yolo_never_answers_provider_permissions() {
+    let (client, mut rx) = bare_client_with_yolo(false, &["s1"]);
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            for session_id in ["s1", "s2"] {
+                let request = permission_request(session_id);
+                let handle = tokio::task::spawn_local({
+                    let client = client.clone();
+                    async move { client.request_permission(request).await }
+                });
+                match rx.recv().await {
+                    Some(AppEvent::PermissionRequest {
+                        session_id: prompted_session,
+                        responder,
+                        ..
+                    }) => {
+                        assert_eq!(prompted_session, session_id);
+                        responder.send("allow-once".to_string()).unwrap();
+                    }
+                    other => panic!(
+                        "expected PermissionRequest for {session_id}, got is_some={}",
+                        other.is_some()
+                    ),
+                }
+                let response = handle.await.unwrap().unwrap();
+                assert!(matches!(
+                    response.outcome,
+                    acp::schema::v1::RequestPermissionOutcome::Selected(_)
+                ));
+            }
         })
         .await;
 }
@@ -3217,11 +3196,9 @@ async fn request_permission_session_yolo_can_override_global_on() {
         .await;
 }
 
-/// Fallback YOLO must choose `allow_once` even when `allow_always` is offered,
-/// because the latter cannot be revoked by `/yolo off`.
 #[tokio::test]
-async fn request_permission_yolo_uses_reversible_allow_once() {
-    let (client, _rx) = bare_client_with_yolo(true, &[]);
+async fn request_permission_yolo_does_not_choose_allow_once() {
+    let (client, mut rx) = bare_client_with_yolo(true, &[]);
     let req = acp::schema::v1::RequestPermissionRequest::new(
         acp::schema::v1::SessionId::new("s1"),
         acp::schema::v1::ToolCallUpdate::new(
@@ -3241,13 +3218,22 @@ async fn request_permission_yolo_uses_reversible_allow_once() {
             ),
         ],
     );
-    let resp = client.request_permission(req).await.unwrap();
-    match resp.outcome {
-        acp::schema::v1::RequestPermissionOutcome::Selected(sel) => {
-            assert_eq!(sel.option_id.to_string(), "allow-once");
-        }
-        _ => panic!("expected Selected outcome"),
-    }
+    tokio::task::LocalSet::new()
+        .run_until(async move {
+            let handle =
+                tokio::task::spawn_local(async move { client.request_permission(req).await });
+            match rx.recv().await {
+                Some(AppEvent::PermissionRequest { responder, .. }) => {
+                    responder.send("allow-once".to_string()).unwrap();
+                }
+                other => panic!(
+                    "expected interactive PermissionRequest, got is_some={}",
+                    other.is_some()
+                ),
+            }
+            assert!(handle.await.unwrap().is_ok());
+        })
+        .await;
 }
 
 #[tokio::test]

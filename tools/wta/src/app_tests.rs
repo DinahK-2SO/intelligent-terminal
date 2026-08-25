@@ -223,6 +223,26 @@ fn tab_close_drops_state_and_requests_acp_session_close() {
 }
 
 #[test]
+fn tab_close_drops_yolo_override_and_pending_change() {
+    let (mut app, _drop_session_rx) = test_app_with_drop_session_rx();
+    let tab_id = "closed-yolo-tab";
+    let session_id = "reused-yolo-session";
+    app.tab_id = Some(tab_id.to_string());
+    app.current_tab_mut().session_id = Some(session_id.to_string());
+    app.yolo_state
+        .lock()
+        .unwrap()
+        .set_session_override(session_id.to_string(), true);
+    app.pending_yolo_changes
+        .insert(session_id.to_string(), (true, tab_id.to_string()));
+
+    app.drop_tab_session(tab_id);
+
+    assert!(!app.yolo_state.lock().unwrap().effective(session_id));
+    assert!(!app.pending_yolo_changes.contains_key(session_id));
+}
+
+#[test]
 fn cross_window_tab_close_only_requests_master_cleanup() {
     let (mut app, mut drop_session_rx) = test_app_with_drop_session_rx();
     app.window_id = Some("window-a".to_string());
@@ -268,6 +288,26 @@ fn reset_tab_session_clears_local_binding_without_duplicate_master_close() {
         !request.notify_master,
         "the master consumes WT reset events directly and owns physical close"
     );
+}
+
+#[test]
+fn reset_tab_session_drops_yolo_override_and_pending_change() {
+    let (mut app, _drop_session_rx) = test_app_with_drop_session_rx();
+    let tab_id = "reset-yolo-tab";
+    let session_id = "reused-reset-session";
+    app.tab_id = Some(tab_id.to_string());
+    app.current_tab_mut().session_id = Some(session_id.to_string());
+    app.yolo_state
+        .lock()
+        .unwrap()
+        .set_session_override(session_id.to_string(), true);
+    app.pending_yolo_changes
+        .insert(session_id.to_string(), (false, tab_id.to_string()));
+
+    app.reset_tab_session_for(tab_id);
+
+    assert!(!app.yolo_state.lock().unwrap().effective(session_id));
+    assert!(!app.pending_yolo_changes.contains_key(session_id));
 }
 
 fn agent_paste_params(window_id: &str, tab_id: &str) -> serde_json::Value {

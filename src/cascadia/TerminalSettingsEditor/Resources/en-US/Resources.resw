@@ -829,14 +829,12 @@ In this context, "agent" refers to an AI agent (e.g. Copilot, Claude, Gemini), n
     <comment>Value shown in the agent pane position dropdown (selects which side of the terminal the agent pane opens on). Translation should match the existing FreOverlay_PanePositionLeft string used in the first-run experience.</comment>
   </data>
   <data name="AIAgents_YoloMode.Header" xml:space="preserve">
-    <value>Auto-approve tool calls (Yolo mode)</value>
-    <comment>Header for the global setting that makes every agent pane skip its permission prompt and auto-approve tool calls. 
-In this context, "agent" refers to an AI agent (e.g. Copilot, Claude, Gemini), not a human agent or representative.</comment>
+    <value>Use provider Yolo mode</value>
+    <comment>{Locked="ACP","Yolo"} Header for the global setting that asks each AI agent provider to enable its advertised ACP session Yolo capability.</comment>
   </data>
   <data name="AIAgents_YoloMode.HelpText" xml:space="preserve">
-    <value>The agent runs commands and edits files without asking for confirmation. Only enable this if you trust the agent and the environment it's running in.</value>
-    <comment>Supplementary risk-warning description for the Yolo mode setting, shown under the toggle. 
-In this context, "agent" refers to an AI agent (e.g. Copilot, Claude, Gemini), not a human agent or representative.</comment>
+    <value>Uses the agent provider's ACP session mode to reduce or bypass confirmations. The provider defines the resulting permissions, sandbox, file access, and network access. Providers without a supported mode continue to ask for permission.</value>
+    <comment>{Locked="ACP","Yolo"} Risk warning shown under the Yolo toggle. Here provider means the selected AI agent provider, not a network provider.</comment>
   </data>
   <data name="AIAgents_HooksInstall.Header" xml:space="preserve">
     <value>Agent session tracking (hooks)</value>

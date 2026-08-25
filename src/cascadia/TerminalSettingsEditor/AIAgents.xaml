@@ -290,12 +290,10 @@
                           Style="{StaticResource ComboBoxSettingStyle}" />
             </local:SettingContainer>
 
-            <!--  Global "Yolo mode": every agent pane auto-approves tool-call
-                  permission requests without prompting. High-risk toggle, so
-                  it is disabled outright (IsYoloModePolicyLocked) when the
-                  AllowYoloMode GPO policy blocks it — matching the
-                  auto-fix policy-lock pattern below (AIAgents_PolicyLocked
-                  caption).  -->
+            <!--  Global Yolo preference: asks supported providers to enable
+                their advertised ACP session mode. High-risk toggle, so it
+                is disabled outright (IsYoloModePolicyLocked) when the
+                AllowYoloMode GPO policy blocks it.  -->
             <local:SettingContainer x:Name="AgentPaneYoloMode"
                                     x:Uid="AIAgents_YoloMode">
                 <StackPanel>
