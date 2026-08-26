@@ -339,7 +339,7 @@ async fn run_acp_app(
     // ACP client connection so settings hot reloads and `/yolo` take effect
     // without process-global state or a helper restart.
     let yolo_state = Arc::new(std::sync::Mutex::new(crate::app_contracts::YoloState::new(
-        config.auto_approve_tools,
+        config.yolo_mode,
         config.yolo_command_blocked,
     )));
 

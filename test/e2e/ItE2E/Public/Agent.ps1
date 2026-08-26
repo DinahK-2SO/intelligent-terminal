@@ -209,12 +209,15 @@ function Wait-TerminalActionProposal {
         Wait until the Helper presents a canonical proposal for a Run/Insert/Cancel decision.
     .DESCRIPTION
         Supports both proposal transports. The legacy CLI blocks in
-        `propose-terminal-actions`; the session-bound MCP path logs its approved internal
-        permission and then renders the recommendation card without a child CLI process.
+        `propose-terminal-actions`; the session-bound MCP path either renders the
+        recommendation card directly or first presents the provider's normal permission
+        UI. With -ReturnOnPermission, the latter returns Mode=Permission without selecting
+        an option; the caller must simulate an explicit user choice.
     #>
     [CmdletBinding()] param(
         [Parameter(Mandatory, ValueFromPipeline)]$App,
-        [int]$TimeoutSec = 45
+        [int]$TimeoutSec = 45,
+        [switch]$ReturnOnPermission
     )
     process {
         Wait-Until -TimeoutSec $TimeoutSec -IntervalSec 0.5 -Because 'a pending terminal-action proposal' -Condition {
@@ -226,9 +229,14 @@ function Wait-TerminalActionProposal {
                 return Get-CimInstance Win32_Process -Filter "ProcessId = $($candidate.ProcessId)" -ErrorAction SilentlyContinue |
                     Where-Object { $_.CommandLine -match '(?i)(?:^|\s)propose-terminal-actions(?:\s|$)' }
             }
-            if ($log -match 'proposal_permission: silently resolving proposal MCP permission.*approved=true' -and
-                (Get-AgentPaneText -App $App -MaxLines 60) -match (Get-RecommendationCardRegex)) {
+            $paneText = Get-AgentPaneText -App $App -MaxLines 60
+            if ($paneText -match (Get-RecommendationCardRegex)) {
                 return [pscustomobject]@{ Mode = 'Mcp'; Ready = $true }
+            }
+            if ($ReturnOnPermission -and
+                $log -match 'session_mcp_permission:.*validating session MCP permission before user selection' -and
+                $paneText -match '\[Y(?:\]|/)') {
+                return [pscustomobject]@{ Mode = 'Permission'; Ready = $false }
             }
             $null
         }

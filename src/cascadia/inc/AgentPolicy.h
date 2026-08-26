@@ -20,7 +20,7 @@
 //                                    Gates BOTH the global agentPane.yoloMode
 //                                    setting AND the per-session `/yolo` slash
 //                                    command — when blocked, neither path may
-//                                    enable unattended tool-call auto-approval.
+//                                    request a provider-native Yolo mode.
 
 #pragma once
 

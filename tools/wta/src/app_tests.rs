@@ -7224,6 +7224,60 @@ fn surfaced_autofix_turn_accepts_follow_up_permission_request() {
     );
 }
 
+#[test]
+fn yolo_enabled_permission_request_remains_pending_until_user_input() {
+    let mut app = test_app();
+    app.yolo_state.lock().unwrap().update_runtime(true, false);
+    assert!(
+        app.yolo_state.lock().unwrap().effective(DEFAULT_TAB_ID),
+        "the test must exercise an effectively enabled Yolo state"
+    );
+    app.tab_mut(DEFAULT_TAB_ID).turn = TurnState::Submitted(SubmittedPrompt {
+        id: 1,
+        text: "test".into(),
+        submitted_at_unix_s: 0.0,
+        context: TurnContext::default(),
+        autofix: None,
+    });
+    let (responder, mut response) = tokio::sync::oneshot::channel();
+
+    app.handle_event(AppEvent::PermissionRequest {
+        session_id: DEFAULT_TAB_ID.into(),
+        tool_call_id: "provider-tool".into(),
+        description: "Choose a permission".into(),
+        title: "Choose a permission".into(),
+        kind_label: None,
+        target: None,
+        target_is_command: false,
+        options: vec![
+            PermOption {
+                id: "allow-once".into(),
+                name: "Allow once".into(),
+                kind: "AllowOnce".into(),
+            },
+            PermOption {
+                id: "allow-always".into(),
+                name: "Allow always".into(),
+                kind: "AllowAlways".into(),
+            },
+        ],
+        responder,
+    });
+
+    assert_eq!(app.current_tab().permission.len(), 1);
+    assert_eq!(
+        response.try_recv(),
+        Err(tokio::sync::oneshot::error::TryRecvError::Empty),
+        "Yolo must never choose an ACP permission option for the user"
+    );
+    app.handle_key(KeyEvent::from(KeyCode::Char('x')));
+    assert_eq!(
+        response.try_recv(),
+        Err(tokio::sync::oneshot::error::TryRecvError::Empty),
+        "only an explicit permission choice may resolve the request"
+    );
+}
+
 fn begin_user_input_test(app: &mut App) {
     app.tab_mut(DEFAULT_TAB_ID).turn = TurnState::Submitted(SubmittedPrompt {
         id: 1,

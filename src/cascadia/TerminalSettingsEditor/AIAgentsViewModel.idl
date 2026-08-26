@@ -103,8 +103,9 @@ namespace Microsoft.Terminal.Settings.Editor
         // on and the auto-fix GPO must not be locking it off.
         Boolean CanSuggestErrors { get; };
 
-        // Global "Yolo mode" — when on, every agent pane on this machine
-        // auto-approves tool-call permission requests without prompting.
+        // Global "Yolo mode" — requests each supported provider's advertised
+        // native ACP session mode. WTA never selects a permission option;
+        // providers without a reviewed native mode continue prompting.
         // Getter/setter route through EffectiveAgentPaneYoloMode /
         // IsYoloModePolicyLocked so the toggle reads Off and rejects writes
         // when org policy blocks it.

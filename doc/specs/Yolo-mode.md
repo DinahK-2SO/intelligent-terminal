@@ -102,7 +102,7 @@ The default is `false`.
 
 When a helper is created, `TerminalPage` evaluates the policy-aware
 `EffectiveAgentPaneYoloMode()` value. If it is enabled, Terminal starts that
-helper with `--auto-approve-tools`. Later setting or policy changes are sent
+helper with `--yolo-mode`. Later setting or policy changes are sent
 to existing helpers through `agent_config_changed`.
 
 The global value is a default for every ACP session owned by that helper. It
@@ -161,7 +161,7 @@ When the policy is blocked:
 - `EffectiveAgentPaneYoloMode()` returns false even if the raw JSON setting is
   true.
 - The Settings toggle is disabled and shows the policy-lock message.
-- Terminal does not pass `--auto-approve-tools`.
+- Terminal does not pass `--yolo-mode`.
 - Terminal passes `--yolo-command-blocked`.
 - A later policy change is hot-applied to existing helpers. Their effective
   state becomes off immediately, session overrides are cleared, and native
@@ -365,7 +365,7 @@ the tab still owns the same session id; stale acknowledgements are ignored.
 ```text
 settings.json
   -> EffectiveAgentPaneYoloMode()
-  -> wta-helper --auto-approve-tools
+  -> wta-helper --yolo-mode
   -> YoloState.global_default = true
   -> session/new
     -> discover the master-attested provider's exact advertised capability

@@ -174,7 +174,7 @@ fn slash_yolo_sets_current_session_and_uses_low_emphasis_status() {
     assert_eq!(
         app.current_tab().messages.last(),
         Some(&ChatMessage::Status("● /yolo on".to_string())),
-        "/yolo must confirm that auto-approval was enabled for the current session"
+        "/yolo must confirm that the provider-native mode was enabled for the current session"
     );
 
     run_slash_args(&mut app, "yolo", "off");
@@ -185,7 +185,7 @@ fn slash_yolo_sets_current_session_and_uses_low_emphasis_status() {
     assert_eq!(
         app.current_tab().messages.last(),
         Some(&ChatMessage::Status("○ /yolo off".to_string())),
-        "/yolo off must disable auto-approval for the current session"
+        "/yolo off must disable the provider-native mode for the current session"
     );
 }
 

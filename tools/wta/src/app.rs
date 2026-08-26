@@ -1070,7 +1070,7 @@ pub struct App {
     /// Cached for creating DeferredAcpParams after auth-error recovery.
     shell_mgr: Arc<crate::shell::ShellManager>,
     /// Global provider-native Yolo preference, set at startup from
-    /// `--auto-approve-tools`. Helper-owned policy is shared with the ACP client. The global
+    /// `--yolo-mode`. Helper-owned policy is shared with the ACP client. The global
     /// default is hot-updatable; explicit per-session values override it.
     yolo_state: crate::app_contracts::SharedYoloState,
     /// Native permission-mode changes awaiting an ACP acknowledgement.

@@ -118,7 +118,7 @@ pub(crate) struct Cli {
     /// Ask supported providers to enable their advertised ACP session Yolo mode.
     /// Hidden because Terminal owns this setting.
     #[arg(long, hide = true)]
-    pub(crate) auto_approve_tools: bool,
+    pub(crate) yolo_mode: bool,
 
     /// Refuse per-session `/yolo` changes when organization policy blocks
     /// provider-native Yolo. Hidden because Terminal supplies the policy result.

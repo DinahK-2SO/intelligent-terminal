@@ -1114,7 +1114,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
                _GlobalSettings.EffectiveAutoErrorDetectionEnabled();
     }
 
-    // ── Yolo mode (global auto-approve) ─────────────────────────────────
+    // ── Yolo mode (provider-native ACP mode) ─────────────────────────────
 
     bool AIAgentsViewModel::AgentPaneYoloMode() const
     {

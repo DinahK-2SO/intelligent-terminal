@@ -3084,7 +3084,7 @@ namespace winrt::TerminalApp::implementation
         // helper enforces itself at runtime against the same policy.
         if (globals.EffectiveAgentPaneYoloMode())
         {
-            helperCmd.append(L" --auto-approve-tools");
+            helperCmd.append(L" --yolo-mode");
         }
         // Independent of the global toggle above: tell the helper whether
         // org policy blocks yolo mode outright, so its own `/yolo` slash
