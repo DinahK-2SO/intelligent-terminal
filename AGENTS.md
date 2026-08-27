@@ -23,10 +23,10 @@
 - Pull request: https://github.com/microsoft/intelligent-terminal/pull/505
 - Related issue: https://github.com/microsoft/intelligent-terminal/issues/326
 - Original PR head / takeover baseline: `3adc45bc69941cad108ca9799df78a1d42c95de8`
-- Latest audited `origin/main`: `1c8e674e415a5829cfc861cad5af4ec1d4af5042`
+- Latest audited `origin/main`: `adffd21eff63b131788e560f38090616c20182a4`
 - Common ancestor: `e870a3630a785a44cbd22190b5c8808c7084b31f`
 - Dev branch/worktree: `dev/dinah/yolo-mode` / `C:\ado\intelligent-terminal-bugfix`
-- Dev branch is locally merged at `2527ce8bb513369cb0b2c046544586c367349518`;
+- Dev branch is locally merged at `2fdfb4ad8ce41a5c1067937a529b3236cdcf5564`;
   keep dev-only orchestration and evidence local and unpushed.
 - Publish branch/worktree: `dev/vanzue/yolo-mode` /
   `C:\ado\intelligent-terminal-yolo-publish`
@@ -128,20 +128,25 @@ coordinator tests pass `12/12`; explicit-permission tests pass `3/3`. Full WTA p
   keeps its provider-owned untrusted-workspace rejection. The current slice is refactoring only:
   split each built-in provider's native Yolo contract into its own module while preserving the
   common session coordinator, ACP behavior and exact user-visible errors.
-- Current branch/head is `dev/dinah/yolo-mode@2527ce8b`, merged with `origin/main@1c8e674e`
-  (`2026-08-26`, #667) and behind by zero. Publishable follow-ups are `cd2b2e88` (host cwd),
-  `d5dcade6` (provider modules), and `28731c1a` (packaged E2E/release coverage). The provider refactor is GREEN: each known provider now has a dedicated native
-  Yolo module behind a complete static registry; the common coordinator still owns session
-  state, restore values, sequencing and ACP execution. Gemini trust behavior and every existing
-  user-visible error are unchanged. Focused native Yolo tests pass `14/14`, full WTA passes
-  `1726/1726` with the source-matched `wtcli.exe`, and the explicit-target product build passes.
+- Current branch/head is `dev/dinah/yolo-mode@2fdfb4ad`, merged with `origin/main@adffd21e`
+  (`2026-08-27`, #672) and behind by zero. Publishable follow-ups are `cd2b2e88` (host cwd),
+  `d5dcade6` (provider modules), `28731c1a` (packaged E2E/release coverage), `e1f479dc`
+  (merged completion contract), and `d129e508` (behavioral provider adapters). Each known
+  provider now owns capability discovery plus enable/disable transition planning; the common
+  coordinator owns only session state, restore persistence, sequencing, lifecycle fencing and
+  ACP transport execution. Cross-channel config/mode updates preserve the user's restore target,
+  and generic config responses refresh provider state. Gemini trust behavior and every existing
+  user-visible error are unchanged. Focused native Yolo tests pass `20/20`, Yolo tests pass
+  `33/33`, permission tests pass `47/47`, full WTA passes `1812/1812` with source-matched
+  `wtcli.exe`, and the explicit-target product build passes.
 - The dev merge preserved main's ACP slash-command metadata/completion architecture and longer
   Autofix card waits while retaining explicit provider permission selection, Yolo mode updates,
   popup completion and session cleanup. Focused post-merge tests pass: slash commands `63/63`,
   native Yolo `14/14`, and permission `47/47`.
-- Next command is the hermetic local-TDD-kit selftest, followed by a dev-only commit. Then merge
-  `origin/main` into publish, cherry-pick only the three publishable commits, and build/deploy/test
-  from the publish worktree before pushing.
+- The newest main merge additionally preserves #672 tool-call presentation; its focused tests
+  pass `37/37` alongside native Yolo `20/20` and Yolo `33/33`.
+- Next command is a dev-only handoff commit. Then merge `origin/main@adffd21e` into publish,
+  cherry-pick only `d129e508`, and rebuild/deploy/test the exact publish HEAD before pushing.
 
 ## Scope And Contract
 
