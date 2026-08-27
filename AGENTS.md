@@ -145,8 +145,19 @@ coordinator tests pass `12/12`; explicit-permission tests pass `3/3`. Full WTA p
   native Yolo `14/14`, and permission `47/47`.
 - The newest main merge additionally preserves #672 tool-call presentation; its focused tests
   pass `37/37` alongside native Yolo `20/20` and Yolo `33/33`.
-- Next command is a dev-only handoff commit. Then merge `origin/main@adffd21e` into publish,
-  cherry-pick only `d129e508`, and rebuild/deploy/test the exact publish HEAD before pushing.
+- `2026-08-27` quota-boundary correction: every real model/tool prompt moved to
+  `local-tdd-kit/Feature.YoloMode.RealUser.Tests.ps1`. Publishable
+  `test/e2e/tests/Feature.YoloMode.Tests.ps1` now contains five zero-token cases only; its exact
+  deployed-package run passes `4`, fails `0`, and skips the unprovisioned policy case `1`.
+  Publishable commit `2d9e06dfe` removes all token-consuming prompts and CI/release mappings.
+- Claude local acceptance is pinned through the real Claude CLI and ACP adapter to Agent Maestro's
+  Anthropic proxy with `gpt-5.6-sol[1m]`, advertised by GitHub Copilot and tool-capable. A bounded
+  direct Claude smoke returned `CLAUDE_MAESTRO_GPT_OK` in `19.23s` without the prior
+  `invalid_message_role` failure. This configuration and the full tool turn remain local-only.
+- The first realistic provider run against exact publish `ffe5b13e` completed `3` pass, `4` fail,
+  and `2` prerequisite skips; it is retained as local evidence, not a CI result. Next command is
+  to commit the dev-only harness/handoff, cherry-pick only `2d9e06dfe` into publish, rebuild the
+  exact corrected publish HEAD, and rerun the Claude local-only tool case.
 
 ## Scope And Contract
 
@@ -369,6 +380,11 @@ the exact pre-fix failure has been recorded.
   and product documentation form self-contained publishable commits on dev.
 - Dev-only tracking/framework/evidence form separate commits only when explicitly
   requested. Never create a mixed commit and later restore files out of it.
+- Any test that submits a real model prompt or consumes provider/token quota is dev-only. Its
+  source, orchestration and reports must stay under `local-tdd-kit/` or another ignored/local
+  evidence root; never copy it into `test/e2e`, the publish branch or a CI pipeline. Publishable
+  packaged coverage may use deterministic mocks and zero-token initialize/session/native-mode
+  checks only.
 - Main is merged on dev. Before publishing, update the clean publish branch to the same
   main ancestry and cherry-pick only publishable product commits.
 - Kai confirmed `origin/dev/vanzue/yolo-mode` as the publish target and authorized direct
@@ -385,9 +401,10 @@ the exact pre-fix failure has been recorded.
   `src/cascadia/UnitTests_SettingsModel/CustomAgentAndPolicyTests.cpp` first.
 - Extend the existing mock ACP transport with controllable RPC barriers for race tests;
   do not add sleeps or a test-only product route.
-- Put publishable packaged coverage in the existing `test/e2e` ItE2E framework. A
-  planned `Feature.YoloMode.Tests.ps1` must prove the actual Settings/slash/policy path,
-  not merely inspect a Rust map.
+- Put zero-token publishable packaged coverage in the existing `test/e2e` ItE2E framework.
+  `Feature.YoloMode.Tests.ps1` proves the actual Settings/slash/policy path without issuing a
+  model prompt; token-consuming real provider/tool coverage belongs only in
+  `local-tdd-kit/Feature.YoloMode.RealUser.Tests.ps1`.
 - Use `local-tdd-kit/` only for local orchestration, receipts, fixtures and raw evidence.
   It is not part of the PR.
 - Deterministic mocks prove ordering and failure handling. They do not replace final
@@ -540,6 +557,12 @@ the exact publish HEAD. Always set `ITE2E_PACKAGE=Dev`; `Auto` is not acceptable
 
 ## Real Integration Acceptance
 
+**Local-only quota boundary:** every workflow in this section submits real model prompts and may
+consume paid/provider quota. The harness is manual local-development infrastructure. It must not
+be tracked by the publish branch, copied into `test/e2e`, or invoked by CI. CI has no provider
+token budget and must use deterministic mocks or zero-token protocol checks instead. The app under
+test is still the exact package built from the publish HEAD.
+
 - Required provider A: installed and authenticated Copilot CLI. Current observed CLI
   version is `1.0.80`; record the actual version again at test time.
 - Required providers B-D: Claude, Codex and Gemini exercising their reviewed native ACP
@@ -571,7 +594,8 @@ the exact publish HEAD. Always set `ITE2E_PACKAGE=Dev`; `Auto` is not acceptable
 This procedure is the acceptance meaning of "simulated real-user E2E" for PR #505. It uses
 automation to drive a normal user workflow, but the installed product, ACP server, provider CLI,
 model turn and tool effect are real. A handshake-only probe, mock agent or injected completion
-state does not satisfy it.
+state does not satisfy it. Because it deliberately consumes real tokens/quota, both this harness
+and its evidence are local-development-only and must never enter the publish branch or CI.
 
 1. **Freeze exact publish identity.** In the clean publish worktree, fetch `origin/main` and the
   publish ref with command-line `git`, require both to be ancestors of local HEAD, and record the
@@ -619,18 +643,19 @@ state does not satisfy it.
   inference payer, cwd, duration and outcome. Do not record secrets, account IDs, unrelated
   prompts or unrelated terminal content.
 
-Current command shape from the publish worktree:
+Current command shape from the dev worktree after the exact publish package is deployed:
 
 ```powershell
 $env:ITE2E_PACKAGE = 'Dev'
 pwsh -NoProfile -File .\test\e2e\Invoke-ItE2EReport.ps1 `
-   -Path .\test\e2e\tests\Feature.YoloMode.Tests.ps1 `
-   -OutDir .\.local-tdd-kit-run\artifacts\real-user-yolo-<PUBLISH_SHA>
+  -Path .\local-tdd-kit\Feature.YoloMode.RealUser.Tests.ps1 `
+  -OutDir .\local-tdd-kit\artifacts\yolo-mode\real-user-yolo-<PUBLISH_SHA>
 ```
 
-- Status: exact publish `ffe5b13e` is built, deployed, freshness-verified and pushed. The current
-  realistic provider run is in progress; append its per-provider `PASS`/`FAIL`/`BLOCKED` results
-  and report path here when the runner completes.
+- Status: exact publish `ffe5b13e` was built, deployed, freshness-verified and pushed. Its first
+  realistic provider report is `.local-tdd-kit-run/artifacts/final-yolo-ffe5b13e` in the publish
+  worktree (`3` pass, `4` fail, `2` skip). The replacement local-only harness is ready under
+  `local-tdd-kit/`; publish/CI no longer owns or invokes real model prompts.
 
 ## Visual Evidence
 
