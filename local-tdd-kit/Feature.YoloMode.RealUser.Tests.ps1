@@ -53,6 +53,31 @@ Describe 'Local-only simulated real-user Yolo acceptance' -Tag 'LocalRealProvide
                 return $false
             }
         }
+        $script:assertRenderedTranscriptText = {
+            param(
+                [Parameter(Mandatory)]$App,
+                [Parameter(Mandatory)][string]$PaneSessionId,
+                [Parameter(Mandatory)][string]$Pattern,
+                [int]$MaxPages = 12,
+                [int]$TimeoutSec = 90
+            )
+
+            $deadline = (Get-Date).AddSeconds($TimeoutSec)
+            do {
+                for ($page = 0; $page -le $MaxPages; $page++) {
+                    if ((Get-AgentPaneText -App $App -MaxLines 60 -PaneSessionId $PaneSessionId) -match $Pattern) {
+                        return $true
+                    }
+                    if ($page -lt $MaxPages) {
+                        Send-AgentKey -App $App -Key PageUp -PaneSessionId $PaneSessionId | Out-Null
+                    }
+                }
+                for ($page = 0; $page -lt $MaxPages; $page++) {
+                    Send-AgentKey -App $App -Key PageDown -PaneSessionId $PaneSessionId | Out-Null
+                }
+            } while ((Get-Date) -lt $deadline)
+            return $false
+        }
         $script:runProviderYolo = {
             param(
                 [Parameter(Mandatory)][string]$Agent,
@@ -105,11 +130,30 @@ Describe 'Local-only simulated real-user Yolo acceptance' -Tag 'LocalRealProvide
                     $trustedFolders | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath $geminiTrustPath -Encoding utf8
                 }
 
-                $app = Start-Terminal -Package Dev -PassFre $true -Settings $settings
-                if ($Agent -eq 'gemini') {
-                    $workspaceTab = New-WtTab -App $app -Cwd $providerRoot
-                    Set-WtPaneFocus -App $app -SessionId $workspaceTab.session_id | Out-Null
+                # Agent panes pre-warm during tab creation, before a newly opened shell can
+                # report its cwd. Start the initial default profile in the disposable workspace
+                # so the first helper and ACP session receive the same directory.
+                $configApp = Resolve-ItApp -Package Dev
+                $config = Get-WtSettingsObject -App $configApp
+                if (-not $config.profiles) {
+                    throw 'Terminal settings do not contain a profiles object'
                 }
+                $defaultProfile = [string]$config.defaultProfile
+                $targetProfile = @($config.profiles.list | Where-Object {
+                    [string]$_.guid -eq $defaultProfile
+                } | Select-Object -First 1)
+                if ($targetProfile.Count -eq 1) {
+                    $targetProfile[0] | Add-Member -NotePropertyName startingDirectory -NotePropertyValue $providerRoot -Force
+                }
+                else {
+                    if (-not $config.profiles.defaults) {
+                        $config.profiles | Add-Member -NotePropertyName defaults -NotePropertyValue ([pscustomobject]@{}) -Force
+                    }
+                    $config.profiles.defaults | Add-Member -NotePropertyName startingDirectory -NotePropertyValue $providerRoot -Force
+                }
+                $settings.profiles = $config.profiles
+
+                $app = Start-Terminal -Package Dev -PassFre $true -Settings $settings
                 Open-AgentPane -App $app | Out-Null
                 Wait-AgentReady -App $app -TimeoutSec $TimeoutSec |
                     Should -BeTrue -Because "$Agent should reach a connected ACP session"
@@ -127,8 +171,9 @@ Describe 'Local-only simulated real-user Yolo acceptance' -Tag 'LocalRealProvide
                     (Test-Path -LiteralPath $file) -and
                     ((Get-Content -LiteralPath $file -Raw).Trim() -eq $marker)
                 }) | Should -BeTrue -Because "$Agent should complete the real bounded tool task"
-                Assert-AgentPaneText -App $app -PaneSessionId $agentPane `
-                    -Pattern ([regex]::Escape($marker)) -TimeoutSec 90
+                (& $script:assertRenderedTranscriptText -App $app -PaneSessionId $agentPane `
+                    -Pattern ([regex]::Escape($marker))) |
+                    Should -BeTrue -Because "$Agent should render the exact model response in the chat transcript"
 
                 Initialize-LogOffsets -App $app | Out-Null
                 Send-AgentPrompt -App $app -PaneSessionId $agentPane -Text '/yolo off' | Out-Null

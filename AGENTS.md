@@ -23,23 +23,22 @@
 - Pull request: https://github.com/microsoft/intelligent-terminal/pull/505
 - Related issue: https://github.com/microsoft/intelligent-terminal/issues/326
 - Original PR head / takeover baseline: `3adc45bc69941cad108ca9799df78a1d42c95de8`
-- Latest audited `origin/main`: `adffd21eff63b131788e560f38090616c20182a4`
+- Latest audited `origin/main`: `a50be8c6b289e03002d2f32b9854a4e0c6489272`
 - Common ancestor: `e870a3630a785a44cbd22190b5c8808c7084b31f`
 - Dev branch/worktree: `dev/dinah/yolo-mode` / `C:\ado\intelligent-terminal-bugfix`
-- Dev branch is locally merged at `2fdfb4ad8ce41a5c1067937a529b3236cdcf5564`;
+- Dev branch's latest publishable product merge is `8f77bc78b`;
   keep dev-only orchestration and evidence local and unpushed.
 - Publish branch/worktree: `dev/vanzue/yolo-mode` /
   `C:\ado\intelligent-terminal-yolo-publish`
 - Publish remote: `origin/dev/vanzue/yolo-mode`; remote and local are both at
-  `0e8be3a9815a3fba8339f045ecb9eeae8e321fcb`. Original branch author Kai (`vanzue`)
+  `11c659f607d21e609cd1a0ea0c09c196b8c53e87`. Original branch author Kai (`vanzue`)
   approved using this as the publish branch and directly pushing validated publishable
   commits for the security review process on `2026-08-25`.
-- Evidence root: `local-tdd-kit/artifacts/yolo-mode/` (ignored; not created yet).
+- Evidence root: `local-tdd-kit/artifacts/yolo-mode/` (ignored).
 - Review evidence directory: to be chosen only for sanitized artifacts intended for review.
-- Current takeover commits: cloud metadata fix `8b24342c`, pre-format main merge
-  `c264cb5a`, WTA format `13d2cb39`, main-tip merge `4c37da5b`, and provider-native
-  Yolo `7c8a6822`, permission-contract cleanup `ce0be5f5`, and locale wording cleanup
-  `0e8be3a9`. Both remotes contain the same publishable HEAD.
+- Current publish tip adds main merge `c3205e8f1` and source-pane cwd fix `11c659f60`
+  after the prior provider-native, permission-contract, locale, packaged-E2E and
+  quota-boundary commits. The publish remote is byte-identical to local HEAD.
 - Out of scope for PR #505: trusted/allowed working directories, a read/search-only
   ToolKind allowlist, per-application/executable policy, provider negotiations, and the
   future available-commands `/command` integration.
@@ -128,8 +127,9 @@ coordinator tests pass `12/12`; explicit-permission tests pass `3/3`. Full WTA p
   keeps its provider-owned untrusted-workspace rejection. The current slice is refactoring only:
   split each built-in provider's native Yolo contract into its own module while preserving the
   common session coordinator, ACP behavior and exact user-visible errors.
-- Current branch/head is `dev/dinah/yolo-mode@2fdfb4ad`, merged with `origin/main@adffd21e`
-  (`2026-08-27`, #672) and behind by zero. Publishable follow-ups are `cd2b2e88` (host cwd),
+- Current branch/head is `dev/dinah/yolo-mode@8f77bc78b`; it includes
+  `origin/main@a50be8c6b` (`2026-08-27`, #675) and is ahead 41, behind zero. Publishable follow-ups are
+  `cd2b2e88` (host cwd),
   `d5dcade6` (provider modules), `28731c1a` (packaged E2E/release coverage), `e1f479dc`
   (merged completion contract), and `d129e508` (behavioral provider adapters). Each known
   provider now owns capability discovery plus enable/disable transition planning; the common
@@ -161,8 +161,28 @@ coordinator tests pass `12/12`; explicit-permission tests pass `3/3`. Full WTA p
   `4` fail, and `2` prerequisite skips; it is retained as local evidence, not a CI result.
   Publish-only test/docs correction `2d9e06dfe` is pushed as publish HEAD `7c215900`; its product
   sources and deployed binaries are unchanged from freshness-verified parent `ffe5b13e`.
-  Next command is final branch/remote/CI status verification and targeted follow-up of the other
-  local-only provider failures without reintroducing model prompts into publish or CI.
+- Gemini's remaining `System32` workspace was traced past the helper into ACP `session/new`.
+  Deferred per-tab pre-warm, added after the original cwd resolver, runs after the startup-action
+  virtual cwd has returned to the AUMID launch directory; the old window-first resolver therefore
+  overrode the active control's profile-preseeded workspace. A focused C++ test reproduced RED
+  (`expected C:\work`, `actual C:\Windows\System32`) and is GREEN with pane-first resolution plus
+  window/profile/home fallbacks. The fix is committed as `70568a323`; latest main merged without
+  conflicts as `8f77bc78b` and was cherry-picked to publish as `11c659f60` after publish merge
+  `c3205e8f1`.
+- Exact publish HEAD `11c659f607` is built, deployed and freshness-verified. Full WTA passes
+  `1838/1838`; packaged zero-token Yolo E2E passes `4`, fails `0`, and skips the unprovisioned
+  policy case `1`. Local-only exact-package runs pass for Copilot (`67.665s`), Claude through
+  Maestro/GitHub Copilot GPT (`59.054s`), Codex (`89.395s`), Gemini (`68.049s`) and the OpenCode
+  unsupported-Yolo plus real-chat negative case (`48.318s`). All reports remain ignored.
+- One malformed local discovery attempt left Terminal `.e2ebak` files that an execution helper
+  later deleted instead of restoring. Recovery evidence proved the pre-test settings had only
+  `acpAgent` among the cleaned agent keys, the pre-test runtime used Copilot/Auto with Yolo off,
+  and the ACP workspace was `C:\Users\xiaomgao`. The recovered settings remove the test temp cwd,
+  restore `acpAgent: copilot`, contain no `ite2e-` path, and pass a fresh zero-token launch with
+  Copilot and home cwd. Damaged copies and recovery evidence are retained under the ignored
+  `local-tdd-kit/artifacts/yolo-mode/settings-recovery-20260827/` directory.
+- Publish local and remote are byte-identical at `11c659f607`; next work is review-evidence
+  screenshots/design-security signoff, not another product or provider implementation change.
 
 ## Scope And Contract
 
@@ -514,10 +534,10 @@ evidence remains outstanding.
 ### Missing Coverage
 
 - Fail-closed restart observed through the actual dispatch/reconnect boundary.
-- Packaged Settings/slash/policy E2E and live provider acceptance.
 - User-visible unsupported-provider status for a globally enabled setting (Settings warning
   currently explains that unsupported providers continue prompting).
 - Reviewed translations for the revised WTA `/yolo` summary outside en-US/pseudo locales.
+- Fresh review screenshots for the full Settings/status/permission/two-tab matrix.
 
 ## Validation Matrix
 
@@ -533,29 +553,31 @@ evidence remains outstanding.
 | No permission auto-selection RED/GREEN | Filter `request_permission_yolo_still_prompts_for_provider_permission`, then `permission_requires_user_selection` | Provider, proposal and user-input permission requests require user choice | RED: no `PermissionRequest`; GREEN `3/3` special paths plus `3/3` Yolo paths | Console result, `2026-08-25` |
 | Native provider coordinator | Filter `native_yolo::tests` | Four reviewed contracts, restore/isolation, sequencing and generation fencing | PASS `12/12` | Console result, `2026-08-25` |
 | Lifecycle/race RED/GREEN | Filters `drops_yolo_override_and_pending_change`, `runtime_change_cancels_stale_pending_yolo_ack`, `session_attach_reconciles_latest_yolo_state` | No stale override/pending/native write survives lifecycle changes | RED at each intended oracle; GREEN `2/2`, `1/1`, `1/1` | Console result, `2026-08-25` |
-| Current Yolo suite | `cargo test --target x86_64-pc-windows-msvc --manifest-path tools/wta/Cargo.toml yolo` | All provider-native and state tests pass | PASS `25/25` | Console result, `2026-08-26` |
+| Current Yolo suite | `cargo test --target x86_64-pc-windows-msvc --manifest-path tools/wta/Cargo.toml yolo` | All provider-native and state tests pass | PASS `33/33` post-merge | Console result, `2026-08-27` |
 | Current permission suite | Same command with filter `permission` | All provider, proposal and user-input requests require explicit selection | PASS `47/47` | Console result, `2026-08-26` |
-| Full WTA | Fresh `bin/x64/Debug/wtcli` first on PATH; `cargo test --target x86_64-pc-windows-msvc --manifest-path tools/wta/Cargo.toml` | All product tests pass | PASS `1723/1723` | Console result, `2026-08-26` |
+| Full WTA | Fresh `bin/x64/Debug/wtcli` first on PATH; `cargo test --target x86_64-pc-windows-msvc --manifest-path tools/wta/Cargo.toml` | All product tests pass | PASS `1838/1838` at publish `11c659f607` | Publish console/receipt, `2026-08-27` |
 | Settings model | Explicit local TAEF runner on `SettingsModel.Unit.Tests.dll /name:*CustomAgentAndPolicyTests*` | All Yolo/policy cases pass | PASS `37/37` | Console result, `2026-08-25` |
-| TerminalApp agent registry | Explicit local TAEF runner on `Terminal.App.Unit.Tests.dll /name:*AcpModelUtilsTests*` | Gemini and provider command mapping pass | PASS `13/13` | Console result, `2026-08-25` |
+| TerminalApp unit tests | Explicit local TAEF runner on `Terminal.App.Unit.Tests.dll` | Agent cwd and neighboring app utilities pass | PASS `196/196`; cwd regression `1/1` post-merge | Console result, `2026-08-27` |
 | Policy/resources | Parse ADMX/ADML XML and assert `AllowYoloMode`; assert both Settings keys in every locale | Exact key parity | PASS: policy references/values valid; XML/BOM/EOL/key parity PASS `16/16` | Console result, `2026-08-25` |
-| Explicit build/deploy | `pwsh -File local-tdd-kit/Invoke-BuildDeploy.ps1` | Build/deploy receipt succeeds | Not run | None |
-| Freshness | `pwsh -File local-tdd-kit/Verify-DeploymentFreshness.ps1` | Source, staged, installed and live identities match | Not run | None |
-| Packaged E2E | `$env:ITE2E_PACKAGE='Dev'; pwsh -File test/e2e/Invoke-ItE2EReport.ps1 -Path test/e2e/tests/Feature.YoloMode.Tests.ps1` | Settings/slash/policy flows pass | Suite not authored | None |
+| Explicit build/deploy | Publish ignored `Invoke-BuildDeploy.ps1 -SkipWtaTests -Launch` after full WTA | Build/deploy receipt succeeds | PASS at `11c659f607` | Publish `.local-tdd-kit-run/artifacts/build-receipt.json` |
+| Freshness | Publish ignored `Verify-DeploymentFreshness.ps1` | Source, staged, installed and live identities match | PASS; WTA SHA-256 `E718D274...D608F` | Same receipt, `2026-08-27` |
+| Packaged E2E | `$env:ITE2E_PACKAGE='Dev'; pwsh -File test/e2e/Invoke-ItE2EReport.ps1 -Path test/e2e/tests/Feature.YoloMode.Tests.ps1` | Settings/slash/policy flows pass without model prompts | PASS `4`, FAIL `0`, SKIP `1` policy prerequisite | Publish ignored `zero-token-yolo-11c659f607/` report |
 | Static checks | `cargo fmt --check`; `git -c core.whitespace=cr-at-eol diff --check`; repository diagnostics on touched files | Clean | PASS | Console/editor result, `2026-08-25` |
 | Maestro Claude API | Direct Anthropic request + isolated `claude -p` | VS Code LM answers without a Claude account | PASS, exact markers returned | Console result, `2026-08-25` |
 | Maestro Claude ACP | `local-tdd-kit/Invoke-MaestroClaudeAcpProbe.ps1` / equivalent isolated production probe | Pinned adapter completes initialize + session/new without touching user config | PASS; 6 models, current `gpt-5.6-luna[1m]`, user config unchanged | Console result, `2026-08-25` |
-| Real provider | Exact publish package with Copilot, Claude, Codex and Gemini native paths; OpenCode interactive | User workflow and wire/log oracle pass | Not run | None |
+| Real provider | Exact publish package with Copilot, Claude, Codex and Gemini native paths; OpenCode interactive | Native ACK, real tool effect/response or unsupported negative, and cleanup pass | PASS `5/5` targeted cases | Dev ignored `real-user-yolo-11c659f607/` receipts |
 
 ### Exact Publish Identity
 
 - Current local and remote publish branch HEAD:
-  `0e8be3a9815a3fba8339f045ecb9eeae8e321fcb`.
-- The exact `7c8a682` Debug package staging build and recipe freshness checks passed;
-  receipt: `local-tdd-kit/artifacts/yolo-mode/publish-build-receipt.json`.
-- It was deliberately not deployed because another worktree owns the active Dev package.
-- Identity conclusion: `7c8a682` source/staging is verified, install/live is unverified,
-  and current publish HEAD `0e8be3a9` requires a fresh build receipt.
+  `11c659f607d21e609cd1a0ea0c09c196b8c53e87`.
+- Build receipt source fingerprint:
+  `FB33C43D089321E887A324350D43DF0AB44B2D88BF04169AC70979FDD88983DC`.
+- The recipe maps the explicit-target WTA binary, whose source/staged/installed SHA-256 is
+  `E718D274280FAAC7121DDE705959AC55376926DEAA79D7A0C59F31F4594D608F`.
+- The installed layout is the publish worktree's Debug `AppX`; `WindowsTerminal.exe`,
+  `wtcli.exe`, protocol WinMD and `resources.pri` propagation checks all pass, and the
+  freshness launch ran from that layout.
 
 Test source may come from a dev-only harness, but the tested application must come from
 the exact publish HEAD. Always set `ITE2E_PACKAGE=Dev`; `Auto` is not acceptable evidence.
@@ -657,11 +679,10 @@ pwsh -NoProfile -File .\test\e2e\Invoke-ItE2EReport.ps1 `
   -OutDir .\local-tdd-kit\artifacts\yolo-mode\real-user-yolo-<PUBLISH_SHA>
 ```
 
-- Status: product build `ffe5b13e` was built, deployed and freshness-verified. Its first
-  realistic provider report is `.local-tdd-kit-run/artifacts/final-yolo-ffe5b13e` in the publish
-  worktree (`3` pass, `4` fail, `2` skip). The replacement local-only harness is ready under
-  `local-tdd-kit/`; publish/CI HEAD `7c215900` no longer owns or invokes real model prompts. The
-  targeted Claude rerun is PASS with Agent Maestro backed by GitHub Copilot `gpt-5.6-sol[1m]`.
+- Status: exact publish `11c659f607` is built/deployed/freshness-verified and passes all five
+  targeted local-only provider rows. Claude uses the real CLI and pinned ACP adapter with Agent
+  Maestro backed by GitHub Copilot `gpt-5.6-sol[1m]`; OpenCode remains unsupported for Yolo and
+  passes real chat. Publish/CI owns no model prompt or real-token runner.
 
 ## Visual Evidence
 
@@ -768,11 +789,12 @@ Evidence root: `local-tdd-kit/artifacts/yolo-mode/` (planned, ignored).
 | Maestro pinned-adapter ACP probe | Console result | Production WTA reached initialize + session/new through `claude-agent-acp@0.65.0` | `2026-08-25`; dev-only, no publish package |
 | Dev kit prerequisite/unit checks | Console result | Bootstrap and hermetic framework core are usable | `2026-08-24`; no product package |
 | Dev kit input blocker | Console result | Safety guard refused input without a foreground HWND | `2026-08-24`; `1/4` passed, 3 blocked |
-| Publish staging receipt | `local-tdd-kit/artifacts/yolo-mode/publish-build-receipt.json` | `7c8a682` source/recipe/staged identity; no install | `7c8a682`; superseded by current uncommitted delta |
+| Publish build receipt | Publish `.local-tdd-kit-run/artifacts/build-receipt.json` | Source/recipe/staged/installed/live identity | `11c659f607` |
 | RED unit reports | Not captured | Each race/lifecycle failure | Unverified |
-| Packaged E2E report | Not captured | Real Settings/slash/policy workflow | Unverified |
+| Packaged E2E report | Publish `.local-tdd-kit-run/artifacts/zero-token-yolo-11c659f607/` | Zero-token Settings/slash/policy workflow | `11c659f607`; `4/0/1` |
 | GREEN screenshots | Not captured | Reviewable UI states | Unverified |
-| Real provider wire/log evidence | Not captured | Provider-native behavior and interactive permissions | Unverified |
+| Real provider receipts | `local-tdd-kit/artifacts/yolo-mode/real-user-yolo-11c659f607/` | Native mode/tool/chat outcomes and cleanup | `11c659f607`; five targeted passes |
+| Settings recovery | `local-tdd-kit/artifacts/yolo-mode/settings-recovery-20260827/` | Damaged snapshot, evidence and semantic restoration | Recovered Copilot/home settings; no temp path/backups |
 
 Temporary npm package extractions and the OpenCode source clone used for static inspection
 were removed. Future ignored screenshots, logs, reports, provider homes and wire captures
@@ -791,17 +813,17 @@ terminal content.
 - [ ] Exact baseline 已 build/deploy，并在预期 behavioral oracle 上 RED。
 - [x] Focused regression 先 RED 后 GREEN。
 - [x] Neighboring tests、full relevant suite、focused C++ builds/tests 和 static analysis 已完成。
-- [x] Current `origin/main@73cf3510d` is merged and focused post-merge behavior is revalidated.
+- [x] Current `origin/main@a50be8c6b` is merged and focused post-merge behavior is revalidated.
 - [x] GPO templates and SettingsEditor locale parity are complete and structurally validated.
 - [ ] Hamza/design/security decisions are recorded for terminology, provider-native scope and command-approval messaging.
 - [x] Publishable and dev-only changes remain separated; `AGENTS.md`/`local-tdd-kit` stay dev-only.
-- [ ] Exact publish HEAD 已 build/deploy，source/deployed hashes 一致。
-- [ ] Packaged/deployed E2E 对 exact publish binary GREEN。
-- [ ] 真实外部依赖验收已完成，或明确标记 blocked。
+- [x] Exact publish HEAD 已 build/deploy，source/deployed hashes 一致。
+- [x] Packaged/deployed E2E 对 exact publish binary GREEN。
+- [x] 真实外部依赖验收已完成，或明确标记 blocked。
 - [ ] UI/渲染/交互的 fresh screenshots 已逐图检查并记录 provenance。
 - [ ] Review findings 已逐条 triage，accepted fixes 有 RED/GREEN evidence。
 - [ ] Evidence inventory 能映射全部 user-visible assertions。
-- [x] Dev 与 publish remote heads 已 push 并确认 (`0e8be3a9`)。
+- [x] Publish remote HEAD 已 push 并确认 (`11c659f607`)；dev-only evidence remains local.
 
 ## Optional Follow-Ups
 
