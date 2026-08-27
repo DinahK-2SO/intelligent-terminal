@@ -1,0 +1,225 @@
+#Requires -Modules @{ ModuleName='Pester'; ModuleVersion='5.0.0' }
+# Hermetic unit tests for the ItE2E framework core. No deployed terminal required.
+#   Invoke-Pester local-tdd-kit/selftests -Tag Unit
+
+BeforeAll {
+    Import-Module (Join-Path $PSScriptRoot '..\ItE2E\ItE2E.psd1') -Force
+}
+
+Describe 'Invoke-Native' -Tag 'Unit' {
+    It 'captures stdout and a zero exit code' {
+        $r = Invoke-Native -FilePath 'cmd.exe' -Arguments @('/c', 'echo', 'hello-ite2e')
+        $r.ExitCode | Should -Be 0
+        $r.StdOut | Should -Match 'hello-ite2e'
+    }
+
+    It 'propagates a non-zero exit code' {
+        (Invoke-Native -FilePath 'cmd.exe' -Arguments @('/c', 'exit', '7')).ExitCode | Should -Be 7
+    }
+
+    It 'does NOT truncate large output (regression for the async-read race)' {
+        # Produce ~500 lines; the old Register-ObjectEvent impl truncated to a few bytes.
+        $r = Invoke-Native -FilePath 'cmd.exe' -Arguments @('/c', 'for /L %i in (1,1,500) do @echo line%i')
+        $r.ExitCode | Should -Be 0
+        ([regex]::Matches($r.StdOut, 'line\d+')).Count | Should -Be 500
+    }
+
+    It 'times out and flags TimedOut' {
+        $r = Invoke-Native -FilePath 'cmd.exe' -Arguments @('/c', 'ping', '-n', '10', '127.0.0.1') -TimeoutSec 1
+        $r.TimedOut | Should -BeTrue
+        $r.ExitCode | Should -Be -1
+    }
+}
+
+Describe 'Wait-Until / Test-Until' -Tag 'Unit' {
+    It 'returns the truthy value once the condition holds' {
+        $script:n = 0
+        $v = Wait-Until -TimeoutSec 5 -IntervalSec 0.1 -Condition { $script:n++; if ($script:n -ge 3) { 'ready' } else { $null } }
+        $v | Should -Be 'ready'
+    }
+    It 'throws on timeout' {
+        { Wait-Until -TimeoutSec 1 -IntervalSec 0.2 -Condition { $false } -Because 'never' } | Should -Throw
+    }
+    It 'Test-Until returns a boolean and never throws' {
+        Test-Until -TimeoutSec 1 -IntervalSec 0.2 -Condition { $false } | Should -BeFalse
+        Test-Until -TimeoutSec 2 -IntervalSec 0.1 -Condition { $true } | Should -BeTrue
+    }
+}
+
+Describe 'JSON helpers' -Tag 'Unit' {
+    It 'ConvertFrom-JsonSafe returns $null on garbage' {
+        ConvertFrom-JsonSafe -InputObject 'not json {' | Should -BeNullOrEmpty
+        ConvertFrom-JsonSafe -InputObject '' | Should -BeNullOrEmpty
+    }
+    It 'ConvertFrom-JsonSafe parses valid JSON' {
+        (ConvertFrom-JsonSafe -InputObject '{"a":1,"b":[2,3]}').b[1] | Should -Be 3
+    }
+    It 'ConvertFrom-JsonC strips // comments and trailing commas' {
+        $jsonc = @"
+{
+    // a comment
+    "acpAgent": "copilot",
+    "autoFixEnabled": true,
+}
+"@
+        $o = ConvertFrom-JsonC -Text $jsonc
+        $o.acpAgent | Should -Be 'copilot'
+        $o.autoFixEnabled | Should -BeTrue
+    }
+
+    It 'Set-WtSetting verifies nested object arrays structurally' {
+        $settingsPath = Join-Path $TestDrive 'nested-settings.json'
+        '{}' | Set-Content -LiteralPath $settingsPath -Encoding utf8
+        $app = [pscustomobject]@{ SettingsPath = $settingsPath }
+        $providers = @(@{
+            id = 'provider-local'
+            models = @(@{ id = 'test-model'; name = 'Test Model' })
+        })
+
+        Set-WtSetting -App $app -Key 'customModelProviders' -Value $providers | Out-Null
+
+        $stored = Get-WtSetting -App $app -Key 'customModelProviders'
+        @($stored) | Should -HaveCount 1
+        $stored[0].id | Should -Be 'provider-local'
+        $stored[0].models[0].name | Should -Be 'Test Model'
+    }
+}
+
+Describe 'AI oracle safety' -Tag 'Unit' {
+    It 'requires explicit opt-in before invoking an external provider' {
+        $previous = $env:ITE2E_ENABLE_AI_ORACLE
+        try {
+            Remove-Item Env:ITE2E_ENABLE_AI_ORACLE -ErrorAction SilentlyContinue
+            { Invoke-AgentJudge -Prompt 'do not send this' } | Should -Throw '*disabled by default*'
+        }
+        finally {
+            if ($null -eq $previous) {
+                Remove-Item Env:ITE2E_ENABLE_AI_ORACLE -ErrorAction SilentlyContinue
+            }
+            else {
+                $env:ITE2E_ENABLE_AI_ORACLE = $previous
+            }
+        }
+    }
+}
+
+Describe 'Agent settings cleanup' -Tag 'Unit' {
+    It 'removes showTokenUsageAndCost while preserving profiles' {
+        $settingsPath = Join-Path $TestDrive 'settings.json'
+        @{
+            defaultProfile = '{6239a42c-1111-49a3-80bd-e8fdd045185c}'
+            profiles = @(@{
+                name = 'p0'
+                guid = '{6239a42c-1111-49a3-80bd-e8fdd045185c}'
+            })
+            acpAgent = 'copilot'
+            showTokenUsageAndCost = $true
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $settingsPath -Encoding utf8
+        $app = [pscustomobject]@{ SettingsPath = $settingsPath }
+
+        Clear-WtConfig -App $app
+
+        $settings = Get-WtSettingsObject -App $app
+        $settings.PSObject.Properties.Name | Should -Not -Contain 'showTokenUsageAndCost'
+        $settings.PSObject.Properties.Name | Should -Not -Contain 'acpAgent'
+        $settings.profiles[0].name | Should -Be 'p0'
+    }
+}
+
+Describe 'Resolve-ItApp' -Tag 'Unit' {
+    It 'resolves a descriptor with the expected shape when a package is installed' {
+        $installed = Get-AppxPackage | Where-Object { $_.Name -like '*IntelligentTerminal*' }
+        if (-not $installed) { Set-ItResult -Skipped -Because 'no IT package installed'; return }
+        $app = Resolve-ItApp -Package Auto
+        $app.Package | Should -Match 'IntelligentTerminal'
+        $app.AppUserModelId | Should -Match '!'
+        $app.SettingsPath | Should -Match 'LocalState\\settings\.json$'
+        $app.WtcliPath | Should -Not -BeNullOrEmpty
+    }
+}
+
+Describe 'Start-Terminal startup ordering' -Tag 'Unit' {
+    It 'waits for the first window before probing COM' {
+        InModuleScope ItE2E {
+            $script:startupOrder = @()
+            $root = Join-Path $env:TEMP "ite2e-startup-order-$PID"
+            $fakeApp = [pscustomobject]@{
+                Package = 'IntelligentTerminal_rd9vj3e6a2mbr'
+                Version = '0.0.0.0'
+                WtcliPath = 'wtcli.exe'
+                LocalStateDir = $root
+                SettingsPath = Join-Path $root 'settings.json'
+                StatePath = Join-Path $root 'state.json'
+                AppUserModelId = 'IntelligentTerminal_rd9vj3e6a2mbr!App'
+                LaunchAlias = $null
+                ComClsid = $null
+                Pid = $null
+                Hwnd = $null
+            }
+
+            Mock Resolve-ItApp { $fakeApp }
+            Mock Stop-StaleItInstances
+            Mock Get-WtProcessesForApp { [pscustomobject]@{ Id = 4242 } }
+            Mock Start-Process
+            Mock Get-WtWindowHwnds {
+                $script:startupOrder += 'hwnd'
+                [pscustomobject]@{ pid = 4242; hwnd = 9001; title = 'PowerShell' }
+            }
+            Mock Resolve-WtComClsid {
+                $script:startupOrder += 'com'
+                '{D5B7C9E1-4F6A-4B8C-D9E0-F1A2B3C4D5E6}'
+            }
+            Mock Get-ActivePane { [pscustomobject]@{ window_id = 1 } }
+            Mock Initialize-LogOffsets
+            Mock Write-ItLog
+
+            $app = Start-Terminal -Package Dev -PassFre $false -Backup $false -CleanSettings $false
+
+            $app.Hwnd | Should -Be 9001
+            $script:startupOrder | Should -Be @('hwnd', 'com')
+        }
+    }
+
+    It 'restores config and stops a newly launched process when startup fails' {
+        InModuleScope ItE2E {
+            $root = Join-Path $env:TEMP "ite2e-startup-rollback-$PID"
+            $fakeApp = [pscustomobject]@{
+                Package = 'IntelligentTerminal_rd9vj3e6a2mbr'
+                Version = '0.0.0.0'
+                WtcliPath = 'wtcli.exe'
+                LocalStateDir = $root
+                SettingsPath = Join-Path $root 'settings.json'
+                StatePath = Join-Path $root 'state.json'
+                AppUserModelId = 'IntelligentTerminal_rd9vj3e6a2mbr!App'
+                LaunchAlias = $null
+                ComClsid = $null
+                Pid = $null
+                Hwnd = $null
+            }
+            $fakeProcess = [pscustomobject]@{ Id = 4242 }
+            $fakeProcess | Add-Member -MemberType ScriptMethod -Name CloseMainWindow -Value { $true }
+            $script:processLookup = 0
+
+            Mock Resolve-ItApp { $fakeApp }
+            Mock Stop-StaleItInstances
+            Mock Backup-WtConfig
+            Mock Clear-WtConfig
+            Mock Invoke-FrePass
+            Mock Start-Process
+            Mock Get-WtProcessesForApp {
+                $script:processLookup++
+                if ($script:processLookup -eq 1) { @() } else { $fakeProcess }
+            }
+            Mock Get-WtWindowHwnds { [pscustomobject]@{ pid = 4242; hwnd = 9001; title = 'PowerShell' } }
+            Mock Resolve-WtComClsid { throw 'expected COM failure' }
+            Mock Restore-WtConfig
+            Mock Get-Process { $fakeProcess }
+            Mock Stop-Process
+            Mock Write-ItLog
+
+            { Start-Terminal -Package Dev } | Should -Throw '*expected COM failure*'
+            Should -Invoke Restore-WtConfig -Times 1 -Exactly
+            Should -Invoke Stop-Process -Times 1 -Exactly -ParameterFilter { $Id -eq 4242 -and $Force }
+        }
+    }
+}
