@@ -153,11 +153,16 @@ coordinator tests pass `12/12`; explicit-permission tests pass `3/3`. Full WTA p
 - Claude local acceptance is pinned through the real Claude CLI and ACP adapter to Agent Maestro's
   Anthropic proxy with `gpt-5.6-sol[1m]`, advertised by GitHub Copilot and tool-capable. A bounded
   direct Claude smoke returned `CLAUDE_MAESTRO_GPT_OK` in `19.23s` without the prior
-  `invalid_message_role` failure. This configuration and the full tool turn remain local-only.
-- The first realistic provider run against exact publish `ffe5b13e` completed `3` pass, `4` fail,
-  and `2` prerequisite skips; it is retained as local evidence, not a CI result. Next command is
-  to commit the dev-only harness/handoff, cherry-pick only `2d9e06dfe` into publish, rebuild the
-  exact corrected publish HEAD, and rerun the Claude local-only tool case.
+  `invalid_message_role` failure. The targeted local-only package case then acknowledged native
+  Yolo on, issued its first real tool call after `6.334s`, created/read the unique marker, rendered
+  the exact `44`-character marker response, acknowledged native Yolo off, and completed in
+  `13.932s`. No permission request occurred and Terminal settings/state were restored.
+- The first realistic provider run against exact product build `ffe5b13e` completed `3` pass,
+  `4` fail, and `2` prerequisite skips; it is retained as local evidence, not a CI result.
+  Publish-only test/docs correction `2d9e06dfe` is pushed as publish HEAD `7c215900`; its product
+  sources and deployed binaries are unchanged from freshness-verified parent `ffe5b13e`.
+  Next command is final branch/remote/CI status verification and targeted follow-up of the other
+  local-only provider failures without reintroducing model prompts into publish or CI.
 
 ## Scope And Contract
 
@@ -652,10 +657,11 @@ pwsh -NoProfile -File .\test\e2e\Invoke-ItE2EReport.ps1 `
   -OutDir .\local-tdd-kit\artifacts\yolo-mode\real-user-yolo-<PUBLISH_SHA>
 ```
 
-- Status: exact publish `ffe5b13e` was built, deployed, freshness-verified and pushed. Its first
+- Status: product build `ffe5b13e` was built, deployed and freshness-verified. Its first
   realistic provider report is `.local-tdd-kit-run/artifacts/final-yolo-ffe5b13e` in the publish
   worktree (`3` pass, `4` fail, `2` skip). The replacement local-only harness is ready under
-  `local-tdd-kit/`; publish/CI no longer owns or invokes real model prompts.
+  `local-tdd-kit/`; publish/CI HEAD `7c215900` no longer owns or invokes real model prompts. The
+  targeted Claude rerun is PASS with Agent Maestro backed by GitHub Copilot `gpt-5.6-sol[1m]`.
 
 ## Visual Evidence
 
