@@ -565,8 +565,72 @@ the exact publish HEAD. Always set `ITE2E_PACKAGE=Dev`; `Auto` is not acceptable
   card and does not mutate the target pane until the user chooses Run/Insert.
 - Direct-COM caveat: separately demonstrate/document that the above card is a workflow
   property, not a security boundary against arbitrary same-user Agent commands.
-- Status: not run. If authentication or provider availability blocks the matrix, mark it
-  blocked rather than complete or skipped.
+
+### Simulated Real-User E2E Procedure
+
+This procedure is the acceptance meaning of "simulated real-user E2E" for PR #505. It uses
+automation to drive a normal user workflow, but the installed product, ACP server, provider CLI,
+model turn and tool effect are real. A handshake-only probe, mock agent or injected completion
+state does not satisfy it.
+
+1. **Freeze exact publish identity.** In the clean publish worktree, fetch `origin/main` and the
+  publish ref with command-line `git`, require both to be ancestors of local HEAD, and record the
+  full SHA. Permit only the untracked local validation kit; no dev-only handoff or evidence files
+  may be tracked in publish.
+2. **Build and deploy that SHA.** Put the publish worktree's source-built `wtcli.exe` first on
+  `PATH`, run the full explicit-target WTA suite, then run the publish worktree's build/deploy
+  helper. The receipt must prove source fingerprint, HEAD, recipe source, staged binary,
+  installed layout and SHA-256 identities all match. Always set `ITE2E_PACKAGE=Dev`; `Auto` is
+  not acceptable evidence.
+3. **Record real prerequisites without changing authentication.** Record CLI/adapter version,
+  selected model and inference backend. Copilot and Gemini use their real provider accounts;
+  Claude and Codex may use their real CLIs/adapters with VS Code LM supplied through Maestro,
+  and must be labeled accordingly. Missing login, quota or provider availability is `BLOCKED`,
+  never a silent skip or pass. A cold Codex adapter timeout is a product failure, not a prewarm
+  pass.
+4. **Use a disposable workspace and normal product entry points.** Launch the exact Dev package
+  by package AUMID, select the provider through product settings, create/focus a tab rooted at a
+  unique temporary directory, open the Agent pane and wait for the rendered connected state.
+  Do not invoke internal maps or a test-only product route. For Gemini, pre-existing workspace
+  trust is a provider prerequisite. The E2E fixture may back up, temporarily add only its exact
+  disposable directory to `trustedFolders.json`, and restore it in `finally`; this is test setup,
+  not coverage or implementation of a WTA trust UX.
+5. **Exercise the complete Yolo transaction.** Verify default/global state as required, submit
+  `/yolo on`, and wait for the provider-native ACP acknowledgement before claiming enabled.
+  Submit one bounded normal-cost prompt requiring the provider's shell tool to create a file
+  containing a unique marker, read it back and reply with only that marker. Assert the exact file
+  content, rendered model response and provider-native operation. Then submit `/yolo off`, wait
+  for acknowledgement and prove the captured prior provider mode was restored. Exercise a second
+  session where isolation is part of the contract.
+6. **Keep independent permission boundaries observable.** While Yolo is on, ordinary ACP
+  permission requests must remain pending until the test user explicitly selects an option.
+  A `request_terminal_actions` proposal must remain a card until Run/Insert is selected. Never
+  let the harness auto-select `AllowOnce` or treat model prose as the authorization oracle.
+7. **Classify outcomes strictly.** `PASS` requires a real model turn, requested tool effect,
+  unique file marker, expected user-visible response, native enable acknowledgement and restore
+  acknowledgement. A model that answers without invoking the required tool, a missing marker,
+  wrong target, startup-budget timeout or restore failure is `FAIL`. Provider-owned auth, quota,
+  service availability or an unsatisfied trust/admin prerequisite is `BLOCKED`. Initialization
+  success alone is never `PASS`.
+8. **Clean up and preserve reviewable evidence.** In `finally`, stop only processes launched by
+  the run, restore Terminal settings/state and any provider config byte-for-byte, remove the
+  disposable workspace, and leave real credentials untouched. Store reports/log extracts under
+  the ignored evidence root with publish SHA, package path, hashes, provider/version/model,
+  inference payer, cwd, duration and outcome. Do not record secrets, account IDs, unrelated
+  prompts or unrelated terminal content.
+
+Current command shape from the publish worktree:
+
+```powershell
+$env:ITE2E_PACKAGE = 'Dev'
+pwsh -NoProfile -File .\test\e2e\Invoke-ItE2EReport.ps1 `
+   -Path .\test\e2e\tests\Feature.YoloMode.Tests.ps1 `
+   -OutDir .\.local-tdd-kit-run\artifacts\real-user-yolo-<PUBLISH_SHA>
+```
+
+- Status: exact publish `ffe5b13e` is built, deployed, freshness-verified and pushed. The current
+  realistic provider run is in progress; append its per-provider `PASS`/`FAIL`/`BLOCKED` results
+  and report path here when the runner completes.
 
 ## Visual Evidence
 
