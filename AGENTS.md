@@ -97,6 +97,10 @@
   以及应随产品发布的 checklist 或 test metadata。
 - Dev-only changes单独提交：本交接、进度记录、ignored screenshots/reports/logs、
   本地 orchestration、provider 配置、实验，以及不应进入 publish 的最终验收 harness。
+- 任何会提交真实模型请求、消耗token/provider quota或依赖本机付费凭据的测试，连同其源码、
+  orchestration和报告，都必须是dev-only/local-only；不得进入publish branch、正式`test/e2e`
+  suite或CI pipeline。CI没有真实provider额度，只能运行deterministic mock、fixture或明确的
+  zero-token initialize/session/capability检查。
 - Publish worktree 只直接 cherry-pick publishable commit。不要 cherry-pick mixed commit
   后再 restore 文件，也不要把 dev-only acceptance commit 带入 publish。
 - 不修改或回退无关的用户改动。若无关改动不阻塞当前工作，保持原状。
@@ -114,6 +118,8 @@
 - 不在 feature commit 中夹带大型 test framework、通用 harness rewrite 或无关基础设施。
 - Mock/deterministic fixture 可用于 focused RED/GREEN、几何、路由和故障隔离；若 contract
   依赖真实外部系统，它不能替代最终真实集成验收。
+- 真实provider/model/tool验收若消耗token，测试文件必须放在dev-only harness/evidence root；
+  publishable E2E只保留不会产生推理费用的product workflow和protocol检查。
 
 ## Reproduction And RED Oracle
 
@@ -216,6 +222,11 @@ Ownership Hypothesis 并说明哪个 check 改变了判断。
 “自动化驱动的真实用户体验”。它不是 mock E2E：harness 可以自动点击、输入和断言，但被测
 package、外部依赖、用户入口、模型回合和最终副作用必须是真实的。
 
+**Local-only硬边界：**只要本流程会提交真实模型请求或消耗token/provider quota，测试源码、
+runner、provider配置和结果报告都不得进入publish branch或CI。它们只能存在于dev-only worktree
+和ignored/local evidence root中，由开发者手动运行。publish/CI可以验证同一产品入口的mock或
+zero-token部分，但不能把这些结果冒充真实provider验收。被测package仍必须来自exact publish HEAD。
+
 1. **固定 exact publish identity。** 在 publish worktree 获取最新base和publish ref，要求
   两者均为本地HEAD的ancestor，并记录完整SHA。被测package必须由该SHA构建；dev-only
   harness可以提供test source，但不能替代publish binary。
@@ -315,6 +326,7 @@ Evidence root: `<EVIDENCE_ROOT>`
 - [ ] Packaged/deployed E2E 对 exact publish binary GREEN。
 - [ ] 真实外部依赖验收已完成，或明确标记 blocked。
 - [ ] Simulated real-user E2E包含真实外部操作、严格结果分类、完整cleanup和exact identity evidence。
+- [ ] Token-consuming harness和evidence保持local-only，publish branch与CI均不包含或调用它们。
 - [ ] UI/渲染/交互的 fresh screenshots 已逐图检查并记录 provenance。
 - [ ] Review findings 已逐条 triage，accepted fixes 有 RED/GREEN evidence。
 - [ ] Evidence inventory 能映射全部 user-visible assertions。
