@@ -22,6 +22,7 @@
 - `[必填]` `<RED_ORACLE>`、`<EXPECTED_FAILURE>`、`<GREEN_ORACLE>`、`<INVARIANTS>`、`<GUARDRAILS>`
 - `[按需]` `<E2E_SUITE>`、`<E2E_COMMAND>`、`<FIXTURE>`、`<PACKAGE_NAME>`、`<BINARY_PATHS>`、`<DEPLOY_COMMAND>`
 - `[按需]` `<EVIDENCE_ROOT>`、`<SCREENSHOT_MATRIX>`、`<REAL_INTEGRATION>`、`<REVIEW_EVIDENCE_DIR>`
+- `[按需]` `<REAL_USER_E2E_COMMAND>`、`<REAL_PROVIDER_MATRIX>`、`<REAL_USER_TASK>`、`<REAL_USER_COST_BOUND>`、`<REAL_USER_EVIDENCE_DIR>`、`<PACKAGE_SELECTOR_ENV>`、`<EXACT_PACKAGE_SELECTOR>`
 - `[持续更新]` `<CURRENT_STAGE>`、`<PUBLISHABLE_COMMIT>`、`<PUBLISH_HEAD>`、`<VALIDATION_RESULTS>`、`<OPEN_ITEMS>`
 
 ## Feature Metadata
@@ -209,6 +210,48 @@ Ownership Hypothesis 并说明哪个 check 改变了判断。
 
 无法运行真实验收时，workflow 状态是 blocked，而不是 complete 或 skipped。
 
+### Simulated Real-User E2E `[按需]`
+
+当 feature 的完整价值依赖真实 agent/provider/model/tool、云服务或硬件时，使用本节定义
+“自动化驱动的真实用户体验”。它不是 mock E2E：harness 可以自动点击、输入和断言，但被测
+package、外部依赖、用户入口、模型回合和最终副作用必须是真实的。
+
+1. **固定 exact publish identity。** 在 publish worktree 获取最新base和publish ref，要求
+  两者均为本地HEAD的ancestor，并记录完整SHA。被测package必须由该SHA构建；dev-only
+  harness可以提供test source，但不能替代publish binary。
+2. **build、deploy并验证freshness。** 运行full relevant suite和`<BUILD_COMMAND>`，部署
+  `<PACKAGE_NAME>`，核对source fingerprint、HEAD、recipe/staging source、installed/live
+  layout及关键binary SHA-256。显式设置package selector，不允许`Auto`误选其他安装版本。
+3. **记录真实前置条件。** 为`<REAL_PROVIDER_MATRIX>`记录provider/adapter版本、认证状态、
+  model和实际承担推理成本的backend。不要登录、刷新或收集凭据。缺失认证、quota、服务、
+  设备或provider-owned policy/trust前置条件时标记`BLOCKED`，不能静默skip后声称完成。
+4. **通过正常产品入口执行。** 从exact package启动，使用正常Settings/UI/CLI入口选择依赖，
+  在唯一的disposable workspace中完成连接。不得直接修改内部map、注入completed state或使用
+  test-only product route。若harness必须临时准备外部provider配置，该步骤必须最小、可逆、
+  处于`try/finally`内，并明确标为fixture setup而非产品UX覆盖。
+5. **产生可判定的真实结果。** 执行`<REAL_USER_TASK>`，其成本上限为
+  `<REAL_USER_COST_BOUND>`。优先使用唯一marker和安全的read/write/execute操作，使测试可同时
+  断言真实模型响应、真实副作用、正确target和product-owned state。initialize、catalog、
+  handshake或模型文字声明本身不构成端到端PASS。
+6. **严格分类结果。** `PASS`要求完整用户入口、真实外部操作和所有最终oracle成功；模型未按
+  要求调用工具、marker缺失、target错误、产品startup budget超时、状态未恢复或cleanup失败均
+  为`FAIL`。只有产品边界外且已记录的前置条件不可用才是`BLOCKED`。不要把产品失败改写为
+  environment skip，也不要通过预热隐藏cold-start失败。
+7. **恢复和证据。** 在`finally`中只停止本轮进程，逐字节恢复产品及provider配置，删除临时
+  workspace，并保持真实认证不变。把报告、最小日志摘录和必要截图写入
+  `<REAL_USER_EVIDENCE_DIR>`，记录publish SHA、package path/hash、版本/model/backend、cwd、
+  duration和每行`PASS`/`FAIL`/`BLOCKED`。不得保存secret、account ID、无关prompt或无关终端内容。
+
+Command shape:
+
+```powershell
+$env:<PACKAGE_SELECTOR_ENV> = '<EXACT_PACKAGE_SELECTOR>'
+<REAL_USER_E2E_COMMAND>
+```
+
+若本节保留，必须把`<PACKAGE_SELECTOR_ENV>`和`<EXACT_PACKAGE_SELECTOR>`加入本feature的按需
+placeholder并替换；若项目没有package selector，则删除这两行并说明exact-target机制。
+
 ## Visual Evidence `[UI/渲染/交互变更必填]`
 
 - Screenshot matrix: `<SCREENSHOT_MATRIX>`
@@ -271,6 +314,7 @@ Evidence root: `<EVIDENCE_ROOT>`
 - [ ] Exact publish HEAD 已 build/deploy，source/deployed hashes 一致。
 - [ ] Packaged/deployed E2E 对 exact publish binary GREEN。
 - [ ] 真实外部依赖验收已完成，或明确标记 blocked。
+- [ ] Simulated real-user E2E包含真实外部操作、严格结果分类、完整cleanup和exact identity evidence。
 - [ ] UI/渲染/交互的 fresh screenshots 已逐图检查并记录 provenance。
 - [ ] Review findings 已逐条 triage，accepted fixes 有 RED/GREEN evidence。
 - [ ] Evidence inventory 能映射全部 user-visible assertions。
