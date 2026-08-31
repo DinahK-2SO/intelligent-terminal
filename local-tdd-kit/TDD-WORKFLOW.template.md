@@ -73,6 +73,12 @@ For every behavior change:
 - Require explicit-target WTA and Cargo/AppX/installed SHA-256 equality.
 - Require installed Dev layout and live process paths to belong to this worktree.
 - Set `ITE2E_PACKAGE=Dev`; a skipped test is not GREEN.
+- For bounded build/test/deploy/E2E work, use direct synchronous terminal execution with no tool
+  timeout. Never leave a required phase in the background and end the agent turn.
+- Prefer `Invoke-LocalTddPipeline.ps1 -E2EPath <LIVE_E2E_CASES>` for an interruption-sensitive
+  exact-package cycle. Record its `pipeline-state.json` path and require final status `passed`.
+- Keep build/deploy non-launching. `-Launch` can steal foreground focus and visibly flash; let the
+  E2E harness launch and bind the exact PID/HWND only when UI interaction starts.
 
 ## Local Evidence and Security
 
@@ -97,6 +103,7 @@ For every behavior change:
 - [ ] Focused RED failed for the expected reason.
 - [ ] Focused GREEN and relevant suites pass.
 - [ ] Build receipt matches the current source fingerprint.
+- [ ] Durable pipeline journal is `passed`; no required terminal or phase remains `running`.
 - [ ] Product, staged package and installed hashes match.
 - [ ] Live E2E targets the intended Dev package and process/window identity.
 - [ ] Negative controls and existing behavior pass.

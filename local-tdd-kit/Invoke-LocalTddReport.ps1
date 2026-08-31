@@ -56,6 +56,7 @@ function HtmlEnc($s) { if ($null -eq $s) { return '' } [System.Net.WebUtility]::
 function FileUri($p) { try { ([uri]([System.IO.Path]::GetFullPath($p))).AbsoluteUri } catch { $p } }
 
 $failed = $result.Tests | Where-Object { $_.Result -eq 'Failed' }
+$noTests = ($result.TotalCount - $result.NotRunCount) -eq 0
 
 # ── Markdown summary ────────────────────────────────────────────────────────
 function Format-Failure($t) {
@@ -84,7 +85,10 @@ $md = [System.Text.StringBuilder]::new()
 [void]$md.AppendLine("- HTML report: $(Join-Path $OutDir 'report.html')")
 [void]$md.AppendLine("- NUnit XML: $($cfg.TestResult.OutputPath.Value)")
 [void]$md.AppendLine("")
-if ($failed) {
+if ($noTests) {
+    [void]$md.AppendLine('## No tests were discovered ❌')
+}
+elseif ($failed) {
     [void]$md.AppendLine("## Failures ($($failed.Count))")
     [void]$md.AppendLine("")
     foreach ($t in $failed) { [void]$md.Append((Format-Failure $t)) }
@@ -94,9 +98,9 @@ $summaryPath = Join-Path $OutDir 'summary.md'
 $md.ToString() | Set-Content -LiteralPath $summaryPath -Encoding utf8
 
 # ── HTML report ─────────────────────────────────────────────────────────────
-$allPass = ($result.FailedCount -eq 0)
+$allPass = -not $noTests -and ($result.FailedCount -eq 0)
 $bannerClass = if ($allPass) { 'ok' } else { 'bad' }
-$bannerText = if ($allPass) { "ALL PASSED" } else { "$($result.FailedCount) FAILED" }
+$bannerText = if ($noTests) { 'NO TESTS DISCOVERED' } elseif ($allPass) { "ALL PASSED" } else { "$($result.FailedCount) FAILED" }
 
 $h = [System.Text.StringBuilder]::new()
 [void]$h.AppendLine('<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">')
@@ -202,6 +206,9 @@ if ($failed) {
         Write-Host ("      {0}" -f ($err.Exception.Message -replace "`r?`n", ' ').Trim()) -ForegroundColor Yellow
     }
 }
+if ($noTests) {
+    Write-Host 'No tests were discovered; this run is not successful.' -ForegroundColor Red
+}
 Write-Host ("=" * 70)
 
-exit ([int]($result.FailedCount -gt 0))
+exit ([int]($result.FailedCount -gt 0 -or $noTests))

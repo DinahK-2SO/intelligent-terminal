@@ -43,15 +43,21 @@ function Invoke-Step([string]$Name, [scriptblock]$Action) {
 function Get-DevPackage {
     Get-AppxPackage | Where-Object PackageFamilyName -eq $packageFamily | Select-Object -First 1
 }
-function Get-RecipePackageSource([string]$Path, [string]$PackagePath) {
+function Get-RecipePackageSources([string]$Path) {
     [xml]$xml = Get-Content -LiteralPath $Path -Raw
-    $item = $xml.SelectNodes("//*[local-name()='AppxPackagedFile']") |
-        Where-Object { $_.SelectSingleNode("*[local-name()='PackagePath']").InnerText -eq $PackagePath } |
-        Select-Object -First 1
-    if (-not $item -or -not $item.Include) {
-        throw "Package recipe does not map a source file to '$PackagePath': $Path"
+    $sources = [ordered]@{}
+    foreach ($item in $xml.SelectNodes("//*[local-name()='AppxPackagedFile']")) {
+        $packagePath = [string]$item.SelectSingleNode("*[local-name()='PackagePath']").InnerText
+        if (-not $packagePath -or -not $item.Include) {
+            throw "Package recipe contains an incomplete AppxPackagedFile entry: $Path"
+        }
+        if ($sources.Contains($packagePath)) {
+            throw "Package recipe contains duplicate package path '$packagePath': $Path"
+        }
+        $sources[$packagePath] = [IO.Path]::GetFullPath([string]$item.Include)
     }
-    [IO.Path]::GetFullPath([string]$item.Include)
+    if ($sources.Count -eq 0) { throw "Package recipe contains no packaged files: $Path" }
+    $sources
 }
 function Stop-ExactPackageProcesses($Package) {
     if (-not $Package -or -not $Package.InstallLocation) { return }
@@ -124,14 +130,12 @@ Invoke-Step 'Build CascadiaPackage and dependencies' {
 foreach ($required in @($recipe, $stagedWta)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Required package artifact missing: $required" }
 }
-$criticalPackagePaths = @('wta.exe', 'WindowsTerminal.exe', 'wtcli.exe', 'Microsoft.Terminal.Protocol.winmd', 'resources.pri')
-$recipeSources = [ordered]@{}
-foreach ($packagePath in $criticalPackagePaths) {
-    $source = Get-RecipePackageSource -Path $recipe -PackagePath $packagePath
+$recipeSources = Get-RecipePackageSources -Path $recipe
+foreach ($packagePath in $recipeSources.Keys) {
+    $source = $recipeSources[$packagePath]
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
         throw "Package recipe source for '$packagePath' does not exist: $source"
     }
-    $recipeSources[$packagePath] = $source
 }
 $recipeWta = $recipeSources['wta.exe']
 if (-not $recipeWta.Equals([IO.Path]::GetFullPath($cargoWta), [StringComparison]::OrdinalIgnoreCase)) {
@@ -173,6 +177,22 @@ if ($verifyInstalled) {
     if ($installedHash -ne $cargoHash) { throw "Installed wta.exe is stale. Cargo=$cargoHash Installed=$installedHash" }
 }
 
+$packageSourceHashes = [ordered]@{}
+$appxHashes = [ordered]@{}
+foreach ($packagePath in $recipeSources.Keys) {
+    $packageSourceHashes[$packagePath] = (Get-FileHash -LiteralPath $recipeSources[$packagePath] -Algorithm SHA256).Hash
+    if ($verifyInstalled) {
+        $packagedPath = Join-Path $appx $packagePath
+        if (-not (Test-Path -LiteralPath $packagedPath -PathType Leaf)) {
+            throw "Deployed AppX is missing recipe destination '$packagePath': $packagedPath"
+        }
+        $appxHashes[$packagePath] = (Get-FileHash -LiteralPath $packagedPath -Algorithm SHA256).Hash
+        if ($packageSourceHashes[$packagePath] -ne $appxHashes[$packagePath]) {
+            throw "Deployed AppX contains stale '$packagePath'. Source=$($packageSourceHashes[$packagePath]) AppX=$($appxHashes[$packagePath])"
+        }
+    }
+}
+
 New-Item -ItemType Directory -Force -Path (Split-Path $receiptPath -Parent) | Out-Null
 [ordered]@{
     schemaVersion = 1
@@ -186,7 +206,11 @@ New-Item -ItemType Directory -Force -Path (Split-Path $receiptPath -Parent) | Ou
     rustTarget = $rustTarget
     packageFamily = $packageFamily
     installVerified = $verifyInstalled
-    hashes = @{ wta = $cargoHash }
+    hashes = @{
+        wta = $cargoHash
+        packageSources = $packageSourceHashes
+        appx = $appxHashes
+    }
     paths = @{
         repoRoot = $repoRoot
         sourceWtcli = $wtcli

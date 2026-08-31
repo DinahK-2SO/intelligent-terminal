@@ -47,6 +47,46 @@ pwsh -File local-tdd-kit/Verify-DeploymentFreshness.ps1
 Invoke-Pester local-tdd-kit/selftests -Tag Live
 ```
 
+For an AI-driven or otherwise interruption-sensitive complete cycle, keep all bounded phases in
+one durable process:
+
+```powershell
+pwsh -File local-tdd-kit/Invoke-LocalTddPipeline.ps1 `
+   -E2EPath test/e2e/tests/<Feature>.Tests.ps1
+```
+
+The runner atomically replaces `pipeline-state.json` under a unique ignored artifact directory,
+so readers never observe partial JSON. Every phase is recorded as `running`, then `passed` or
+`failed`, with timestamps, exit code, exact HEAD, hash-protected run-local receipt snapshot and report paths.
+After E2E it recomputes the receipt's complete source fingerprint, not only HEAD. If the process disappears while the journal still says
+`running`, `Get-LocalTddPipelineStatus.ps1` reports `interrupted`. A prior build receipt is never
+accepted: the shared receipt is moved aside before build, and the new receipt must match the exact
+HEAD, current source fingerprint and current build phase.
+
+### Agent/autopilot execution contract
+
+- Build, test, install, package, deploy and E2E are bounded one-shot work. When the available
+   terminal tool supports it, an agent must run them through direct synchronous execution with no
+   tool timeout, even when they take many minutes. Do not use a short-lived execution subagent or
+   async/background mode.
+- A tool timeout that returns a terminal ID is a handoff, not completion. The model cannot be
+   awakened by process completion after its turn ends. Never say “will continue when complete”
+   and end the turn while required work remains.
+- If background execution is unavoidable, launch the durable pipeline rather than one phase. The
+   machine can then finish every remaining phase and journal the outcome only while its process
+   survives; host/VS Code cancellation is classified as `interrupted`. A later user/platform turn
+   is still required before the model can interpret any outcome.
+- Do not bundle expensive phases inside a wrapper that itself has a short wait limit. Either use
+   the durable pipeline or execute each phase synchronously and inspect its result before the next.
+
+### Foreground activation and visible flicker
+
+`Invoke-BuildDeploy.ps1 -Launch` starts the Dev package through Explorer. Windows may activate the
+new Terminal window, visibly flash or move focus away from VS Code. This does not terminate
+`Code.exe`, but it can disrupt foreground-sensitive UI/input tests. Build/deploy without `-Launch`
+by default; launch only immediately before a test that needs a live window. The durable pipeline
+never passes `-Launch` and lets its E2E suite own launch, PID/HWND and cleanup.
+
 The generated receipt is `local-tdd-kit/artifacts/build-receipt.json` and is ignored.
 It records source fingerprint, HEAD, configuration, exact paths and SHA-256 hashes.
 Pass `-SourcePaths` to conservatively extend the fingerprint for issue-specific
@@ -68,8 +108,9 @@ Before accepting E2E evidence, require all of these:
 4. Cargo, package-output and installed `wta.exe` SHA-256 hashes are identical,
    and the recipe maps package-root `wta.exe` to the explicit-target Cargo path.
 5. The installed Dev package `InstallLocation` is this worktree's AppX directory.
-6. Staged and installed `WindowsTerminal.exe`, `wtcli.exe`, protocol WinMD and
-   `resources.pri` hashes match.
+6. Every recipe source (`WindowsTerminal.exe`, `wtcli.exe`, protocol WinMD,
+   `resources.pri`, and WTA) hashes to the corresponding AppX destination; installed layout
+   checks then confirm the registered package points at that exact AppX.
 7. Running Terminal/WTA process paths are under that same install location.
 8. E2E explicitly selects `Dev`; `Auto` is not acceptable for local-package proof.
 
@@ -151,6 +192,15 @@ and clean shared outputs. Do not run x64 and ARM64 release packaging in parallel
 
 Wait for a real zero exit code. A still-running or backgrounded build is not a
 successful build, and deploying its previous recipe simply re-registers old code.
+
+### The agent stopped after a background handoff
+
+This is an orchestration failure, not a build result. In observed tool versions, short execution
+helpers stopped waiting at about two minutes while leaving the command alive; that duration is
+implementation-dependent, not a stable contract. If the agent then ends its turn, the
+completion event cannot start another turn. Re-run the bounded workflow synchronously with no
+tool timeout, or inspect the durable pipeline journal in the next available turn. Do not poll or
+claim success from an old receipt.
 
 ### Logs came from an old process/version
 

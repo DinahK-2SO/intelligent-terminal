@@ -42,11 +42,33 @@ pwsh -File local-tdd-kit/Verify-DeploymentFreshness.ps1
 Read `BUILD-DEPLOY-E2E.md` before trusting a packaged E2E result. A green build alone
 does not prove that the installed package or live processes contain that build.
 
+For an uninterrupted bounded build/deploy/freshness/E2E cycle, use the durable runner:
+
+```powershell
+pwsh -File local-tdd-kit/Invoke-LocalTddPipeline.ps1 `
+	-E2EPath test/e2e/tests/<Feature>.Tests.ps1
+
+pwsh -File local-tdd-kit/Get-LocalTddPipelineStatus.ps1 `
+	-JournalPath local-tdd-kit/artifacts/pipeline-<HEAD>-<UTC>/pipeline-state.json
+```
+
+The runner replaces its phase journal atomically so readers never observe partial JSON. It records
+preflight, build/deploy/freshness, optional packaged E2E, and final source-fingerprint verification.
+It deliberately does not pass `-Launch` to the build script; E2E
+owns the exact window launch. An AI coding agent must still invoke the runner with synchronous
+terminal execution and no tool timeout. The journal lets a later turn distinguish `passed`,
+`failed`, live `running`, abandoned `interrupted`, and semantically corrupt `invalid` state, but
+it cannot wake an agent turn that was already ended. If VS Code or the execution
+host terminates the runner process, machine-side continuation also stops and status becomes
+`interrupted`.
+
 ## Documents
 
 - `TDD-WORKFLOW.template.md`: issue workflow template and placeholders
 - `TOOLS.md`: tools, installation, APIs and input safety
 - `BUILD-DEPLOY-E2E.md`: project layers, known failure modes and freshness gates
+- `Invoke-LocalTddPipeline.ps1`: durable bounded workflow and atomic phase journal
+- `Get-LocalTddPipelineStatus.ps1`: passed/failed/running/interrupted/invalid classification
 - `FRAMEWORK-SOURCE.md`: snapshot provenance and update policy
 - `examples/Feature.Template.Tests.ps1`: generic Pester starting point
 

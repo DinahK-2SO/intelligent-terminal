@@ -3,7 +3,8 @@ param(
     [string]$RepoRoot,
     [string]$ReceiptPath,
     [switch]$RequireRunningTerminal,
-    [switch]$PassThru
+    [switch]$PassThru,
+    [Parameter(DontShow)]$InstalledPackage
 )
 
 $ErrorActionPreference = 'Stop'
@@ -46,14 +47,38 @@ if ($receipt.paths.PSObject.Properties.Name -contains 'recipeWtaSource') {
 if ($receipt.paths.PSObject.Properties.Name -contains 'packageSources') {
     foreach ($entry in $receipt.paths.packageSources.PSObject.Properties) {
         $source = [string]$entry.Value
-        Add-Check "recipe source exists: $($entry.Name)" (Test-Path -LiteralPath $source -PathType Leaf) $source
+        $sourceHash = Get-Hash $source
+        Add-Check "recipe source exists: $($entry.Name)" ([bool]$sourceHash) $source
+        if ($receipt.hashes.PSObject.Properties.Name -contains 'packageSources') {
+            $recordedSourceHash = [string]$receipt.hashes.packageSources.($entry.Name)
+            Add-Check "recipe source unchanged: $($entry.Name)" `
+                ($recordedSourceHash -and $sourceHash -eq $recordedSourceHash) `
+                "current=$sourceHash receipt=$recordedSourceHash"
+        }
+        if ($receipt.installVerified) {
+            $packaged = Join-Path $receipt.paths.appxLayout $entry.Name
+            $packagedHash = Get-Hash $packaged
+            Add-Check "recipe source matches AppX: $($entry.Name)" `
+                ($sourceHash -and $sourceHash -eq $packagedHash) `
+                "source=$sourceHash packaged=$packagedHash"
+            if ($receipt.hashes.PSObject.Properties.Name -contains 'appx') {
+                $recordedAppxHash = [string]$receipt.hashes.appx.($entry.Name)
+                Add-Check "AppX destination unchanged: $($entry.Name)" `
+                    ($recordedAppxHash -and $packagedHash -eq $recordedAppxHash) `
+                    "current=$packagedHash receipt=$recordedAppxHash"
+            }
+        }
     }
 }
 
 $expectedInstall = [IO.Path]::GetFullPath([string]$receipt.paths.appxLayout)
 $actualInstall = ''
 if ($receipt.installVerified) {
-    $package = Get-AppxPackage | Where-Object PackageFamilyName -eq $receipt.packageFamily | Select-Object -First 1
+    $package = if ($PSBoundParameters.ContainsKey('InstalledPackage')) {
+        $InstalledPackage
+    } else {
+        Get-AppxPackage | Where-Object PackageFamilyName -eq $receipt.packageFamily | Select-Object -First 1
+    }
     $actualInstall = if ($package) { [IO.Path]::GetFullPath([string]$package.InstallLocation) } else { '' }
     $installedWtaHash = Get-Hash $receipt.paths.installedWta
     Add-Check 'Dev package installed' ([bool]$package) $receipt.packageFamily

@@ -98,6 +98,9 @@ Stop-Terminal -App $app
 - Prefer UIA selector invocation over coordinates when a stable AutomationId exists.
 - `Start-Terminal` backs up settings/state; `Stop-Terminal` restores them.
 - Artifacts, provider configs, logs, captures and screenshots remain ignored.
+- `Invoke-BuildDeploy.ps1 -Launch` may activate the Dev Terminal and move foreground focus away
+  from VS Code. Prefer a non-launching build and let the E2E harness launch immediately before
+  input. A focus flash is expected window activation, not evidence that VS Code was terminated.
 
 ## Optional AI Oracle
 
