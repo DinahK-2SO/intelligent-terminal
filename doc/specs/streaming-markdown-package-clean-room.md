@@ -14,7 +14,7 @@ status: Draft
 
 首选交付方式是向 `tui-markdown` 上游贡献该能力。如果上游不接受相关 scope，则从同一份 clean-room 实现发布一个公开、可独立使用的开源 package。Intelligent Terminal 只是首个 consumer，不拥有 package 的 Markdown streaming 算法。
 
-本文档可以使用中文进行内部评审，但**所有最终 deliverables 必须使用英文**，包括 source code identifiers、comments、tests、fixtures、API documentation、README、issue、RFC、pull request、commit message、changelog、release notes、benchmark report、security policy、license/compliance records，以及 Intelligent Terminal integration documentation。
+本文档及其他 clean-room requirements、协调记录和内部 review 文档可以使用中文，implementation team 可以直接使用经批准的中文版本。**所有产品与公开 deliverables 必须使用英文**，包括 source code identifiers、comments、tests、fixtures、API documentation、README、issue、RFC、pull request、commit message、changelog、release notes、benchmark report、security policy、license/compliance records，以及 Intelligent Terminal product documentation。
 
 本文档不是法律意见，也不证明 clean-room 已经成立。法务或开源合规负责人必须在实现开始前批准流程、人员、允许资料和发布方式。
 
@@ -33,7 +33,7 @@ status: Draft
 | Tables, fences, inline syntax and global rewrites | [必须处理的特殊情况](#必须处理的特殊情况) |
 | Finalization and resource limits | [Finish 与 malformed input](#finish-与-malformed-input)、[Resource limits 与 backpressure](#resource-limits-与-backpressure) |
 | Intelligent Terminal integration | [Intelligent Terminal 集成](#intelligent-terminal-集成) |
-| English final deliverables | [最终 Deliverables（全部英文）](#最终-deliverables全部英文) |
+| English product and public deliverables | [产品与公开 Deliverables（全部英文）](#产品与公开-deliverables全部英文) |
 
 clean-room 团队产生的实现是唯一产品实现。上游 PR、fallback package 和 Intelligent Terminal integration 必须消费同一份实现历史，不得分别开发或相互翻译两套算法。
 
@@ -85,7 +85,7 @@ package 必须提供以下能力：
 
 实现团队默认只能访问：
 
-- 法务批准的本文档英文 implementation-facing 版本；
+- 法务批准的本文档 implementation-facing 版本；该版本可以使用中文；
 - 官方 `tui-markdown` 仓库中获批 commit 的干净快照和公开历史；
 - CommonMark 与 GitHub Flavored Markdown 公开规范；
 - allowlist 中指定版本的 Rust、Ratatui 和获批 Markdown parser 文档；
@@ -610,11 +610,11 @@ corpus 至少覆盖：
 
 可以并行的工作包括：上游 design discussion、clean implementation、independent test corpus、fallback release automation 和 Intelligent Terminal adapter prototype。不能并行维护两份不同 streaming algorithm，也不能让 adapter prototype重新实现 package behavior。
 
-## 最终 Deliverables（全部英文）
+## 产品与公开 Deliverables（全部英文）
 
 ### 必须交付
 
-- Approved implementation-facing requirements specification；
+- Approved implementation-facing requirements specification（可使用中文，并作为内部 clean-room evidence 保存）；
 - clean-room participant attestations and access log；
 - approved source/dependency allowlist and restricted source register；
 - source snapshot manifest and hashes；
@@ -630,9 +630,9 @@ corpus 至少覆盖：
 - release artifact, immutable tag, checksums and release notes；
 - fallback public repository/package materials when upstream delivery is unavailable。
 
-### 不得进入最终交付
+### 不得进入产品与公开交付
 
-- 本中文 planning document，除非仅作为内部记录；
+- 未经批准的内部 planning 草稿；已批准的中文 clean-room requirements 可以进入受控 evidence archive，但不随公开 package artifact 发布；
 - 受限项目名称、链接、commit 或源码片段；
 - 旧 Intelligent Terminal implementation、tests 或 vendor patch；
 - 调查笔记、chat transcript、local paths、credentials、private logs 或 ignored artifacts；
@@ -650,7 +650,7 @@ corpus 至少覆盖：
 - package version/checksum、lockfile、NOTICE/SBOM 和 build artifact 一致；
 - full host Rust tests、相关 native builds 和 live E2E 通过；
 - 独立审计没有发现未解决的来源或显著表达相似性问题；
-- 所有最终 deliverables 已转换为英文并完成 review。
+- 所有产品与公开 deliverables 已使用英文并完成 review；内部 clean-room requirements 和协调记录可以保留中文。
 
 ## 启动清单
 
@@ -660,7 +660,7 @@ corpus 至少覆盖：
 | 指定五类角色及人员 | 待完成 | |
 | 完成人员接触史与资格审查 | 待完成 | |
 | 建立 restricted source register | 待完成 | |
-| 批准英文 implementation-facing 规格 | 待完成 | |
+| 批准 implementation-facing 规格（可使用中文） | 待完成 | |
 | 选择官方 `tui-markdown` 干净 baseline | 待完成 | |
 | 生成并双人校验源码 manifest/hash | 待完成 | |
 | 建立 standards/dependency/tool allowlist | 待完成 | |

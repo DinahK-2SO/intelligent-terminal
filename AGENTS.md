@@ -5,6 +5,108 @@ workflows. The inherited Windows Terminal build, architecture, and C++ conventio
 are documented in `.github/copilot-instructions.md`; this file contains only the
 fork-specific context.
 
+## Clean-room streaming Markdown work
+
+This branch is the coordination and handoff branch for a clean-room implementation
+of a reusable streaming Markdown package and its later Intelligent Terminal
+integration. It intentionally contains requirements and process material, not the
+previous proof-of-concept implementation.
+
+The controlling requirements are:
+
+- `doc/specs/streaming-markdown-package-clean-room.md` for the external package;
+- `doc/specs/agent-markdown-rendering-clean-room.md` for the host integration.
+
+### Language and deliverables
+
+- Clean-room requirements, coordination records, and internal review documents may
+  be written in Chinese because the implementation team can review Chinese.
+- Public package code, identifiers, comments, API documentation, examples, issues,
+  RFCs, pull requests, commit messages, changelogs, release notes, security policy,
+  and Intelligent Terminal product documentation must be written in English.
+- Requirements must describe observable behavior and complexity constraints. They
+  must not prescribe names for internal state, types, functions, or tests.
+
+### Access boundary
+
+- Package implementers must not have read the previous Intelligent Terminal proof
+  of concept or any restricted third-party streaming Markdown implementation.
+- Use only the approved clean `tui-markdown` baseline, the two requirements documents
+  above, public Markdown standards, and resources on the approved allowlist.
+- Do not fetch, check out, search, diff, inspect, or ask an AI tool to summarize old
+  feature branches, pull requests, commits, reflogs, unreachable Git objects,
+  investigation notes, prior tests, transcripts, logs, screenshots, or build output.
+- Use a fresh clone, fresh editor/search index, and fresh AI session without memory
+  or retrieval from a workspace that contained restricted material.
+- If restricted material is exposed, stop immediately, quarantine all subsequent
+  work, record the incident, and wait for the coordinator and legal reviewer to
+  decide whether work or personnel must be replaced.
+
+This repository branch is not the package implementation environment. Implement the
+package in a separately provisioned clean repository created from the approved
+official baseline. The integration team may use this main-based branch after the
+package API is frozen, but must not recreate package parsing or rendering logic here.
+
+### Ownership boundary
+
+The external package owns:
+
+- ordered visible UTF-8 Markdown source and document lifecycle operations;
+- incremental parsing and rendering, stable-progress reporting, affected-region
+  traceback, canonical batch parity, and bounded derived state;
+- tables, unfinished syntax, definitions with document-wide effects, code blocks,
+  Unicode, line endings, context reflow, and safe fallback behavior described by the
+  package specification;
+- a consumer-owned state object and deterministic Ratatui styled output.
+
+Intelligent Terminal owns:
+
+- provider and transcript event ordering, raw message persistence, and completion;
+- reveal cadence and network-burst coalescing;
+- settings and runtime propagation;
+- pane-relative style input, response markers, viewport, scrolling, selection,
+  mouse geometry, and completed-history retention;
+- process and conversation identity.
+
+Do not duplicate package behavior in the host. Disabled Markdown mode must bypass the
+package rather than configure a second parser or renderer.
+
+### Development workflow
+
+1. The coordinator approves the implementation-facing specification, participant
+   attestations, source/dependency/tool allowlist, clean source manifest, and resource
+   budget before product implementation begins.
+2. The clean-room team writes independent tests from the approved requirements. Do
+   not reuse, translate, inspect, or mechanically transform prior implementation
+   tests or fixtures.
+3. For every behavior, establish a focused RED, implement the smallest GREEN, rerun
+   the same check immediately, then run differential, property, fuzz, full-crate,
+   documentation, and static-analysis checks appropriate to the change.
+4. At every submitted source prefix, incremental output must equal a fresh batch
+   render under the same options and context. Performance evidence must also prove
+   that confirmed source is not repeatedly parsed or rendered during ordinary append.
+5. Maintain one clean implementation history. Upstream discussion, implementation,
+   independent validation, public fallback release automation, and a host adapter
+   prototype may proceed concurrently, but must not create competing algorithms.
+6. Prefer upstream contribution. If upstream declines the scope, publish the same
+   implementation as an openly licensed companion package where possible, otherwise
+   as a clearly named and attributed public fork approved by legal review.
+7. Do not publish or integrate until provenance, source-similarity, license,
+   dependency, security, resource-bound, and reproducible-build reviews pass.
+
+### Git and evidence discipline
+
+- Do not fetch or add remotes containing restricted implementation history.
+- Do not rewrite history or use destructive Git commands without coordinator
+  approval. Never remove evidence to conceal an exposure or failed validation.
+- Keep package product commits, host integration commits, and restricted coordination
+  evidence separate. Never copy local credentials, machine paths, private logs, or
+  ignored artifacts into a public commit.
+- Record exact source commits, dependency archives, toolchain versions, artifact
+  hashes, test results, and release checksums in the approved evidence store.
+- This branch does not authorize a push or public release by itself. Follow the
+  coordinator-approved remote, review, and publication plan.
+
 ## Architecture
 
 ```
