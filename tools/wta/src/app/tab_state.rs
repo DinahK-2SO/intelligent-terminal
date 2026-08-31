@@ -802,15 +802,17 @@ impl TabSession {
             })
     }
 
-    pub(crate) fn should_show_streaming_thought(&self) -> bool {
-        self.can_show_turn_activity()
-            && self
-                .streaming_thought_text()
-                .is_some_and(|text| !text.trim().is_empty())
+    fn has_visible_streaming_thought(&self) -> bool {
+        self.streaming_thought_text()
+            .is_some_and(|text| !text.trim().is_empty())
     }
 
     pub(crate) fn should_show_thinking(&self) -> bool {
-        self.can_show_turn_activity() && !self.should_show_streaming_thought()
+        self.can_show_turn_activity() && !self.has_visible_streaming_thought()
+    }
+
+    pub(crate) fn should_show_inline_thinking(&self) -> bool {
+        self.turn.is_in_flight() && !self.should_show_thinking()
     }
 
     /// Whether the input box is the live, enterable caret target.
@@ -905,7 +907,9 @@ impl TabSession {
             return;
         }
         if self.streaming_thought.is_empty() {
-            self.reveal_chars = 0;
+            if self.streaming_agent_text().is_none() {
+                self.reveal_chars = 0;
+            }
         }
         self.streaming_thought.push_str(text);
 
@@ -918,13 +922,17 @@ impl TabSession {
                 .nth(remove_chars)
                 .map_or(self.streaming_thought.len(), |(index, _)| index);
             self.streaming_thought.drain(..cut_at);
-            self.reveal_chars = self.reveal_chars.saturating_sub(remove_chars);
+            if self.streaming_agent_text().is_none() {
+                self.reveal_chars = self.reveal_chars.saturating_sub(remove_chars);
+            }
         }
     }
 
     pub fn clear_streaming_thought(&mut self) {
         self.streaming_thought.clear();
-        self.reveal_chars = 0;
+        if self.streaming_agent_text().is_none() {
+            self.reveal_chars = 0;
+        }
     }
 
     pub fn streaming_thought_text(&self) -> Option<&str> {
