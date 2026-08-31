@@ -46,6 +46,38 @@
 记录当前处于 RED、实现、focused GREEN、full validation、exact publish validation、
 真实集成验收或 review follow-up 中的哪一步。包含阻塞项和下一条可执行命令。
 
+## Long-Running Automation And Autopilot
+
+“Autopilot”要求agent在同一个turn内等待有界任务完成并继续后续步骤，而不是把命令留在
+后台后承诺未来继续。build、full test、package/deploy、freshness和E2E通常超过短执行器的
+等待窗口，必须按以下规则编排：
+
+1. **在terminal tool支持时，有界的一次性任务使用直接同步execution，且不设置tool timeout。**
+  包括build、test、install、package、deploy、format、lint和脚本。不要把可能超过90秒的命令
+  交给有固定等待上限的execution subagent，也不要为这类任务使用async/background模式。
+2. **同步返回后立刻在同一turn继续。** 读取exit code、receipt和report，然后执行下一阶段；
+  不要输出“完成后会继续”并结束turn。仅在全部目标完成、遇到不可恢复错误或确实需要用户
+  决策时结束。
+3. **返回terminal ID表示工作尚未完成。** 不得把handoff、timeout或“may still be running”
+  当作成功，也不得在仍依赖该结果时给final answer。若平台要求等待下一turn才能取得后台
+  结果，agent无法自行唤醒；这是平台限制，不能用“autopilot”消除。应从一开始改用同步执行，
+  或让一个durable wrapper在后台自行完成所有剩余机器步骤并写最终journal。wrapper只有在其
+  process未被execution host或VS Code取消时才能继续；journal会把process消失标为interrupted。
+4. **长workflow使用持久化phase journal。** 在每个phase前写`running`，结束时写
+  `passed`/`failed`、exit code、HEAD、时间和artifact path。旧receipt不能代替本轮journal；
+  中断后必须能区分`running`、`interrupted`、`failed`和`passed`。
+5. **build/deploy默认不启动UI。** `-Launch`会通过Explorer激活Dev Terminal，可能抢前台或
+  造成VS Code可见闪动，也会干扰foreground-sensitive input测试。只在freshness通过且下一步
+  确实需要窗口时启动；由E2E自己的`Start-Terminal`优先负责启动和identity绑定。
+6. **不要把多个昂贵阶段塞进短等待执行器。** 若不用durable wrapper，full tests、build/deploy
+  和E2E分别用同步调用，以便每阶段失败立即停止；若使用wrapper，则由wrapper顺序执行全部
+  阶段并在`finally`中持久化最终状态。
+7. **行动承诺必须伴随实际行动。** 在autopilot下，一旦回复“现在调查、运行或继续”，同一
+  response必须发起相应tool call；不得只输出计划性文字后yield，迫使用户再发消息启动工作。
+
+推荐的本地完整pipeline由`local-tdd-kit/Invoke-LocalTddPipeline.ps1`执行。调用它的agent仍须
+使用同步、无timeout的terminal execution；journal是抗中断证据，不是唤醒已结束agent turn的机制。
+
 ## Scope And Contract
 
 ### User-Visible Contract
@@ -160,7 +192,8 @@
 9. 运行 `<E2E_COMMAND>`，从真实入口验证 `<GREEN_ORACLE>`。
 10. 提交 publishable commit；将 dev-only evidence/orchestration 另作 commit。
 11. clean publish worktree 直接 cherry-pick publishable commit。
-12. 从 exact publish HEAD build/deploy，校验 source/deployed binary SHA-256，并重跑 E2E。
+12. 从 exact publish HEAD用同步、无tool-timeout执行build/deploy，校验source/deployed binary
+  SHA-256，并在同一turn继续重跑E2E；也可用durable local-TDD pipeline一次完成这些phase。
 13. 若依赖 `<REAL_INTEGRATION>`，最后从 dev-only harness 对 exact publish package 执行真实集成验收。
 14. 对 UI/渲染/交互变更捕获该轮 exact publish HEAD 的 fresh success screenshots 并逐图检查。
 15. 更新本文件的 stage、validation、review triage、artifact inventory 和 open items。
