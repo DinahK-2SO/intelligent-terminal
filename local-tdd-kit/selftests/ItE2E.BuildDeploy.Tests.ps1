@@ -7,6 +7,18 @@ BeforeAll {
     $script:reportScript = (Resolve-Path (Join-Path $PSScriptRoot '..\Invoke-LocalTddReport.ps1')).Path
 }
 
+Describe 'AppX recipe source paths' -Tag 'Unit' {
+    It 'decodes URI-escaped Windows path characters before checking the source' {
+        $helper = Join-Path $PSScriptRoot '..\RecipePaths.ps1'
+        Test-Path -LiteralPath $helper -PathType Leaf | Should -BeTrue
+        . $helper
+
+        ConvertFrom-AppxRecipeSourcePath `
+            -Path 'C:\Program Files %28x86%29\Windows Kits\ucrtbased.dll' |
+            Should -Be 'C:\Program Files (x86)\Windows Kits\ucrtbased.dll'
+    }
+}
+
 Describe 'Local TDD source fingerprint' -Tag 'Unit' {
     BeforeEach {
         $script:repo = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))

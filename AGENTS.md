@@ -24,15 +24,15 @@
 
 ## Current Stage
 
-`2026-09-01`: Ownership and contract are fixed. Next step is exact baseline build/deploy, followed by unit and packaged RED. No product implementation has been made.
+`2026-09-01`: Ownership and contract are fixed. The first exact baseline pipeline exposed and then repaired a dev-only AppX recipe path-decoding incompatibility. Next step is a fresh baseline pipeline retry, followed by unit and packaged RED. No product implementation has been made.
 
 Preparation validation:
 
 - Latest `origin/main`, local main, and publish head are all `0c2062bc5`.
-- Dev TDD-kit tree exactly matches `Dinah/user/DinahK-2SO/local-tdd-kit` at `20cb3fa1c`.
+- Dev TDD-kit began as the exact `Dinah/user/DinahK-2SO/local-tdd-kit` tree at `20cb3fa1c`; a later dev-only compatibility extension decodes URI-escaped AppX recipe source paths such as `%28x86%29`.
 - This handoff began from the exact `Dinah/user/DinahK-2SO/AGENTS_md` blob at `d4d824278`.
 - Local TDD bootstrap passed.
-- Core/durable pipeline selftests: 34 passed, 0 failed.
+- Core/durable pipeline selftests after the compatibility extension: 35 passed, 0 failed.
 - Win32 input selftests: window/PID identity passed; three physical-input cases are blocked because this VS Code automation host cannot acquire foreground. Do not classify that precondition as a product failure or as GREEN.
 
 ## Autopilot Rules
@@ -170,9 +170,10 @@ If baseline does not fail at this exact oracle, stop product editing and update 
 | Layer | Expected | Current result | Evidence |
 | --- | --- | --- | --- |
 | Framework bootstrap | Required tools/module available | Passed | Console output |
-| Framework core/pipeline | Hermetic selftests pass | 34 passed | Console output |
+| Framework core/pipeline | Hermetic selftests pass | 35 passed | Console output |
 | Framework physical input | Interactive foreground available | Blocked: 1 passed, 3 foreground failures | Console output |
-| Exact baseline build/deploy | Fresh package and matching hashes | Pending | Pipeline journal/receipt |
+| Initial baseline build/deploy | Recipe sources resolve | Failed on URI-escaped `Program Files %28x86%29`; framework RED | Failed pipeline journal |
+| Exact baseline build/deploy retry | Fresh package and matching hashes | Pending | Pipeline journal/receipt |
 | Focused RED | Fails because select-all is absent | Pending | Focused output |
 | Packaged RED | Clipboard marker absent | Pending | RED report/screenshot |
 | Focused GREEN | Selected full-frame text | Pending | Focused output |

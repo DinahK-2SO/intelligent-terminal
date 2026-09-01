@@ -12,6 +12,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $kitRoot = $PSScriptRoot
+. (Join-Path $kitRoot 'RecipePaths.ps1')
 $repoRoot = (& git -C $kitRoot rev-parse --show-toplevel).Trim()
 $rustTarget = 'x86_64-pc-windows-msvc'
 $rustProfile = if ($Configuration -eq 'Release') { 'release' } else { 'debug' }
@@ -54,7 +55,7 @@ function Get-RecipePackageSources([string]$Path) {
         if ($sources.Contains($packagePath)) {
             throw "Package recipe contains duplicate package path '$packagePath': $Path"
         }
-        $sources[$packagePath] = [IO.Path]::GetFullPath([string]$item.Include)
+        $sources[$packagePath] = ConvertFrom-AppxRecipeSourcePath -Path ([string]$item.Include)
     }
     if ($sources.Count -eq 0) { throw "Package recipe contains no packaged files: $Path" }
     $sources
