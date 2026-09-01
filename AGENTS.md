@@ -65,6 +65,9 @@
   process未被execution host或VS Code取消时才能继续；journal会把process消失标为interrupted。
   意外发生handoff时，必须保留terminal ID；不要轮询、sleep或重复启动同一命令。等待平台的
   自动完成通知后，立即用该ID读取最终输出，确认真实exit code，再按成功或失败路径继续。
+  该ID对应的持久terminal在完成前是独占的；不得向默认同步shell再发命令，因为runner可能
+  通过Ctrl+C抢占仍在运行的batch并触发`Terminate batch job`。等待期间只使用不复用该terminal
+  的只读工具，或使用明确保证隔离的新terminal；若误触终止提示，回答`N`并保留原任务。
 4. **长workflow使用持久化phase journal。** 在每个phase前写`running`，结束时写
   `passed`/`failed`、exit code、HEAD、时间和artifact path。旧receipt不能代替本轮journal；
   中断后必须能区分`running`、`interrupted`、`failed`和`passed`。
