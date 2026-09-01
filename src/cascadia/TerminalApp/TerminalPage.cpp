@@ -5076,7 +5076,41 @@ namespace winrt::TerminalApp::implementation
         // startup replay whose agent panes are queued behind it.
         if (_startupActionReplayDepth == 0)
         {
-            _PrewarmAgentPanesAfterStartup();
+            // Not inline. Pre-warm only spawns the helper if the agent pane
+            // gets a real layout pass first: `TermControl::_InitializeTerminal`
+            // bails while the SwapChainPanel still measures zero, and
+            // `_AutoCreateHiddenAgentPaneShared` stashes the pane straight
+            // after — pulling it out of the tree before it can ever be
+            // measured again. Nothing has been laid out at the moment a replay
+            // finishes, so a pane pre-warmed here would come back with no
+            // helper, no conpty, and a `ControlCore` still holding the
+            // composition scale of 0 it was constructed with.
+            //
+            // `_InitializeTab` defers its own pre-warm to a low-priority tick
+            // for exactly this reason. Match it, so a tab that skipped that
+            // tick because a replay was in flight gets an equally settled one.
+            //
+            // There is deliberately no inline fallback if the tick cannot be
+            // scheduled. Running the drain inline is the timing this moved
+            // away from, so it would hand the tab a stashed pane with no
+            // helper behind it rather than no pane at all — a worse outcome,
+            // and one the user cannot see to correct. `TryEnqueue` only fails
+            // once the queue is shutting down, where a freshly spawned helper
+            // would outlive the window that asked for it anyway.
+            const auto dispatcher = winrt::Windows::System::DispatcherQueue::GetForCurrentThread();
+            const auto queued = dispatcher &&
+                                dispatcher.TryEnqueue(winrt::Windows::System::DispatcherQueuePriority::Low,
+                                                      [weakSelf = get_weak()]() {
+                                                          if (const auto self{ weakSelf.get() })
+                                                          {
+                                                              self->_PrewarmAgentPanesAfterStartup();
+                                                          }
+                                                      });
+            if (!queued)
+            {
+                _agentPaneLog("_ProcessStartupActions: could not queue the agent pane pre-warm drain; "
+                              "tabs awaiting pre-warm keep their helper until one is opened");
+            }
         }
 
         // GH#6586: now that we're done processing all startup commands,
@@ -5098,6 +5132,16 @@ namespace winrt::TerminalApp::implementation
     // queued behind the tab that owns it.
     void TerminalPage::_PrewarmAgentPanesAfterStartup()
     {
+        // Re-check rather than trust the caller: this now runs off a dispatcher
+        // tick, so a batch handed to this window by `ExecuteCommandline` can
+        // have started between the queue and the tick. That batch owns the
+        // agent panes of the tabs it is restoring, and its own completion
+        // re-queues this drain once it is done.
+        if (_startupActionReplayDepth > 0)
+        {
+            return;
+        }
+
         auto pending = std::exchange(_tabsAwaitingPrewarm, {});
         for (const auto& weakTab : pending)
         {
