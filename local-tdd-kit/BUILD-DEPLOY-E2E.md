@@ -76,6 +76,11 @@ HEAD, current source fingerprint and current build phase.
    command. Continue only safe work that does not depend on the result. On the platform's automatic
    completion notification, retrieve the final output with that ID and classify the phase from its
    real exit code before proceeding.
+- Treat the handed-off terminal as exclusively owned until its final completion. Do not send a new
+   command through a default persistent shell that may reuse it: some runners interrupt the active
+   batch with Ctrl+C and expose a `Terminate batch job` prompt. Use read-only tools or a separately
+   isolated terminal while waiting. If this prompt appears accidentally, answer `N` and preserve
+   the original workflow.
 - A handed-off build does not authorize deploy, freshness verification, or tests that consume its
    output. Those dependent phases remain blocked until final output proves a zero exit. Evidence
    review, nearby reads, and documentation may continue while the build runs.

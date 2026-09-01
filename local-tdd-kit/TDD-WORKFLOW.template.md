@@ -79,6 +79,8 @@ For every behavior change:
   command. Continue only independent safe work, then retrieve final output from the platform's
   automatic completion notification. Do not start deploy or another dependent phase until the
   real exit code is zero.
+- Do not reuse the persistent shell that owns a handed-off terminal ID. A second command can
+  interrupt the active batch with Ctrl+C; use read-only tools or a separately isolated terminal.
 - Prefer `Invoke-LocalTddPipeline.ps1 -E2EPath <LIVE_E2E_CASES>` for an interruption-sensitive
   exact-package cycle. Record its `pipeline-state.json` path and require final status `passed`.
 - Keep build/deploy non-launching. `-Launch` can steal foreground focus and visibly flash; let the
