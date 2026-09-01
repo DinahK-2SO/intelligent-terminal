@@ -15,25 +15,29 @@
 - Publish worktree: `C:\ado\intelligent-terminal-agent-pane-select-all-publish`
 - Issue / pull request: none yet
 - Evidence root: `local-tdd-kit/artifacts/agent-pane-select-all`
-- Current publishable commit: none
-- Current publish head: `0c2062bc5837b2ae335f86a00d068828d76af2d5`
+- Current publishable dev commit: `4421c6a549492e488b4ddcdd9555f07e617f3077`
+- Current publish head: `17c2882d9f9bfa2714fd46e391bd70f6ea9add37`
 - Dev-only preparation commits:
   - `a0c9ad5be1c7226f4dd8ab74e9cdd41fbb378723` — latest local TDD framework snapshot
   - `1aac986d479abc744ba5cc4cad6e72683e1030ea` — latest AGENTS template snapshot
+  - `dc03fee222441d6dd9b42f6cd1dcd048a02a6743` — AppX recipe path-decoding compatibility extension
 - Out of scope: TerminalControl/native scrollback `SelectAll`, virtualized off-screen chat history, changing `Ctrl+Shift+A`, changing mouse drag/right-click/default paste, or introducing a real-agent token-consuming publish test.
 
 ## Current Stage
 
-`2026-09-01`: Ownership and contract are fixed. The first exact baseline pipeline exposed and then repaired a dev-only AppX recipe path-decoding incompatibility. Next step is a fresh baseline pipeline retry, followed by unit and packaged RED. No product implementation has been made.
+`2026-09-01`: Strict TDD and exact publish validation are complete. Baseline packaged and unit tests failed only at the missing select-all oracle; the minimal `TextSelection`/key-routing implementation is GREEN. The product/test/checklist commit was cherry-picked alone into the clean publish worktree, whose full WTA, package deployment, deterministic E2E, hash equality, release-report mapping, and visual evidence all passed. Only branch pushes and remote-head verification remain.
 
 Preparation validation:
 
-- Latest `origin/main`, local main, and publish head are all `0c2062bc5`.
+- Latest base was `origin/main` at `0c2062bc5`; the publish branch contains exactly one publishable commit on that base.
 - Dev TDD-kit began as the exact `Dinah/user/DinahK-2SO/local-tdd-kit` tree at `20cb3fa1c`; a later dev-only compatibility extension decodes URI-escaped AppX recipe source paths such as `%28x86%29`.
 - This handoff began from the exact `Dinah/user/DinahK-2SO/AGENTS_md` blob at `d4d824278`.
 - Local TDD bootstrap passed.
 - Core/durable pipeline selftests after the compatibility extension: 35 passed, 0 failed.
 - Win32 input selftests: window/PID identity passed; three physical-input cases are blocked because this VS Code automation host cannot acquire foreground. Do not classify that precondition as a product failure or as GREEN.
+- Baseline package fingerprint: `7496769413FFC21BB5579525A133083B825C8F7A5438C54F09F03B0C55A922D2`; WTA SHA-256: `61E41FC73CF6EF42D723522FC4BD2AB3EA8E2939302FE782599FB2015740DF15`.
+- Final dev source fingerprint: `AB4F7B082E3A6CFB72593828B598734EC540BAA3235AD2288F06138F6E8F9B65`; WTA SHA-256: `A762DDC706EFFC813C5B1E5AAC5BA88B1A66063E0E1B8EA76609BC822D5351F7`.
+- Exact publish WTA source/staged/installed SHA-256: `D848F9ACA3F4A6DF9575B750D94C55D648917433C2CC9748DB6E43F5D4677579`.
 
 ## Autopilot Rules
 
@@ -119,12 +123,12 @@ If baseline does not fail at this exact oracle, stop product editing and update 
 
 ### Baseline Identity
 
-- Source commit: dev preparation HEAD `1aac986d479abc744ba5cc4cad6e72683e1030ea`, whose product sources match base `0c2062bc5837b2ae335f86a00d068828d76af2d5`
+- Source commit: dev framework HEAD `dc03fee222441d6dd9b42f6cd1dcd048a02a6743`, whose product sources match base `0c2062bc5837b2ae335f86a00d068828d76af2d5`
 - Build command: `pwsh -File local-tdd-kit/Invoke-LocalTddPipeline.ps1`
 - Package: `IntelligentTerminal_rd9vj3e6a2mbr`, x64 Debug loose package
 - Deploy: `local-tdd-kit/Invoke-BuildDeploy.ps1` through the durable pipeline
 - Relevant binaries: explicit-target Cargo `wta.exe`, package staging/installed `wta.exe`, source-matched `wtcli.exe`, `WindowsTerminal.exe`, protocol WinMD, and `resources.pri`
-- Source/deployed hashes: pending baseline pipeline receipt
+- Source/staged/installed WTA SHA-256: `61E41FC73CF6EF42D723522FC4BD2AB3EA8E2939302FE782599FB2015740DF15`
 
 ### Baseline Reproduction
 
@@ -173,21 +177,21 @@ If baseline does not fail at this exact oracle, stop product editing and update 
 | Framework core/pipeline | Hermetic selftests pass | 35 passed | Console output |
 | Framework physical input | Interactive foreground available | Blocked: 1 passed, 3 foreground failures | Console output |
 | Initial baseline build/deploy | Recipe sources resolve | Failed on URI-escaped `Program Files %28x86%29`; framework RED | Failed pipeline journal |
-| Exact baseline build/deploy retry | Fresh package and matching hashes | Pending | Pipeline journal/receipt |
-| Focused RED | Fails because select-all is absent | Pending | Focused output |
-| Packaged RED | Clipboard marker absent | Pending | RED report/screenshot |
-| Focused GREEN | Selected full-frame text | Pending | Focused output |
-| Neighboring tests | No selection/copy regression | Pending | Test output |
-| Full WTA | All required tests pass | Pending | Test output |
-| Dev packaged E2E | Clipboard/stale-selection contract passes | Pending | NUnit/report/screenshots |
-| Exact publish | Source/installed hashes and E2E pass | Pending | Publish receipt/report |
+| Exact baseline build/deploy retry | Fresh package and matching hashes | Passed | `red/baseline-pipeline-retry-3` journal/receipt |
+| Focused RED | Fails because select-all is absent | Passed: app behavioral RED plus 3 missing-API compile REDs | Focused output |
+| Packaged RED | Clipboard marker absent | Passed: 1 expected failure at clipboard replacement | `red/packaged-red-3` report/screenshots |
+| Focused GREEN | Selected full-frame text | Passed: 4 selection + 1 routing + 1 right-click cases | Focused output |
+| Neighboring tests | No selection/copy regression | Passed: 20 text-selection tests | Test output |
+| Full WTA | All required tests pass | Passed: 1848, failed: 0, ignored: 1 | Final dev and exact publish output |
+| Dev packaged E2E | Clipboard/current-frame/stale-selection contract passes | Passed: 1, failed: 0, skipped: 0 | `green/final-dev-pipeline-2` |
+| Exact publish | Source/installed hashes and E2E pass | Passed at `17c2882d9`; 3-way WTA hash equal; C287 checked | Publish report/screenshots |
 
 ## Implementation Record
 
-- Behavioral change: pending RED
-- State/API changes: pending RED
+- Behavioral change: exact plain `Ctrl+A` selects the latest WTA-rendered frame; existing `Ctrl+C` or right-click copies and clears it. Off-screen virtual history and native scrollback are excluded.
+- State/API changes: added `SelectionKind::All` and `TextSelection::select_all`; `AppEvent::Key` intercepts only exact Control+`a`. Added reusable full-format ItE2E clipboard snapshot/restore helpers.
 - Preserved invariants: listed above
-- Performance implications: expected O(1) selection-state setup plus existing O(frame cells) overlay and extraction; verify after implementation
+- Performance implications: O(1) selection-state setup plus the existing O(frame cells) overlay/extraction. No new work occurs without explicit selection/render/copy.
 - Security/privacy implications: clipboard receives only user-visible rendered text after explicit `Ctrl+A` + copy; no new data source or network path
 - Rejected alternatives:
   - Generic TerminalControl `SelectAll`: wrong ownership and includes native scrollback instead of WTA current frame.
@@ -199,35 +203,38 @@ If baseline does not fail at this exact oracle, stop product editing and update 
 - Required matrix: baseline before `Ctrl+A`, baseline after `Ctrl+A`, GREEN after `Ctrl+A`, after `Ctrl+C` confirmation, and post-copy stale-selection control.
 - Provenance: exact HEAD, package path, source/staged/installed hashes, fixture, and capture command.
 - Inspection: nonempty real product UI, whole intended frame visibly selected, no overlap/clipping, no mock window, and no stale highlight after copy.
-- Latest evidence directory: `local-tdd-kit/artifacts/agent-pane-select-all/`
+- Latest dev evidence directory: `local-tdd-kit/artifacts/agent-pane-select-all/green/final-dev-pipeline-2/`
+- Exact publish visual/report evidence: `C:\ado\intelligent-terminal-agent-pane-select-all-publish\test\e2e\artifacts\agent-select-all\publish\` and `test\e2e\artifacts\agent-select-all-publish-report\` in the publish worktree.
 
 ## Review Triage
 
-- Current status: no review yet
-- Open items: baseline identity, RED, implementation, full/exact publish validation
+- Current status: two focused read-only reviews completed; all concrete findings repaired and revalidated.
+- Resolved findings: added an off-screen-history negative control, complete clipboard-format restoration, accurate E2E aggregate counts, failure-safe teardown, and a direct right-click-after-`Ctrl+A` unit regression.
+- Open items: push dev, push publish, verify both remote heads.
 - Every future finding must record decision, rationale, RED/GREEN evidence, and publish commit.
 
 ## Local-Only Evidence Inventory
 
 | Artifact | Path | Proves | Identity |
 | --- | --- | --- | --- |
-| Baseline receipt/journal | `local-tdd-kit/artifacts/agent-pane-select-all/red/` | Exact RED package | Pending |
-| Focused test output | same root | Ownership RED/GREEN | Pending |
-| Packaged report | same root | WT/ConPTY/clipboard contract | Pending |
-| RED/GREEN screenshots | same root | User-visible selection | Pending |
+| Baseline receipt/journal | `local-tdd-kit/artifacts/agent-pane-select-all/red/baseline-pipeline-retry-3/` | Exact RED package | `dc03fee22`, WTA `61E41FC7…` |
+| Focused test output | terminal session output | Ownership RED/GREEN | 3 API REDs; app RED; 6 focused GREEN cases |
+| Packaged RED report | `local-tdd-kit/artifacts/agent-pane-select-all/red/packaged-red-3/` | WT/ConPTY clipboard failure | 1 expected failure |
+| Final dev pipeline | `local-tdd-kit/artifacts/agent-pane-select-all/green/final-dev-pipeline-2/` | Build/deploy/freshness/E2E | all phases passed |
+| RED/GREEN screenshots | `test/e2e/artifacts/agent-select-all/` | User-visible selection and stale control | inspected |
 
 ## Completion Checklist
 
 - [x] Feature metadata, ownership, scope, branch policy, and commands are concrete.
 - [x] Latest TDD kit and AGENTS source snapshots are on dev only.
-- [x] Publish branch is clean at exact latest main.
-- [ ] Exact baseline build/deploy is fresh and RED at the expected oracle.
-- [ ] Focused regression is RED then GREEN.
-- [ ] Neighboring/full/static validation passes.
-- [ ] Publishable and dev-only commit boundaries are clean.
-- [ ] Exact publish binary hashes match and packaged E2E is GREEN.
-- [ ] Fresh screenshots are inspected and recorded.
-- [ ] Changed publish E2E is deterministic and zero-token.
+- [x] Publish branch began clean at exact latest main.
+- [x] Exact baseline build/deploy is fresh and RED at the expected oracle.
+- [x] Focused regression is RED then GREEN.
+- [x] Neighboring/full/static validation passes.
+- [x] Publishable and dev-only commit boundaries are clean.
+- [x] Exact publish binary hashes match and packaged E2E is GREEN.
+- [x] Fresh screenshots are inspected and recorded.
+- [x] Changed publish E2E is deterministic and zero-token.
 - [ ] Dev and publish remote heads are pushed and verified.
 
 ## Optional Follow-Ups
