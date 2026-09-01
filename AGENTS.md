@@ -25,7 +25,7 @@
 
 ## Current Stage
 
-`2026-09-01`: Strict TDD and exact publish validation are complete. Baseline packaged and unit tests failed only at the missing select-all oracle; the minimal `TextSelection`/key-routing implementation is GREEN. The product/test/checklist commit was cherry-picked alone into the clean publish worktree, whose full WTA, package deployment, deterministic E2E, hash equality, release-report mapping, and visual evidence all passed. Only branch pushes and remote-head verification remain.
+`2026-09-01`: Complete. Baseline packaged and unit tests failed only at the missing select-all oracle; the minimal `TextSelection`/key-routing implementation is GREEN. The product/test/checklist commit was cherry-picked alone into the clean publish worktree, whose full WTA, package deployment, deterministic E2E, hash equality, release-report mapping, and visual evidence all passed. Dev was pushed to `Dinah`; publish was pushed to `origin` at `17c2882d9f9bfa2714fd46e391bd70f6ea9add37`; both remote heads and the eight-path publish scope were verified with command-line Git.
 
 Preparation validation:
 
@@ -210,7 +210,7 @@ If baseline does not fail at this exact oracle, stop product editing and update 
 
 - Current status: two focused read-only reviews completed; all concrete findings repaired and revalidated.
 - Resolved findings: added an off-screen-history negative control, complete clipboard-format restoration, accurate E2E aggregate counts, failure-safe teardown, and a direct right-click-after-`Ctrl+A` unit regression.
-- Open items: push dev, push publish, verify both remote heads.
+- Open items: none.
 - Every future finding must record decision, rationale, RED/GREEN evidence, and publish commit.
 
 ## Local-Only Evidence Inventory
@@ -235,7 +235,7 @@ If baseline does not fail at this exact oracle, stop product editing and update 
 - [x] Exact publish binary hashes match and packaged E2E is GREEN.
 - [x] Fresh screenshots are inspected and recorded.
 - [x] Changed publish E2E is deterministic and zero-token.
-- [ ] Dev and publish remote heads are pushed and verified.
+- [x] Dev and publish remote heads are pushed and verified.
 
 ## Optional Follow-Ups
 
