@@ -23,7 +23,7 @@
 - Pull request: https://github.com/microsoft/intelligent-terminal/pull/505
 - Related issue: https://github.com/microsoft/intelligent-terminal/issues/326
 - Original PR head / takeover baseline: `3adc45bc69941cad108ca9799df78a1d42c95de8`
-- Latest audited `origin/main`: `0c2062bc5837b2ae335f86a00d068828d76af2d5`
+- Latest audited `origin/main`: `6c332c0ecac26a78cf60de54a51ee864e2933951`
 - Common ancestor: `e870a3630a785a44cbd22190b5c8808c7084b31f`
 - Dev branch/worktree: `dev/dinah/yolo-mode` / `C:\ado\intelligent-terminal-bugfix`
 - Dev branch's latest publish-equivalent head is `cab16e161af53daeb4b79230e10d3970166fef59`;
@@ -51,6 +51,17 @@
   future available-commands `/command` integration.
 
 ## Current Stage
+
+`2026-09-01`: follow-up starts after public review `5076573812` of publish `2f99d2440`
+reviewed `182/182` files with no visible comment and one valid suppressed finding at
+`client.rs:4915`: a lazy first prompt is silently ended if its native Yolo operation is superseded
+after the user bubble is committed. Latest `origin/main@6c332c0ec` is `13` commits ahead of the PR
+and introduces merge conflicts; dev is `69` commits ahead of main and publish is `64` ahead.
+Next command: preserve the existing dev-only real-user harness delta, merge latest main into dev,
+resolve conflicts semantically, then add a deterministic lazy-session supersession RED before
+changing the prompt orchestration. The accepted behavior must keep the first prompt gated until the
+newer operation settles or surface a retryable error; it must never silently consume the prompt,
+weaken fail-closed disable handling, or auto-select an ACP permission.
 
 `2026-09-01`: post-convergence UX follow-up is implemented and published from dev
 `cab16e161` as publish `2f99d2440`, based on audited `origin/main@0c2062bc5`. The product keeps
