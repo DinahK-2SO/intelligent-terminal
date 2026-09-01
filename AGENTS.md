@@ -63,6 +63,8 @@
   结果，agent无法自行唤醒；这是平台限制，不能用“autopilot”消除。应从一开始改用同步执行，
   或让一个durable wrapper在后台自行完成所有剩余机器步骤并写最终journal。wrapper只有在其
   process未被execution host或VS Code取消时才能继续；journal会把process消失标为interrupted。
+  意外发生handoff时，必须保留terminal ID；不要轮询、sleep或重复启动同一命令。等待平台的
+  自动完成通知后，立即用该ID读取最终输出，确认真实exit code，再按成功或失败路径继续。
 4. **长workflow使用持久化phase journal。** 在每个phase前写`running`，结束时写
   `passed`/`failed`、exit code、HEAD、时间和artifact path。旧receipt不能代替本轮journal；
   中断后必须能区分`running`、`interrupted`、`failed`和`passed`。
@@ -74,6 +76,9 @@
   阶段并在`finally`中持久化最终状态。
 7. **行动承诺必须伴随实际行动。** 在autopilot下，一旦回复“现在调查、运行或继续”，同一
   response必须发起相应tool call；不得只输出计划性文字后yield，迫使用户再发消息启动工作。
+8. **等待期间继续不依赖结果的安全工作。** 可以整理证据、读取相邻代码或准备文档，但不得
+  deploy旧产物、启动依赖该build的测试、修改第二个实现slice，或把后台状态写成GREEN。只要
+  当前任务仍有可执行步骤，就不能因为一个validation terminal仍在运行而结束整个任务。
 
 推荐的本地完整pipeline由`local-tdd-kit/Invoke-LocalTddPipeline.ps1`执行。调用它的agent仍须
 使用同步、无timeout的terminal execution；journal是抗中断证据，不是唤醒已结束agent turn的机制。
