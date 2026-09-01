@@ -1444,9 +1444,11 @@ impl WtaClient {
                 // this branch only fires during a load replay. The
                 // App handler gates on `loading_session` and drops
                 // late-arrivers.
+                let message_id = chunk.message_id.map(|id| id.to_string());
                 if let acp::schema::v1::ContentBlock::Text(text_content) = chunk.content {
                     let _ = self.state.event_tx.send(AppEvent::UserMessageReplayChunk {
                         session_id: sid,
+                        message_id,
                         text: text_content.text,
                     });
                 }
@@ -2658,8 +2660,8 @@ pub async fn run_acp_client_over_pipe(
                 move |req: acp::schema::v1::AgentRequest, responder, _cx| {
                     let c = c.clone();
                     async move {
-            use acp::schema::v1::{AgentRequest as Q, ClientResponse as R};
-            match req {
+                        use acp::schema::v1::{AgentRequest as Q, ClientResponse as R};
+                        match req {
                             Q::RequestPermissionRequest(a) => conn::respond_enum(
                                 responder,
                                 c.request_permission(a)
@@ -2737,15 +2739,15 @@ pub async fn run_acp_client_over_pipe(
                 move |notif: acp::schema::v1::AgentNotification, _cx| {
                     let c = c.clone();
                     async move {
-            use acp::schema::v1::AgentNotification as N;
-            match notif {
-                N::SessionNotification(n) => c.dispatch_session_notification(n).await,
+                        use acp::schema::v1::AgentNotification as N;
+                        match notif {
+                            N::SessionNotification(n) => c.dispatch_session_notification(n).await,
                             N::ExtNotification(n) => {
                                 let _ = c.ext_notification(n).await;
                             }
-                _ => {}
-            }
-            Ok(())
+                            _ => {}
+                        }
+                        Ok(())
                     }
                 }
             },
@@ -3080,9 +3082,9 @@ pub async fn run_acp_client_over_pipe(
                 "skipping bootstrap session/new (initial_load_session_id={} set)",
                 load_sid,
             ));
-            // Resume is intentionally silent: show the same neutral connecting
-            // stage a fresh pane would, never "Resuming session …", so a
-            // resumed pane is indistinguishable from a normal connection.
+            // The connection stage stays neutral; the pane's own
+            // "Resuming session …" indicator (driven by `loading_session`)
+            // is what tells the user a conversation is being restored.
             let _ = event_tx.send(AppEvent::ConnectionStage("Connecting...".to_string()));
             (
                 acp::schema::v1::SessionId::new(load_sid.to_string()),
@@ -3911,9 +3913,10 @@ fn dispatch_load_session(
                         session_id.0.as_ref(),
                         &resp,
                     );
-                // Resume is intentionally silent: no "Session loaded" note
-                // and no "Resuming…" marker (see the `load_session` handler),
-                // so a resumed pane presents exactly like a normal connection.
+                // No "Session loaded" note is added to the transcript: the
+                // restored conversation speaks for itself, and the in-pane
+                // resuming indicator ends when this event clears
+                // `loading_session`.
                 let _ = event_tx.send(AppEvent::SessionAttached {
                     tab_id: req.tab_id.clone(),
                     session_id: session_id.to_string(),
