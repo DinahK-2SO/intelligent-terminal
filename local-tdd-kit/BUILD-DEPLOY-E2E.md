@@ -72,6 +72,13 @@ HEAD, current source fingerprint and current build phase.
 - A tool timeout that returns a terminal ID is a handoff, not completion. The model cannot be
    awakened by process completion after its turn ends. Never say “will continue when complete”
    and end the turn while required work remains.
+- Preserve the terminal ID from an unexpected handoff. Do not poll, sleep, or start a duplicate
+   command. Continue only safe work that does not depend on the result. On the platform's automatic
+   completion notification, retrieve the final output with that ID and classify the phase from its
+   real exit code before proceeding.
+- A handed-off build does not authorize deploy, freshness verification, or tests that consume its
+   output. Those dependent phases remain blocked until final output proves a zero exit. Evidence
+   review, nearby reads, and documentation may continue while the build runs.
 - If background execution is unavoidable, launch the durable pipeline rather than one phase. The
    machine can then finish every remaining phase and journal the outcome only while its process
    survives; host/VS Code cancellation is classified as `interrupted`. A later user/platform turn
@@ -199,8 +206,11 @@ This is an orchestration failure, not a build result. In observed tool versions,
 helpers stopped waiting at about two minutes while leaving the command alive; that duration is
 implementation-dependent, not a stable contract. If the agent then ends its turn, the
 completion event cannot start another turn. Re-run the bounded workflow synchronously with no
-tool timeout, or inspect the durable pipeline journal in the next available turn. Do not poll or
-claim success from an old receipt.
+tool timeout, or inspect the durable pipeline journal in the next available turn. If a terminal ID
+was returned, retain it, do not poll or sleep, and use the platform's automatic completion
+notification to retrieve the final output once. Continue independent evidence or documentation
+work while waiting, but never deploy old output or start a dependent phase. Do not claim success
+from an old receipt and do not end the task solely because one required validation is still running.
 
 ### Logs came from an old process/version
 

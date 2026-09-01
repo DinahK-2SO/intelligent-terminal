@@ -75,6 +75,10 @@ For every behavior change:
 - Set `ITE2E_PACKAGE=Dev`; a skipped test is not GREEN.
 - For bounded build/test/deploy/E2E work, use direct synchronous terminal execution with no tool
   timeout. Never leave a required phase in the background and end the agent turn.
+- If a runner unexpectedly returns a terminal ID, record it; do not poll, sleep, or duplicate the
+  command. Continue only independent safe work, then retrieve final output from the platform's
+  automatic completion notification. Do not start deploy or another dependent phase until the
+  real exit code is zero.
 - Prefer `Invoke-LocalTddPipeline.ps1 -E2EPath <LIVE_E2E_CASES>` for an interruption-sensitive
   exact-package cycle. Record its `pipeline-state.json` path and require final status `passed`.
 - Keep build/deploy non-launching. `-Launch` can steal foreground focus and visibly flash; let the
