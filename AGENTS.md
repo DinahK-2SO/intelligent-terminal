@@ -82,6 +82,17 @@
 8. **等待期间继续不依赖结果的安全工作。** 可以整理证据、读取相邻代码或准备文档，但不得
   deploy旧产物、启动依赖该build的测试、修改第二个实现slice，或把后台状态写成GREEN。只要
   当前任务仍有可执行步骤，就不能因为一个validation terminal仍在运行而结束整个任务。
+9. **插入式对话不能丢失active task。** 用户在实现过程中提出status、解释或不冲突的产品问题时，
+  简短回答后必须在同一个response恢复最近一个未完成action，并实际调用tool继续；不要把插问
+  当作新的完整任务调用`task_complete`或发送final。只有用户明确要求pause/stop、最新请求与旧
+  目标冲突，或active checklist已全部完成时，才可结束原任务。每次恢复前快速核对最新用户请求、
+  dirty paths、仍在运行的terminal/journal和下一条命令，避免继续一个已经失效的旧目标。
+10. **缺失输出是UNKNOWN，不是PASS。** execution helper声称命令成功但未返回exit code、test totals
+  或关键diagnostic，或只给出“output unavailable/truncated”，不能作为验证证据。先判断命令是否仍
+  在运行：有terminal ID时保留独占并等待自动完成通知；有journal/receipt/report时读取其终态与
+  identity；进程已结束且check廉价、幂等时，改用同步无timeout、强过滤输出的命令重跑。昂贵命令
+  不得仅因摘要丢失就重复启动；先用artifact、process identity和持久journal恢复结果。无论采用哪条
+  路径，只要active task还有独立可执行工作，就继续推进并保持用户可见进度更新。
 
 推荐的本地完整pipeline由`local-tdd-kit/Invoke-LocalTddPipeline.ps1`执行。调用它的agent仍须
 使用同步、无timeout的terminal execution；journal是抗中断证据，不是唤醒已结束agent turn的机制。
@@ -359,6 +370,7 @@ Evidence root: `<EVIDENCE_ROOT>`
 ## Completion Checklist
 
 - [ ] 所有必填 placeholder 已替换；不适用章节已删除。
+- [ ] Active task checklist 已清空；没有不冲突的插问导致workflow提前结束。
 - [ ] Exact baseline 已 build/deploy，并在预期 behavioral oracle 上 RED。
 - [ ] Focused regression 先 RED 后 GREEN。
 - [ ] Neighboring tests、full relevant suite、explicit build 和 static analysis 已完成。
