@@ -2899,6 +2899,7 @@ impl App {
                                     crate::telemetry::log_error_fix_resolved(
                                         pane_id.as_str(),
                                         elapsed_ms,
+                                        &self.current_agent_id,
                                     );
                                 }
                                 // `turn_cancel` owns the full cleanup: bumps

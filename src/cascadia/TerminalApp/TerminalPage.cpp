@@ -1622,6 +1622,7 @@ namespace winrt::TerminalApp::implementation
     // protocol; this launched process exits once the tab is spawned.
     void TerminalPage::_LaunchDelegate(const std::optional<winrt::hstring>& prompt)
     {
+        const auto triggerSource = prompt.has_value() ? L"CommandPalette" : L"Action";
         _agentPaneLog(prompt.has_value() ?
                           "_LaunchDelegate called, prompt='" + winrt::to_string(*prompt) + "'" :
                           "_LaunchDelegate called (interactive, no prompt)");
@@ -1813,6 +1814,13 @@ namespace winrt::TerminalApp::implementation
 
         // pi destructor closes hProcess + hThread on scope exit.
         _agentPaneLog("delegate process launched OK");
+        TraceLoggingWrite(
+            g_hTerminalAppProvider,
+            "DelegateInvoked",
+            TraceLoggingDescription("Event emitted when delegation is launched"),
+            TraceLoggingWideString(triggerSource, "TriggerSource"),
+            TraceLoggingKeyword(MICROSOFT_KEYWORD_MEASURES),
+            TelemetryPrivacyDataTag(PDT_ProductAndServiceUsage));
     }
 
     // --- Hot-reload of agent/model settings -------------------------------
