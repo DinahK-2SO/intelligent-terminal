@@ -42,6 +42,11 @@ pwsh -File local-tdd-kit/Verify-DeploymentFreshness.ps1
 Read `BUILD-DEPLOY-E2E.md` before trusting a packaged E2E result. A green build alone
 does not prove that the installed package or live processes contain that build.
 
+Agent-driven runs must remain continuous across non-conflicting questions and status requests.
+Keep an active-task ledger, answer the interruption briefly, then execute the next incomplete
+action in the same response. Missing or truncated helper output is `unknown`: recover from the
+owned terminal or durable pipeline journal first, and rerun only cheap idempotent checks.
+
 For an uninterrupted bounded build/deploy/freshness/E2E cycle, use the durable runner:
 
 ```powershell

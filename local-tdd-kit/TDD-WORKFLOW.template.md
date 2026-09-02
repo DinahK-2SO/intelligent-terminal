@@ -85,6 +85,16 @@ For every behavior change:
   exact-package cycle. Record its `pipeline-state.json` path and require final status `passed`.
 - Keep build/deploy non-launching. `-Launch` can steal foreground focus and visibly flash; let the
   E2E harness launch and bind the exact PID/HWND only when UI interaction starts.
+- Keep an explicit active-task ledger while automation runs. A status request, explanation, or other
+  non-conflicting interleaved question does not complete the workflow: answer it briefly, then resume
+  the next incomplete action in the same response and issue an actual tool call. Do not send a final
+  answer while required phases, checklist items, or terminal/journal states remain incomplete unless
+  the user explicitly pauses or redirects the work.
+- Treat missing or truncated command output as `unknown`, never as pass. If a persistent terminal ID
+  exists, keep it exclusive and consume only its automatic completion result. Otherwise inspect the
+  process identity and durable journal/receipt/report first. Rerun only a cheap, idempotent check with
+  synchronous no-timeout execution and filtered output; do not duplicate an expensive build merely
+  because an execution helper lost its summary.
 
 ## Local Evidence and Security
 
@@ -106,6 +116,7 @@ For every behavior change:
 ## Definition of Done
 
 - [ ] `<USER_VISIBLE_CONTRACT>` is satisfied.
+- [ ] Active task ledger is empty; no interleaved question ended the workflow early.
 - [ ] Focused RED failed for the expected reason.
 - [ ] Focused GREEN and relevant suites pass.
 - [ ] Build receipt matches the current source fingerprint.
