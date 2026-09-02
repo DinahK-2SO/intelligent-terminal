@@ -16,7 +16,8 @@
 - Issue / pull request: none yet
 - Evidence root: `local-tdd-kit/artifacts/agent-pane-select-all`
 - Current publishable dev commit: `4421c6a549492e488b4ddcdd9555f07e617f3077`
-- Current publish head: `17c2882d9f9bfa2714fd46e391bd70f6ea9add37`
+- Current review-fix dev commit: `8998b15a0d31d721e874bbd51df34d8f3d26c29b`
+- Current publish head: `7fe4a53e3bb68c39b07004e4d3eb64064992ef43`
 - Dev-only preparation commits:
   - `a0c9ad5be1c7226f4dd8ab74e9cdd41fbb378723` — latest local TDD framework snapshot
   - `1aac986d479abc744ba5cc4cad6e72683e1030ea` — latest AGENTS template snapshot
@@ -25,7 +26,9 @@
 
 ## Current Stage
 
-`2026-09-01`: Complete. Baseline packaged and unit tests failed only at the missing select-all oracle; the minimal `TextSelection`/key-routing implementation is GREEN. The product/test/checklist commit was cherry-picked alone into the clean publish worktree, whose full WTA, package deployment, deterministic E2E, hash equality, release-report mapping, and visual evidence all passed. Dev was pushed to `Dinah`; publish was pushed to `origin` at `17c2882d9f9bfa2714fd46e391bd70f6ea9add37`; both remote heads and the eight-path publish scope were verified with command-line Git.
+`2026-09-02`: Complete after PR #755 review. Copilot's only inline comment (`discussion_r3909286997`) requested combining two identical full-row match arms. The one-file maintainability fix was applied on dev, cherry-picked to publish, passed rustfmt plus the full WTA suite in both worktrees, and was pushed to PR head `7fe4a53e3bb68c39b07004e4d3eb64064992ef43`. Public GitHub API inspection found no other review or top-level comments.
+
+`2026-09-01`: Initial implementation complete. Baseline packaged and unit tests failed only at the missing select-all oracle; the minimal `TextSelection`/key-routing implementation is GREEN. The product/test/checklist commit was cherry-picked alone into the clean publish worktree, whose full WTA, package deployment, deterministic E2E, hash equality, release-report mapping, and visual evidence all passed.
 
 Preparation validation:
 
@@ -208,8 +211,9 @@ If baseline does not fail at this exact oracle, stop product editing and update 
 
 ## Review Triage
 
-- Current status: two focused read-only reviews completed; all concrete findings repaired and revalidated.
-- Resolved findings: added an off-screen-history negative control, complete clipboard-format restoration, accurate E2E aggregate counts, failure-safe teardown, and a direct right-click-after-`Ctrl+A` unit regression.
+- Current status: two pre-publish focused reviews plus the PR #755 Copilot review completed; all concrete findings repaired and revalidated.
+- Resolved findings: added an off-screen-history negative control, complete clipboard-format restoration, accurate E2E aggregate counts, failure-safe teardown, a direct right-click-after-`Ctrl+A` unit regression, and combined duplicate `SelectionKind::All | SelectionKind::Lines` match arms.
+- PR review validation: dev and exact publish each passed rustfmt and full WTA (`1848` passed, `0` failed, `1` ignored); the pushed publish delta is exactly `tools/wta/src/text_selection.rs`.
 - Open items: none.
 - Every future finding must record decision, rationale, RED/GREEN evidence, and publish commit.
 
