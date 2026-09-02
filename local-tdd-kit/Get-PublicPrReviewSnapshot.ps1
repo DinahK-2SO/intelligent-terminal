@@ -259,7 +259,7 @@ foreach ($review in $selectedReviews) {
     }
     $inlineComments = @(Get-PagedPublicGitHubItems `
         "$apiRoot/pulls/$PrNumber/reviews/$($review.id)/comments" `
-        @('commit_id', 'path', 'line', 'original_line', 'body', 'html_url', 'user') `
+        @('commit_id', 'path', 'body', 'html_url', 'user') `
         "Review $($review.id) comments")
     $inlineFindings = @($inlineComments | Where-Object {
         $_.user.login -match '(?i)^(?:copilot|copilot-pull-request-reviewer)(?:\[bot\])?$'
@@ -269,7 +269,15 @@ foreach ($review in $selectedReviews) {
             ReviewId = [long]$review.id
             CommitId = [string]$_.commit_id
             Path = [string]$_.path
-            Line = if ($_.line) { [int]$_.line } else { [int]$_.original_line }
+            Line = if ($_.PSObject.Properties.Name -contains 'line' -and $_.line) {
+                [int]$_.line
+            }
+            elseif ($_.PSObject.Properties.Name -contains 'original_line' -and $_.original_line) {
+                [int]$_.original_line
+            }
+            else {
+                $null
+            }
             Message = (([string]$_.body) -replace '\s+', ' ').Trim()
             Url = [string]$_.html_url
         }

@@ -138,6 +138,25 @@ Describe 'Get-PublicPrReviewSnapshot' -Tag 'Unit' {
         $snapshot.Findings[0].Kind | Should -Be 'ReviewCommentCountMismatch'
     }
 
+    It 'preserves file-level comments that omit line fields' {
+        $root = Join-Path $TestDrive 'file-comment'
+        $review = New-CopilotReview 575 'head-sha' 'generated 1 comment'
+        $comment = @{
+            commit_id = 'head-sha'
+            path = 'tools/wta/src/protocol/acp/native_yolo.rs'
+            body = 'File-level finding.'
+            html_url = 'https://example.test/comment/file'
+            user = @{ login = 'Copilot' }
+        }
+        Write-ReviewFixture -Root $root -Reviews @($review) -Comments @{ 575 = @($comment) }
+
+        $snapshot = & $script:Checker -FixtureRoot $root | ConvertFrom-Json
+
+        $snapshot.FindingCount | Should -Be 1
+        $snapshot.Findings[0].Path | Should -Be 'tools/wta/src/protocol/acp/native_yolo.rs'
+        $snapshot.Findings[0].Line | Should -BeNullOrEmpty
+    }
+
     It 'fails closed when a suppressed count cannot be parsed into locations' {
         $root = Join-Path $TestDrive 'unparsed'
         Write-ReviewFixture -Root $root -Reviews @(
