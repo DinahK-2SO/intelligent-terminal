@@ -269,6 +269,20 @@ Describe 'Yolo Settings save normalization' -Tag 'Unit' {
     }
 }
 
+Describe 'Agent provider identity ownership' -Tag 'Unit' {
+    It 'updates the current provider only from helper status' {
+        $terminalPagePath = Join-Path $PSScriptRoot '..\..\..\src\cascadia\TerminalApp\TerminalPage.cpp'
+        $source = Get-Content -LiteralPath $terminalPagePath -Raw
+        $rebindHandler = [regex]::Match(
+            $source,
+            '(?s)void TerminalPage::_RaiseAgentPaneRebindRequest.*?(?=TerminalPage::AgentRuntimeConfigSnapshot)').Value
+
+        $rebindHandler | Should -Match '_RaiseProtocolEvent\("rebind_agent", params\);'
+        $rebindHandler | Should -Not -Match 'AgentCurrentId\('
+        $source | Should -Match 'statusTab->AgentCurrentId\(agentId\);'
+    }
+}
+
 Describe 'Start-Terminal startup ordering' -Tag 'Unit' {
     It 'waits for the first window before probing COM' {
         InModuleScope ItE2E {

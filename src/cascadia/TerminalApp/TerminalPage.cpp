@@ -2344,7 +2344,6 @@ namespace winrt::TerminalApp::implementation
         params["generation"] = Json::UInt64{ generation };
         params["window_id"] = std::to_string(_WindowProperties.WindowId());
         params["tab_id"] = winrt::to_string(tab->StableId());
-        tab->AgentCurrentId(winrt::hstring{ binding.agentId });
         _RaiseProtocolEvent("rebind_agent", params);
     }
 
