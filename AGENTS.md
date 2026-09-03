@@ -11,22 +11,57 @@
 3. 本地 orchestration、raw logs、screenshots、provider homes 和凭据只放在 ignored evidence root。
 4. `AGENTS.md` 与 `local-tdd-kit/` 是 dev-only；不得 cherry-pick 到 PR #505 的 publish branch。
 5. UI、安全边界或真实 provider 行为发生变化时，必须重新 build/deploy exact publish HEAD 并取得 fresh evidence。
+6. 长时 one-shot 命令必须优先使用同步、无超时执行。若工具强制 handoff，立即记录 terminal ID、开始时间和
+  `+3 分钟`回看 deadline；该 terminal 保持独占，禁止启动重复命令。
+7. Handoff watchdog 是完成门槛：继续做独立工作，但每次 terminal/user/tool 事件恢复时先检查 overdue terminal；
+  发送 final、报告完成或进入空闲前也必须检查所有 active terminals。未取得真实结束状态时保持任务 open，
+  明确标记 UNKNOWN。禁止用 sleep、轮询进程或无意义 heartbeat 冒充自唤醒。
+8. 等待外部 review/check 时，若环境没有延时唤醒工具，必须注册当前用户的一次性 scheduler 在 deadline
+  运行只读 checker 并写入 ignored artifact；记录 task name、deadline 和 artifact。Scheduler 能保证检查执行，
+  不能唤醒模型，因此下一次 user/tool/terminal 事件仍须先读 artifact，并删除已完成 scheduled task。
+
+## GitHub 双账号门禁
+
+每个新的 Copilot session 在开始任何开发、代码调查、build/test 或线上 GitHub 读取/写入前，
+必须先完成以下身份检查。门禁通过前只允许执行身份检查；任一检查失败或无法确认时，告诉 user
+需要重新登录哪个账号，然后暂停其他工作。
+
+1. 从当前 Copilot session、VS Code Accounts 界面或 Copilot 账号选择器确认 Copilot 使用的
+  GitHub 账号。不得用 `gh`、Git remote、commit author 或系统用户名推断 Copilot 身份。
+  账号必须以 `_microsoft` 结尾（大小写不敏感，例如 `xiaomgao_microsoft`），因为 Copilot
+  额度和内部专用模型属于该内部账号。若身份不可见、无法确认或不匹配，告诉 user 重新登录
+  Copilot/VS Code 的 Microsoft 内部账号，并暂停其他工作。
+2. 运行 `gh auth status --hostname github.com`，再运行 `gh api user --jq .login`，确认当前 active
+  `gh` 账号。它必须是 user 通过 `gh auth login` 登录的开源社区开发账号，且不得以
+  `_microsoft` 结尾（例如 `DinahK-2SO`）。若 `gh` 未登录、账号无法确认或账号以
+  `_microsoft` 结尾，告诉 user 使用社区开发账号重新运行 `gh auth login`，并暂停其他工作。
+3. 只有 Copilot 账号以 `_microsoft` 结尾且 `gh` 账号不以 `_microsoft` 结尾时门禁才通过。
+  记录两个账号名和检查时间，但不得记录 token、cookie、credential、account ID 或其他 secret。
+  Copilot 与 `gh` 是独立认证面；不得因为其中一侧正确而假定另一侧正确。
+4. 门禁通过后，线上 GitHub PR、issue、review、comment、check 和 GraphQL/REST 交互统一使用
+  已验证的 `gh` 社区账号；Git repository 操作使用 command-line `git` 及已配置 remote。
+  不得调用 GitKraken，不得由 agent 自动登录、切换账号、刷新 token 或修改 credential 配置。
+5. Copilot session 重启、VS Code 账号变化、`gh` 认证错误或 user 表示重新登录后，必须重新执行
+  完整门禁。任一检查后来失效时，立即停止线上和本地后续步骤，报告实际账号或 `UNKNOWN`，
+  等待 user 完成重新登录。
 
 ## Feature Metadata
 
 - Feature: Yolo mode / provider-native ACP session modes
-- Summary: persistent global default, per-ACP-session `/yolo on|off`, reviewed native
-  modes for Copilot, Claude, Codex and Gemini, and `AllowYoloMode` policy gating.
+- Summary: persistent global default, reviewed native modes for Copilot, Claude, Codex
+  and Gemini, provider-advertised command forwarding, and `AllowYoloMode` policy gating.
 - User-visible goal: provide an explicit, reversible way to let a trusted agent continue
   through its own tool permission requests, without bypassing the product-owned terminal
   action card, and produce a reviewable package for Hamza's design/security review.
 - Pull request: https://github.com/microsoft/intelligent-terminal/pull/505
 - Related issue: https://github.com/microsoft/intelligent-terminal/issues/326
 - Original PR head / takeover baseline: `3adc45bc69941cad108ca9799df78a1d42c95de8`
-- Latest audited `origin/main`: `6c332c0ecac26a78cf60de54a51ee864e2933951`
+- Latest audited `origin/main`: `7ad568058e65759d34447ad2d79d8f71ec01d8af`
 - Common ancestor: `e870a3630a785a44cbd22190b5c8808c7084b31f`
 - Dev branch/worktree: `dev/dinah/yolo-mode` / `C:\ado\intelligent-terminal-bugfix`
-- Dev branch's latest publish-equivalent head is `cab16e161af53daeb4b79230e10d3970166fef59`;
+- Dev latest-main merge: `c5a0f6365` (dev-only handoff changes remain local).
+- Dev branch/head is `dev/dinah/yolo-mode@3ef6b0de2`; its latest
+  publish-equivalent review-fix commit is `3ef6b0de2`;
   its latest product-bearing Yolo UX commit is `cab16e161af53daeb4b79230e10d3970166fef59`;
   its latest security-review commit before that is `170d7c6c1bb813c7c6bf86d1359eea856855f268`;
   earlier review/product commits include `3ad490bd9`, `6f128ac0d`, `5f8e3ca12`,
@@ -35,7 +70,7 @@
 - Publish branch/worktree: `dev/vanzue/yolo-mode` /
   `C:\ado\intelligent-terminal-yolo-publish`
 - Publish remote: `origin/dev/vanzue/yolo-mode`; local, remote-tracking and `ls-remote`
-  are all at `2f99d2440df96bf597bfed912c039cd2decb7913`. Original branch author Kai (`vanzue`)
+  are all at `281d48d82111084e648d00de650e564c780d9869`. Original branch author Kai (`vanzue`)
   approved using this as the publish branch and directly pushing validated publishable
   commits for the security review process on `2026-08-25`.
 - Evidence root: `local-tdd-kit/artifacts/yolo-mode/` (ignored).
@@ -45,12 +80,455 @@
   `9567d42ad` after the prior main merge, provider-native, permission-contract, locale,
   packaged-E2E and quota-boundary commits, bounded native RPCs in `61200332f`, and latest
   integrated `origin/main` through merge `d99a0e787`. Later review rounds are
-  `c99714ec1`, test-fixture correction `8b9d63a40`, and pending-slash gating `c96b1d66d`.
+  `c99714ec1`, test-fixture correction `8b9d63a40`, pending-slash gating `c96b1d66d`,
+  provider-command policy coverage `acbd86ef6`, reconciliation fix `160b923ba`, locale repair
+  `c19b57ea8`, lifecycle fencing `d68027245`, explicit config fence `4af34a3a6`,
+  manual-config state documentation correction `ac038c2f3`, and fail-closed gate
+  documentation correction `17bc48282`. The recovered lazy-policy prompt completion
+  fix is `5a963be0e`; malformed native-enable acknowledgement and whitespace-safe
+  package-fixture remediation is `4176a7d4b`; provider-command policy classification
+  hardening is `281d48d82`.
 - Out of scope for PR #505: trusted/allowed working directories, a read/search-only
   ToolKind allowlist, per-application/executable policy, provider negotiations, and the
   future available-commands `/command` integration.
 
 ## Current Stage
+
+`2026-09-03`: authenticated GraphQL/REST audit found exact-head Copilot review
+`5097194012` at publish `281d48d82`, submitted `2026-09-03T02:36:16Z`, with
+`Comments generated: 0 new`. The review requests final human validation of the
+security-sensitive policy, provider and session-race behavior but adds no product finding.
+Five older unresolved Copilot threads remain: three duplicate selector-kind findings and
+two duplicate exact-Copilot-`off` findings, all predating and already fixed in the current
+implementation; they still need reply/resolution before the scripted review loop reports
+`Converged: true`. The completed `IntelligentTerminal-PR505-Review-Watchdog` task was
+deleted, and no timer artifact was created. Dual-account access is now verified as Copilot
+`xiaomgao_microsoft` plus community `gh` account `DinahK-2SO`; reusable gate instructions
+are published on `user/DinahK-2SO/AGENTS_md@5740420ce` and
+`user/DinahK-2SO/local-tdd-kit@46935e06d`. Next action: reply to and resolve the five
+historical threads without requesting another review or changing the validated publish head.
+
+`2026-09-03`: public checker found one valid inline finding in exact-head review
+`5093367183` of `4176a7d4b` (`discussion_r3917185580`). A Copilot
+`/allow_all` submitted before asynchronous UI command classification could bypass both
+policy guards because authorization was conditional on `is_agent_command`. The
+deterministic unclassified-command RED reached the mock ACP agent. Dev `3ef6b0de2`
+removes that UI precondition from both the early and send-time checks; the
+master-attested provider mapping remains the authorization source, while command
+classification still controls only template/telemetry behavior. The same test is GREEN,
+the classified rejection and Copilot `/usage`/custom-provider negative controls pass,
+policy passes `19/19`, and full WTA passes `1989/0/1` with source-matched `wtcli.exe`.
+Independent review found no actionable issue. Publish `281d48d82` is patch-identical,
+passes the focused regression, policy `19/19`, and full WTA `1989/0/1`. Its exact
+package is built, deployed, launched, and freshness-verified; source fingerprint is
+`73ABCEC3348F2DF94B387FEA9B38EDD0C0C22864C9BDDC4A07937385E1E75EC7` and WTA
+SHA-256 is `E23CB0208ED98BF764FED4C05B2F8670ED652A559140D50368B2EDB9FB9D4EF6`.
+Zero-token package Yolo passes `4/0/1`, settings/state restore byte-for-byte, and
+cleanup has zero markers/processes. The guarded push advanced local/tracking/remote to
+`281d48d82` over `origin/main@7ad568058`. Next command: run the four-gate public checker
+with baseline `5093367183`; expect it to fail closed until a new exact-head review and
+all checks complete. Public REST was temporarily rate-limited on the shared IP; do not
+use authenticated tooling or run a provider/model prompt.
+
+The first post-push public gate at `2026-09-03T02:29:09Z` correctly exits `1`:
+there are zero reviews after baseline `5093367183`, findings are zero, and exact-head
+checks are `7/9` complete with Copilot reviewer job `100500592447` and PR spelling
+pending. Re-run the same four-gate command after those automatic jobs complete; do not
+publish another change or retrigger review while this review is in flight.
+
+`2026-09-03`: review `5092955888` of `5a963be0e` produced three valid findings,
+all fixed and published as dev `a0e8ced14` / publish `4176a7d4b`. A successful native
+enable RPC now requires both the requested current value and an exact reversible config
+channel; missing or malformed acknowledgement is restart-required because the provider
+may already be privileged. Deterministic REDs returned ordinary known errors and are
+GREEN `2/2`. The zero-token Yolo fixture now uses UTF-16 `-EncodedCommand`, preserving
+valid workspace paths with whitespace or apostrophes instead of rejecting them. Exact
+publish validation passes Yolo `70/70`, permission `48/48`, full WTA `1988/0/1`,
+ItE2E selftests `24/24`, and package Yolo `4/0/1`, skipping only unprovisioned C292.
+Exact package `4176a7d4b` is built, deployed, launched, and freshness-verified `18/18`;
+source fingerprint is `3995E6236A5C58AED02365DA6704229AF03C46C453C8E7C80A325E4517243B48`
+and WTA SHA-256 is `F7BE9E8AC31E5D0EB81853D1FE6F787CC31A109AC36BAED61AEBF42C906ABC2A`.
+Dev-only checker follow-up `9e8b3647a` accepts GitHub file-level comments with null line
+fields while retaining payload validation; checker selftests pass `15/15`. The first
+post-push four-gate invocation at exact PR head `4176a7d4b` correctly exits `1`: there
+are zero reviews after baseline `5092955888`, findings are currently zero, and checks
+are `7/9` complete with reviewer and spelling pending. Next command: rerun
+`Get-PublicPrReviewSnapshot.ps1 -AfterReviewId 5092955888 -RequireNewReviewAtHead
+-RequireSuccessfulChecks -FailOnFindings` after the automatic review completes. Do not
+publish the dev-only checker or run a provider/model prompt.
+
+`2026-09-03`: public-review automation and the recovered lazy-policy finding are
+implemented and the product fix is published. Dev product commit `4fc4aae4f` /
+publish `5a963be0e`
+emit a localized session-scoped retryable `AgentError` before the existing
+reconciliation completion whenever lazy Yolo setup must abandon an already committed
+first prompt. A deterministic same-session gate RED failed with `policy-blocked lazy
+prompt ended without a retryable error`; the same test is GREEN and requires event
+order `AgentError` then `RuntimeYoloReconcileCompleted`, no ACP prompt, and released
+single-flight state. Existing lazy supersession and native-disable tests remain GREEN.
+Yolo passes `68/68`; full dev and publish WTA pass `1986/0/1` with source-matched
+`wtcli.exe`. Exact publish `5a963be0e` is built, deployed, launched, and freshness
+verified `18/18`; source fingerprint is
+`7E4B5F37DFB4390AE6664793CA36ECF776B6C0DDE1EAFE28497B62FC2060BC9E` and WTA
+SHA-256 is `E9F223AF9301E2763323128D37325FDC7DDEE9008F30A38071843ABC9FEE827D`.
+Zero-token Yolo passes `4/0/1`, skipping only unprovisioned C292; the user's current
+settings/state hashes restore byte-for-byte and cleanup is clean. Dev-only commit
+`d261153ed` adds `Get-PublicPrReviewSnapshot.ps1`: unauthenticated public REST,
+review/comment/check pagination, baseline review IDs, exact-head/check gates,
+suppressed-body and inline-comment parsing, fail-closed count/format/head-drift
+and review-comment publication integrity, JSON artifacts, and
+`-RequireNewReviewAtHead`/`-RequireSuccessfulChecks`/`-FailOnFindings` exits.
+Its hermetic tests pass `14/14`; live latest mode reports
+`5092356563@17bc48282`, zero findings and `12/12` successful/skipped checks, while
+baseline `5090807552` correctly recovers reviews `5091909894` and `5092140169` as
+two suppressed findings. The guarded push advanced local/tracking/remote publish refs
+to `5a963be0e`; the first post-push four-gate invocation correctly exits `1` because
+the new exact-head review is still pending. At `2026-09-02T17:27:33Z`, reviewer job
+`100348021355` had run for `10.9` minutes; all other `11/12` exact-head checks were
+complete and successful/skipped. Next action: rerun that same checker gate with
+baseline `5092356563` after the automatic review completes. Do not publish the dev-only
+checker or run a provider/model prompt.
+
+`2026-09-03`: automatic public-REST review audit recovered one valid suppressed
+finding from review `5091909894` of publish `4af34a3a6` that later zero-comment
+reviews did not restate. In the lazy first-prompt path, a captured global-on value can
+race a hot `AllowYoloMode` block before native apply. The resulting policy error emits
+only `RuntimeYoloReconcileCompleted` and returns, silently abandoning the already
+committed UI turn without `AgentError` or `AgentMessageEnd`. Current refs remain dev
+`feadaa432`, publish/remote `17bc48282`, and `origin/main@7ad568058`; publish has no
+tracked modifications. Next command: add the deterministic same-session operation-gate
+RED `policy_blocked_lazy_yolo_operation_reports_retryable_error_instead_of_silent_turn_end`,
+then run that exact filter before changing `dispatch_prompt_body`. In parallel, add a
+dev-only unauthenticated REST snapshot command so latest review bodies, suppressed
+findings, and inline comments are checked automatically without `gh` or account access.
+Do not run a provider/model prompt.
+
+`2026-09-02`: automatic review is converged at exact publish head `17bc48282`.
+Copilot review `5092356563` completed at `2026-09-02T16:34:45Z`, reviewed
+`179/181` changed files, and generated zero new or suppressed findings. Exact-head
+reviewer, spelling, branch-policy and CLA checks are successful; report/update jobs
+are intentionally skipped. Final publish-source validation is Yolo `67/67`, full WTA
+`1985/0/1`, fail-closed restart `1/1`, lazy supersession `1/1`, ItE2E selftests
+`24/24`, zero-token package Yolo `4/0/1`, `cargo fmt --check`, CRLF-aware diff check,
+two independent documentation audits, package cleanup, product-path zero-diff, and
+receipt WTA hash identity. No provider/model prompt ran. The only remaining metadata
+concern is human-owned PR body copy: its cached public body still says `Localized
+Settings and slash-command resources`; replace that with `Localized Settings
+compatibility resources` using the correct online account if the live PR still shows
+it. Remaining design/security signoff and screenshots are human review work, not an
+automatic-review blocker.
+
+`2026-09-02`: final-head zero-token package validation survived the execution
+helper's forced 120-second handoff and reached a real terminal prompt with `4/0/1`.
+Permission UI, Yolo persistence, OpenCode compatibility, and Gemini trust cases pass;
+only C292 is skipped for the unprovisioned policy-write prerequisite. The report marks
+`59/0` automated release items, the Dev selector resolves to the publish worktree's
+Debug AppX for `IntelligentTerminal_rd9vj3e6a2mbr`, and cleanup finds zero package
+processes or backup/missing markers. The handed-off terminal was then closed.
+
+`2026-09-02`: exact-head review `5092140169` of `75beac2f7` completed with zero
+visible findings and one valid suppressed documentation finding. The spec overstated
+the global-only runtime invariant even though reviewed manual `/config` values mutate
+only the current ACP session without changing `YoloState`. Dev `328f602d3` / publish
+`ac038c2f3` now state that WTA persists no per-session preference while a manual native
+selection may differ until later global/policy reconciliation or session reset. An
+independent exact-doc audit then found that the state table incorrectly allowed every
+known failure to release its prompt gate. Dev `feadaa432` / publish `17bc48282` limit
+that release to known enable failures and preserve failed-disable/unknown fail-closed
+state until Agent CLI replacement; the controlling restart test passes `1/1`. Both
+review-fix pairs have matching patch IDs and document hashes; CRLF, trailing-space and
+corrected-contract checks pass. The earlier recovered lazy-prompt finding from review
+`5076573812` was already
+fixed by `53776a0d7`; its exact publish-source supersession test passes `1/1`. Full WTA
+at the unchanged product parent passes `1985/0/1` with receipt-selected `wtcli.exe`.
+An initial `1984/1/1` run used the stale WindowsApps `wtcli.exe`; the exact failing hook
+test and complete suite both pass after putting
+`bin\\x64\\Debug\\wtcli\\wtcli.exe` first on `PATH`. The documentation commit changes
+zero receipt product paths, and cargo/staged/installed WTA hashes remain
+`CD0B8CADB68F84B23DF2AD32386A5BCF1DED81432E5FA89E4E3F96772E97ECFD`, so the exact
+`75beac2f7` package receipt remains valid for product behavior. The guarded ordinary
+pushes advanced publish through `ac038c2f3` to `17bc48282`; local, tracking and remote
+refs match over `origin/main@7ad568058`. Next action: wait for and triage automatic
+checks and Copilot review of exact `17bc48282`; do not run a provider/model prompt.
+
+`2026-09-02`: the broad policy-watcher finding from the review of `acbd86ef6` is fixed and
+published as dev `ad0a79f49` / publish `75beac2f7`. The RED proved the public watcher targeted
+`Software\\Policies\\Microsoft`; it now targets the exact Intelligent Terminal policy path while
+the existing deepest-ancestor fallback preserves creation detection. Watcher tests pass `3/3`, the
+complete SettingsModel policy class passes `41/41`, and TerminalApp builds with `0` errors. Exact
+package `75beac2f7` is built, deployed, launched and freshness-verified `18/18`; source fingerprint
+is `B355B42DDC150936032B270437E2E52549B033DF0D716DA28C486CE68E43C095` and WTA SHA-256 is
+`CD0B8CADB68F84B23DF2AD32386A5BCF1DED81432E5FA89E4E3F96772E97ECFD`. Zero-token Yolo passes
+`4/0/1`, skipping only C292's unprovisioned policy-write prerequisite. Cleanup is clean and the
+guarded ordinary push advanced publish from `4af34a3a6` to `75beac2f7`; local, tracking and remote
+refs match over `origin/main@7ad568058`. Next action: triage automatic checks and Copilot review for
+exact `75beac2f7`; no provider/model prompt is allowed.
+
+`2026-09-02`: exact-head review and independent hardening after `160b923ba` are published as dev
+`39b2eb962` / publish `4af34a3a6`. Copilot's locale review exposed reversible CP437/UTF-8 mojibake
+in `75` `system.provider_command_blocked_by_policy` values; publish `c19b57ea8` restores native
+UTF-8 text and adds durable corruption/token checks. Publish `d68027245` preserves pending-load
+Yolo gates until authoritative attach and records the client-reconciled target so queued runtime
+changes cannot be swallowed. Publish `4af34a3a6` reuses the operation fence for explicit native
+`/config` publication/completion and proves a genuinely dispatched newer operation supersedes a
+stale ACP error without weakening current-disable restart behavior. A proposed AgentConnected
+bootstrap filter was disproved by the full usage lifecycle suite and removed; the existing
+`TabError` then fallback `SessionAttached` FIFO path is covered as a positive control. Final source
+passes Yolo `67/67`, full WTA `1985/0/1`, locale integrity `2/2`, and prior selftests `24/24`.
+Exact package `4af34a3a6` is built, deployed, launched and freshness-verified `18/18`; source
+fingerprint is `D04B6B98680FB164DFEFED4AF8499A4A85186DDE97DD10310727A7EA3B796AA6` and WTA
+SHA-256 is `D19C0D25550F6FAAAC600F5F007063975B8875603EC32651C293C6D281216C3B`. Zero-token
+Yolo passes `4/0/1`, skipping only C292's unprovisioned policy-write prerequisite. Cleanup is clean,
+the guarded ordinary push advanced publish from `160b923ba` to `4af34a3a6`, and local/tracking/
+remote refs match over `origin/main@7ad568058`. Next action: triage automatic checks and Copilot
+review for exact `4af34a3a6`; no provider/model prompt is allowed.
+
+`2026-09-02`: both remaining suppressed findings from review `5089969737` are fixed and
+published as dev `ccced694a` / publish `160b923ba`. Runtime fan-out excludes bootstrap/load tabs
+in `pending_yolo_session_tabs` until `SessionAttached` establishes the authoritative ACP session,
+and automatic plus lazy-startup native config acknowledgements now publish returned
+`configOptions` through the existing operation fence so `/config` reflects the provider's current
+value without accepting stale completions. Targeted REDs failed at those exact event boundaries and
+are GREEN. Exact publish source passes Yolo `65/65`, permission `48/48`, full WTA `1980/0/1`, and
+ItE2E selftests `24/24`. Exact package `160b923ba` is built, deployed, launched and
+freshness-verified `18/18`; source fingerprint is
+`D64B9EA1074D78453DCDD732736BAC3DB882E618FC4CBD071940EEC368745954` and WTA SHA-256 is
+`0987C11EDCEFA33FD0146C65E037DC1D7D5E6FEBF1838A0B3F2F49485B709E43`. The first zero-token
+run passed `3/1/1` after a Pester setup-control-flow failure prevented the permission body from
+running; cleanup was clean, the focused permission rerun passed `1/1`, and the fresh complete run
+passed `4/0/1`, skipping only C292's unprovisioned policy-write prerequisite. The guarded ordinary
+push advanced publish from `acbd86ef6` to `160b923ba`; local, tracking and remote refs match, and
+public metadata confirms the exact head over `origin/main@7ad568058`. Next action: triage automatic
+checks and the Copilot review for exact `160b923ba`; no provider/model prompt is allowed.
+
+`2026-09-02`: Copilot review `5089969737` of `b8237b70b` added four suppressed findings.
+Publish `acbd86ef6` fixes two: localized policy rejection in all `89` locales and removal of the
+two blank-line-only edits from `88` non-English catalogs. Two valid findings remain open: runtime
+Yolo reconciliation must exclude tabs in `pending_yolo_session_tabs` until `SessionAttached`, and
+automatic/startup native config acknowledgements must publish returned `configOptions` back to App
+so `/config` does not retain the pre-reconcile value. Next action: add deterministic REDs at the
+runtime fan-out and reconciliation event boundaries, then make the smallest owning-path fixes and
+repeat focused/full/package validation. No provider/model prompt is allowed.
+
+`2026-09-02`: the reviews of `83d377f4e` and `f5feec7ec` produced three valid follow-ups,
+published as dev `16116824b` / publish `acbd86ef6`. Both early and send-time policy rejections now
+use one parameterized `system.provider_command_blocked_by_policy` key. All `89` WTA locales reuse
+their previously reviewed native `Yolo mode is disabled by your organization's policy` translation
+with a locked `%{command}` prefix; locale parity passes `1/1`, historical-translation comparison is
+`89/89`, and each locale differs from `origin/main` by exactly that key. The previous two blank-line
+edits in `88` non-English catalogs are removed. C292 substitutes `/allow_all` into an all-locale
+regex, covered by a new hermetic selftest, and the README now identifies OpenCode, Gemini, and policy
+as the three conditional Yolo cases. Exact publish source passes policy `8/8`, Yolo `64/64`,
+permission `48/48`, full WTA `1977/0/1`, and ItE2E selftests `24/24`. Exact package `acbd86ef6`
+is built, deployed, launched and freshness-verified `18/18`; source fingerprint is
+`A4C9476F785F2B9F275952F8EFBB2771D8187533DCC67B28D86139A9170903BD` and WTA SHA-256 is
+`D6AFA8847029A5B062BD3C6B95759B341B9E31A1FB0E9E4FC01BEB1B35D8F359`. Zero-token Yolo passes
+`4/0/1`, skipping only C292's unprovisioned policy-write prerequisite. Independent final review
+found no actionable issue. The guarded ordinary push advanced publish from `b8237b70b` to
+`acbd86ef6`; local, tracking and remote refs match. Next action: triage automatic checks and Copilot
+review for exact `acbd86ef6`; no provider/model prompt is allowed.
+
+`2026-09-02`: autopilot final-head oracle hardening is published. Independent review of
+`f5feec7ec` found one Medium package-oracle gap: C292 did not directly prove a blocked Copilot
+`/allow_all` stayed before the ACP send boundary. Dev `c63c26724` / publish `b8237b70b` move the
+existing `sending Agent command verbatim` trace into the transport guard's successful branch, add
+a stable positive policy-suppression trace for both early and send-time rejection, and require C292
+to observe suppression plus absence of the send trace. Final independent review found no actionable
+issue. Exact publish source passes policy `8/8`, full WTA `1977/0/1`, and ItE2E selftests `23/23`.
+Exact package `b8237b70b` is built, deployed, launched and freshness-verified `18/18`; source
+fingerprint is `0EA2E22BA0D71A585E346FCCF9F3FF2406812B7862DD1E22E2F78E1D5C071637` and WTA
+SHA-256 is `259C04BCF2A21C1F08D71D66DCA5DF769F90900CE9A874C59DCB80CA32B8C589`. Zero-token
+Yolo passes `4/0/1`, skipping only C292's unprovisioned policy-write prerequisite. The guarded
+ordinary push advanced publish from `f5feec7ec` to `b8237b70b`; local, tracking and remote refs
+match. Next action: triage automatic checks and Copilot review for exact `b8237b70b`; no
+provider/model prompt is allowed.
+
+`2026-09-02`: the fresh-package E2E harness High from the review of `441dd41f9` is fixed and
+published as dev `07606ebdc` / publish `f5feec7ec`. The RED reproduced
+`DirectoryNotFoundException` when both config files and their `LocalState` parent were absent;
+`Backup-WtConfig` now creates the marker parent before writing. Focused RED-to-GREEN is `0/1` to
+`1/1`; full ItE2E selftests pass `23/23`. Final test source `f5feec7ec` against the unchanged exact
+product package from parent `83d377f4e` passes zero-token Yolo `4/0/1`; only C292 is skipped for the
+unprovisioned policy-write prerequisite. The test-only commit changes none of the receipt's product
+source paths, and cargo/staged/installed WTA hashes remain identical. The guarded ordinary push
+advanced publish from `83d377f4e` to `f5feec7ec`; local, tracking and remote refs match. Product
+receipt remains `83d377f4e` with fingerprint `9EDC0EC955934FD372BF61D5501C83DAA977D9D4779F81E31D2CCE05428C0BDC`
+and WTA SHA-256 `5B3FA25708E553ABAF822362C318FEDC01D612D1252DBD882875103563FAE0CC`.
+Public PR HTML confirms final head `f5feec7ec` with `3/8` checks; no Copilot review of that exact
+head has completed. Next action: triage that automatic review/check set; no provider/model prompt
+is allowed.
+
+`2026-09-02`: provider-command policy enforcement and the prior review cleanup are published.
+Dev `40b4146b7` / publish `034d7d8f6` remove the empty Agent header column/spacing and the
+unreachable `ChatMessage::Status` renderer/state/style. Dev `9d6eb4d55` / publish `83d377f4e`
+extend `AllowYoloMode` to GitHub Copilot's provider-advertised `/allow_all` command using the
+master-attested provider adapter contract. The final transport guard rechecks policy after ACP
+connection readiness and immediately before `send_request`, so a hot policy transition cannot win
+a readiness TOCTOU; blocked commands emit no prompt-sent telemetry. The original RED reached the
+mock ACP agent; command block and send-time tests are GREEN `1/1` each. Policy matrix GREEN `8/8`
+proves Copilot `/allow_all`, Copilot/Claude/Codex privileged config, Gemini privileged mode, normal
+Copilot `/usage`, and custom-provider same-name isolation. Focused Yolo passes `64/64`, permission
+`48/48`, full WTA `1977/0/1`, ItE2E selftests `22/22`, and TerminalApp builds with `0` errors.
+C292 now first proves `/allow_all` is provider-advertised, then requires policy rejection and no
+native re-enable; this machine still skips C292 because policy writes are not provisioned, so its
+package body did not execute locally. Exact package `83d377f4e` is built, deployed, launched and
+freshness-verified `18/18`; source fingerprint is
+`9EDC0EC955934FD372BF61D5501C83DAA977D9D4779F81E31D2CCE05428C0BDC` and WTA SHA-256 is
+`5B3FA25708E553ABAF822362C318FEDC01D612D1252DBD882875103563FAE0CC`. Zero-token Yolo initially
+hit a transient Pester setup-control-flow failure before the permission body; focused rerun passed
+`1/1` and the complete rerun passed `4/0/1`. The guarded ordinary push advanced publish from
+`441dd41f9` to `83d377f4e`; local, tracking and remote refs match. Next action: triage the automatic
+Copilot review/checks for exact `83d377f4e`; no provider/model prompt is allowed.
+
+`2026-09-02`: both suppressed review findings are fixed and published with latest main. Dev
+`4bc91ac0f` / publish `bc1e0d789` assign Yolo persistence uniquely to C294 and require both
+explicit `/config` and automatic reconciliation config RPCs to return the requested native
+`currentValue` before success; stale or missing disable acknowledgements require restart. The
+deterministic REDs returned erroneous `Ok(Some(...))` / `Ok(())` and are GREEN `2/2`; native Yolo
+passes `29/29`, focused Yolo `61/61`, permission `48/48`, full WTA `1971/0/1`, and ItE2E selftests
+`22/22`. Remote main advanced during the first package gate, so `origin/main@7ad568058` was merged
+without conflicts as dev `c5a0f6365` / publish `441dd41f9`. Their publishable trees are identical.
+The incoming LocalTests build passes; the existing Yolo helper-state test passes `1/1`; the new
+pane-context test remains environment-blocked before its body by shared initialization error
+`0x8000ffff`. Exact package `441dd41f9` is built, deployed, launched and freshness-verified `18/18`;
+source fingerprint is `09E7CC4A98D88782C194F915B492499ADAE8CADE19403EBE7ACC6A55C8E04A16`
+and WTA SHA-256 is `7405E4189E42050DFADE9ED5884415098590A6C0908B8833000473690774197B`.
+Final zero-token Yolo passes `4/0/1`, skipping only the unprovisioned policy-write case, and its
+release report marks C294 complete. The guarded ordinary push advanced publish from `4f0b1215f`
+to `441dd41f9`; local, tracking and remote refs match. Next action: triage the automatic Copilot
+review/checks for exact `441dd41f9`; no provider/model prompt is allowed.
+
+`2026-09-02`: final push was correctly blocked after remote `main` advanced during exact-package
+validation from `7cb79e03c` to `7ad568058`. Review remediation is complete as dev `4bc91ac0f`
+and publish candidate `bc1e0d789`: C294 uniquely identifies Yolo persistence, and both explicit
+`/config` and automatic reconciliation reject stale/missing provider `currentValue` acknowledgements;
+disable mismatches require restart. Deterministic REDs returned erroneous `Ok(Some(...))` / `Ok(())`
+and are GREEN `2/2`; native Yolo passes `29/29`, focused Yolo `61/61`, permission `48/48`, full WTA
+`1971/0/1`, ItE2E selftests `22/22`, exact-package Yolo `4/0/1`, and exact package `bc1e0d789`
+freshness passed before the main advance was detected. The two incoming commits move FRE warning
+glyphs into XAML and derive delegate/protocol-tab context from the user terminal pane. Next action:
+probe conflicts, merge `origin/main@7ad568058` into dev and publish, rerun affected C++ plus review-fix
+and package gates, then push. No provider/model prompt is allowed.
+
+`2026-09-02`: latest-main integration is published and locally complete. Dev merge
+`d06a606f8` and publish merge `4f0b1215f` both integrate `origin/main@7cb79e03c`; their complete
+publishable trees are identical, with differences confined to documented dev-only handoff/TDD-kit
+files. The three conflicts preserve explicit permission and global-only Yolo behavior while adding
+main's Ctrl+A, telemetry and fixture fields. Exact publish-source GREEN: Ctrl+A `2/2`, Yolo
+`59/59`, permission `48/48`, full WTA `1969/0/1`, and ItE2E selftests `22/22`. Exact package
+`4f0b1215f` is built, deployed, launched and freshness-verified `18/18`; source fingerprint is
+`6258DBC05590C934611F1DC7F5C0E3B263616FB9E0AF349CFE25A5CC8556D956` and WTA SHA-256 is
+`680EB8735E4BE3AEB062402D2FCDC5911D165D0563C7786D85A604E58BBB4F0A`. Zero-token Yolo passes
+`4/0/1`, skipping only the unprovisioned policy-write case; full deterministic ACP protocol package
+coverage passes `8/8`, including C279 stdout preservation and final-marker ordering. Cleanup found
+no package processes. The guarded ordinary push advanced publish from `40e818619` to `4f0b1215f`,
+and local, tracking and remote refs match. Public PR HTML confirms the new head and currently shows
+`3/8` checks; no Copilot review of exact `4f0b1215f` has completed yet. Next action: wait for and
+triage the final-head review/checks; do not run a provider/model prompt.
+
+`2026-09-02`: latest-main integration reopened after the no-command cleanup. Public/publish head
+`40e818619` is `75` commits ahead and `7` behind `origin/main@7cb79e03c`; merge base is
+`6c332c0ec`. The seven incoming commits add startup agent-pane layout, intelligent-feature telemetry,
+FRE title localization, agent-pane Ctrl+A selection, live session-title refresh, and two WinGet
+workflow corrections. A non-mutating `merge-tree` probe finds real conflicts in
+`test/e2e/README.md`, `tools/wta/src/app_events.rs`, and
+`tools/wta/src/protocol/acp/mock_agent_tests.rs`. Resolution contract: recompute README coverage
+after retaining both suites; preserve the branch's explicit permission/Yolo behavior while applying
+main's Ctrl+A and telemetry additions to the two Rust files. Next command: stash only this dev-only
+handoff, merge `origin/main` into dev, resolve those three files, then run focused incoming + Yolo +
+permission checks and full WTA before repeating the merge in the clean publish worktree. Exact
+publish build/deploy/freshness and package E2E must be repeated after the final publish merge. No
+provider/model prompt is allowed.
+
+`2026-09-02`: autopilot recovery and the no-command/no-header cleanup are complete. The active work
+was incorrectly treated as complete when a non-conflicting product question arrived; no build/test
+process was still running. Reusable rules now require active-task continuity and classify missing or
+truncated execution output as UNKNOWN: `user/DinahK-2SO/AGENTS_md@f8c7f3671` and
+`user/DinahK-2SO/local-tdd-kit@8bdacaf5c`, both pushed and verified against the `Dinah` remote.
+Product commit dev `a4d55452c` / publish `a28fefaca` removes the WTA-owned `/yolo [on|off]`, its
+transaction/override/locales/docs/package claims, and the top-right per-agent-pane Yolo badge. It
+preserves provider-advertised same-name command forwarding, the editable provider-independent global
+toggle, OpenCode/Gemini contextual notices, global/provider-native reconciliation, policy enforcement,
+policy-aware `/config`, fail-closed disable behavior and explicit permission selection. Settings
+grey-out for OpenCode/Gemini remains intentionally deferred pending product discussion. Stable patch
+ID is `0186c1cee269ddcfa29c976332d87a7904f09f3e`. GREEN: provider-command forwarding `1/1`,
+focused Yolo `59/59`, permission `48/48`, full cleanup WTA `1951/0/1`, ItE2E selftests
+`22/22`, SettingsModel `40/40`, and TerminalApp/SettingsEditor/LocalTests builds with `0` errors.
+The focused LocalTests TAEF body remains environment-blocked during shared `TerminalPage` setup with
+the known `0x8000ffff`. Exact publish initially hit transient `resources.pri` mapping error
+`0x800704C8`; Restart Manager showed zero persistent locks and deploy retry succeeded. The prior
+Copilot review `5084192615` had one valid C279 finding: package E2E stopped asserting ACP
+`rawOutput.stdout`. Deterministic REDs proved a provider-reported `Completed` command with exit `7`
+hid `TOOL_OUTPUT_MARKER`; dev commits `339e233d4`, `690116dd7`, and `361571999` (publish
+`65f688d6f`, `1f69ea5eb`, and `578b0b8ea`) preserve stdout, normalize successful command statuses
+with nonzero exits to failed presentation, and use a stable package oracle. Final full dev/publish
+WTA passes `1953/0/1`; final C279 package E2E passes `1/1`. Fresh receipt/freshness verifies exact
+publish `578b0b8ea` with source fingerprint
+`54AE1A25ACAEFD1DE0EE2360251AE297EE3C46C1D10ADDDA2C6E0BC3A8A1DE55` and WTA SHA-256
+`877805EA2B23773C2D8C40CE4C9A6A0F005F71876DE2647F9C5CD6F846F5A5CC`. Final zero-token Yolo
+E2E passes `4/0/1`; only the unprovisioned policy-write case is skipped. Cleanup found no package
+processes or backup markers. Copilot
+review `5085577073` of cleanup head `a28fefaca` repeated the fixed C279 finding and correctly found
+that the public PR body still promises removed per-session commands/resources; the replacement body
+is recorded under Manual PR Metadata. Copilot review `5086067374` of `578b0b8ea` found three valid
+cleanup follow-ups: administrator policy copy still advertised the removed command, Yolo persistence
+reused checklist ID C286, and C279 could snapshot before its final streamed marker. Dev `b46ac7e85`
+/ publish `40e818619` fixes all three and removes the spelling-only `yol` test token while preserving
+the full provider-command forwarding assertion. GREEN at exact publish source: WTA `1953/0/1`,
+ItE2E selftests `22/22`, C279 package E2E `1/1`, ADML XML/global-only copy, and unique C286/C287.
+This final commit changes tests/docs/policy templates only, so the exact product package and hashes
+remain those validated at parent `578b0b8ea`. Publish local, tracking and remote refs all equal
+`40e818619`. The user reports the PR body was updated; anonymous REST is rate-limited and the public
+cache-busted HTML now confirms the Summary is global-only, but the Validation section still says
+`Localized Settings and slash-command resources`; manually replace that bullet with
+`Localized Settings compatibility resources`. Checks for `40e818619` were `3/8` when last observed,
+and no automatic review for that exact head had completed yet. No provider/model prompt was run.
+
+`2026-09-02`: team decision after Settings compatibility review: PR #505 will not add a WTA-owned
+`/yolo`, `/yolo on`, or `/yolo off` command. Provider commands advertised through ACP
+`availableCommands` remain visible and are forwarded; WTA must not reserve or mute a provider-owned
+command merely because it is named `yolo`. Keep the global Settings default, provider-native
+reconciliation, policy enforcement, acknowledged session header status, and policy-aware `/config`
+handling for Copilot/Claude/Codex. Gemini currently advertises only an ACP mode, so without the
+WTA-owned command it has no per-session WTA control; this is accepted by the product decision.
+Next command: add a deterministic registry/forwarding RED, then remove WTA command registration,
+completion, transaction state, locale/help text, slash tests and package assertions without weakening
+runtime/global reconciliation or explicit permission selection. No model prompt is required.
+
+`2026-09-02`: Settings compatibility UX is implemented as dev `3eb36b85f` / publish candidate
+`184b564b7` with matching stable patch ID `51b13b64683d83552369c7cf962a6bc3a5da911e`.
+The global preference remains editable and provider-independent. Settings shows a full-width,
+non-closable OpenCode Warning or Gemini Informational InfoBar only when effective Yolo is on,
+policy does not lock it, and that installed provider is the selected default; the Agent pane remains
+authoritative for actual session acknowledgement. The pure decision matrix completed compile RED to
+GREEN; SettingsModel passes `40/40`, SettingsEditor builds with `0` errors, locale XML/BOM/CRLF/key
+validation passes `16/16`, ItE2E selftests pass `22/22`, focused Yolo passes `80/80`, permission
+passes `48/48`, and full dev WTA passes `1969/0/1`. Independent review found no actionable issue.
+The earlier agent pause was an orchestration failure: a two-minute execution helper handoff hid the
+eventual SettingsEditor compiler result. Recovery rules were committed and pushed to dedicated
+branches `user/DinahK-2SO/AGENTS_md@e851b2ed3` and
+`user/DinahK-2SO/local-tdd-kit@4cd8fe84d`; they require sync/no-timeout execution, retained terminal
+IDs, no polling/sleep or duplicate commands, safe independent progress while waiting, a real zero
+exit before dependent phases, and exclusive ownership of a handed-off persistent terminal. The first
+exact publish attempt compiled CascadiaPackage with `0` errors but the outer helper exited `1` before
+deploy/receipt/freshness after a second command reused the active terminal and sent Ctrl+C; its old
+receipt correctly remained at `f3e21ea9f`, so it is orchestration FAIL rather than product PASS/FAIL.
+The clean `-SkipWtaTests` retry is currently handed off as terminal
+`59196b49-018c-4073-a811-f7c01bef54b0`; it is neither PASS nor FAIL yet and its terminal must not be
+reused. Next action: retrieve final output after automatic completion, require exact `184b564b7`
+freshness, then run zero-token package Settings/Yolo UIA. No model prompt is required or allowed.
+
+`2026-09-01`: Settings compatibility UX starts after latest-main integration and suppressed-review
+remediation. Product decision: keep `agentPane.yoloMode` as a provider-independent, editable global
+preference; do not grey out or clear it for OpenCode/Gemini because active tabs may use other
+providers. In Settings, show a non-closable compatibility InfoBar only when Yolo is effectively on,
+policy does not lock it, and the installed selected default provider is OpenCode or Gemini. OpenCode
+is `Warning`/unavailable; Gemini is `Informational`/conditional on provider-owned workspace trust and
+policy. Missing/unselected providers show no persistent compatibility notice, and policy/install/auth
+guidance has priority. The Agent pane remains authoritative for per-session acknowledgement. Next
+command: add a deterministic shared-registry decision-matrix RED, then wire append-only ViewModel
+properties, XAML InfoBars, all SettingsEditor locales, and package UIA coverage. No model prompt is
+required.
 
 `2026-09-01`: follow-up starts after public review `5076573812` of publish `2f99d2440`
 reviewed `182/182` files with no visible comment and one valid suppressed finding at
@@ -1177,14 +1655,27 @@ are one repeated root cause but must not be omitted from the review inventory.
 | Ten check-spelling annotations report unavailable external dictionaries | Check Spelling run `98507975954` (successful) | **WON'T FIX** | The workflow completed successfully; the annotations are upstream dictionary-download availability warnings and are not caused by repository content. Re-evaluate only if they recur after the substantive push. |
 | Optional generated pattern `image: [-\\w./:@]+` | Check Spelling run `98507967759` (successful, one notice) | **WON'T FIX** | This is a generic optional pattern suggestion, not a failing word. Adding a commit-specific pattern file would create unrelated spelling-policy churn. |
 
+### Latest Iteration (`a28fefaca`)
+
+| Finding | Source | Disposition | Rationale / required evidence |
+|---|---|---|---|
+| PR body still promises WTA-owned per-session `/yolo on|off` and localized slash-command resources | Copilot review `5085577073`, comment `3910717286` | **MANUAL METADATA FIX** | Final product intentionally has a global default only and forwards provider-advertised commands without reserving `yolo`. Code/spec/tests are aligned at `578b0b8ea`; the correct online account must replace the stale public body with the text below. |
+| C279 no longer proves ACP `rawOutput.stdout` crosses the process boundary | Suppressed Copilot finding in review `5085577073`; same root cause as review `5084192615` | **FIX** | Final commits normalize successful command statuses with nonzero exits to failed presentation, preserve bounded stdout, and assert `TOOL_OUTPUT_MARKER` through the exact deployed package. Rust pipeline tests and final package C279 `1/1` are GREEN. |
+
+### Latest Iteration (`578b0b8ea`)
+
+| Finding | Source | Disposition | Rationale / required evidence |
+|---|---|---|---|
+| Administrator policy text still advertises global or per-session `/yolo` controls | Suppressed Copilot finding in review `5086067374`, `policies/en-US/IntelligentTerminal.adml:49` | **FIX** | Publish `40e818619` describes only the global provider Yolo default in Settings and forced-off behavior for all sessions. XML and stale-copy checks pass. |
+| Yolo persistence reused checklist ID C286 | Suppressed Copilot finding in review `5086067374`, `doc/release-check-list.md:188` | **FIX** | The Yolo item now uses the previously unused C287; C286 and C287 each occur exactly once. |
+| C279 snapshots after stdout but before later plan/prose events | Visible Copilot finding in review `5086067374`, `Feature.AgentProtocolExperience.Tests.ps1:70-75` | **FIX** | The test waits for final `AFTER_TOOL_MARKER`, then asserts tool detail, stdout, plan and trailing prose from one snapshot and verifies order. Exact package rerun passes `1/1`. |
+| Partial command test token `yol` fails spelling | Check-spelling annotation on `578b0b8ea` | **FIX** | Provider forwarding coverage now types full `/yolo`, still proves WTA does not reserve it, and passes `1/1` within full WTA `1953/0/1`. |
+
 ### Manual PR Metadata
 
-The public PR metadata no longer describes removed generic `AllowOnce` interception. At
-`48e9af996`, its title matches the reviewed title and its body lists the four native mappings plus
-provider-owned sandbox/file/network effects. The body still omits the explicit no-auto-selection,
-custom-agent, terminal-action confirmation and acknowledgement/lifecycle paragraphs. The correct
-online account should replace it with the complete reviewed text below; anonymous APIs cannot edit
-it.
+Copilot review `5085577073` correctly found that the public body still advertises the removed
+WTA-owned per-session command. Anonymous APIs cannot edit PR metadata. The correct online account
+should keep the current title and replace the body with the complete reviewed text below.
 
 Title: `Add provider-native Yolo mode for ACP sessions`
 
@@ -1192,24 +1683,36 @@ Body:
 
 > ## Summary
 >
-> Adds a persistent global Yolo default and per-session `/yolo on|off` overrides for ACP
-> sessions, gated by the `AllowYoloMode` policy.
+> Adds a persistent, provider-independent global Yolo default (`agentPane.yoloMode`), gated by
+> the `AllowYoloMode` policy. New and live ACP sessions reconcile to the effective default.
 >
 > WTA invokes only reviewed provider-advertised session capabilities: Copilot `allow_all`,
 > Claude `bypassPermissions`, Codex `agent-full-access`, and Gemini `yolo`. OpenCode and custom
-> agents remain interactive unless they advertise a supported reversible capability. Provider
-> modes may also change sandbox, file, or network access according to the provider contract.
+> agents remain interactive. Provider modes may also change sandbox, file, or network access
+> according to the provider contract; Gemini workspace trust and provider policy remain
+> authoritative.
+>
+> WTA does not register `/yolo`, `/yolo on`, or `/yolo off`. A provider command named `yolo`
+> advertised through ACP `availableCommands` remains visible and is forwarded normally.
+> Copilot, Claude, and Codex can expose provider-owned session controls through `/config`;
+> Gemini currently has no WTA per-session control because its ACP adapter advertises a mode but
+> no corresponding config option.
+>
+> Settings keeps the global toggle editable when OpenCode or Gemini is the selected default and
+> shows contextual compatibility notices. Only organization policy disables the toggle.
 >
 > WTA never selects `AllowOnce`, `AllowAlways`, or another ACP permission option for the user.
 > Valid permission requests continue through the normal permission UI. Product-owned terminal
 > action proposals remain confirmation-gated.
 >
-> `/yolo` commits only after the provider acknowledges the session update. Runtime setting and
-> policy changes reconcile live sessions; session replacement, `/new`, tab cleanup, and restart
-> fence stale operations and overrides.
+> Provider-native updates are bounded, serialized, and generation-fenced. Runtime setting and
+> policy changes reconcile live sessions; unconfirmed disables and unknown outcomes restart the
+> agent stack fail closed. Session replacement, `/new`, tab cleanup, and restart remove stale
+> operations.
 >
-> Validation includes provider/lifecycle/race tests, localized Settings and slash-command text,
-> exact-package zero-token E2E, and local-only real-provider tool acceptance.
+> Validation includes provider/lifecycle/race tests, localized Settings compatibility text,
+> exact-package zero-token E2E, explicit permission coverage, and local-only real-provider tool
+> acceptance.
 >
 > Closes #326
 
