@@ -62,6 +62,37 @@ For every behavior change:
 9. Record test totals, build result, receipt hash and artifact paths.
 10. Commit/push according to the branch policy before starting the next RED step.
 
+### Focused runner and oracle guardrails
+
+- An aggregate TAEF wrapper such as `runut` can execute multiple discovery or architecture
+  phases. If the requested test body passes but another phase reports no matching tests and the
+  process exits nonzero, the command is not GREEN. Run the source-built `TE.exe` directly against
+  the exact DLL from its required runtime directory:
+
+  ```powershell
+  Push-Location <TEST_RUNTIME_DIRECTORY>
+  try {
+      & <SOURCE_BUILT_TE_EXE> <EXACT_TEST_DLL> '/name:*<TEST_CLASS>::<TEST_METHOD>*'
+      if ($LASTEXITCODE -ne 0) { throw "TAEF failed with exit code $LASTEXITCODE" }
+  }
+  finally {
+      Pop-Location
+  }
+  ```
+
+  Require a nonzero discovered test count, the expected test PASS, and process exit code `0`.
+  Record the wrapper mismatch separately as infrastructure evidence.
+- Derive locale, resource, fixture, provider and case inventories at runtime. Compare coverage
+  with the discovered set; do not hard-code today's count. For `.resw`, separately verify XML,
+  BOM, EOL, locked tokens and cross-locale `<comment>` parity.
+- A narrow source-structure RED is acceptable for a missing call, ordering constraint or
+  ownership mutation at a hard-to-host UI/event/save boundary only when the invoked helper already
+  has behavioral unit coverage. After the source RED turns GREEN, compile the owning project and
+  run neighboring plus packaged behavior; source shape is not the final behavior oracle.
+- Run Windows diff checks as
+  `git -c core.whitespace=cr-at-eol diff --check`. A default diff check can mistake CRLF's `\r`
+  for trailing whitespace; the CRLF-aware check does not replace explicit resource encoding tests.
+
 ## Build and Deploy
 
 - Changed layers: `<BUILD_SURFACES>`
@@ -111,6 +142,11 @@ For every behavior change:
 - Fix valid findings; explain declined findings with concrete behavior evidence.
 - Inspect visible inline/file-level comments, every relevant review body including
   suppressed findings, and generated/suppressed counts.
+- Read the raw review body and recognize current zero-comment wording such as
+  `Comments generated: 0 new`. If a status helper disagrees with the raw body, record the review
+  ID, exact HEAD, inline-comment count, suppressed-section presence and parser output. Treat the
+  discrepancy as a tooling bug; do not retrigger review or relax exact-head, settled-check or
+  open-thread reply gates.
 - Inspect spelling check conclusions, all annotations and relevant log summaries;
   distinguish repository content issues from external dictionary/network,
   generated-file and workflow warnings.

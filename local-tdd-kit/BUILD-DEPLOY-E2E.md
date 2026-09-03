@@ -187,6 +187,29 @@ Stop only processes whose executable paths are under the exact Dev
 `InstallLocation`. Never kill every `WindowsTerminal.exe` or `wta.exe` by name;
 that can destroy unrelated sessions or Store instances.
 
+First enumerate and record the exact path and PID. Stop only those explicit PIDs,
+then repeat the path-based inventory and require zero remaining processes. Do not
+pass unresolved variables, wildcards or process names to a destructive cleanup
+command.
+
+### Deployment failed with `resources.pri` mapping error `0x800704C8`
+
+This can be a transient user-mapped-section lock left while the previous Dev
+package process is exiting. Inspect Restart Manager or enumerate exact package
+process paths before retrying. If no persistent owner remains, retry the same
+deployment once; if an owner remains, record its PID/path and stop it only when it
+belongs to this test's exact package. Never use `Remove-AppxPackage` to work around
+the lock because package removal can destroy LocalState.
+
+### A nonbehavioral source edit invalidated the receipt
+
+The source fingerprint hashes bytes under `SourcePaths`, not compiler semantics.
+A code-comment-only edit therefore makes the old receipt stale even when the
+runtime behavior is unchanged. Rebuild and run freshness verification from the new
+HEAD before claiming an exact-head receipt. Behavioral E2E may reuse the direct
+parent only when the diff is demonstrably nonbehavioral and the report explicitly
+identifies both the tested parent and the new freshness-only HEAD.
+
 ### Full solution failures hid the focused result
 
 The full solution can fail for unrelated SDK/.NET/reference-pack prerequisites.
