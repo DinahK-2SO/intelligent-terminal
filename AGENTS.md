@@ -16,26 +16,28 @@
 
 ## GitHub 双账号门禁
 
-每个新的 Copilot session 在开始任何开发、代码调查、build/test、GitHub 读取或写入前，必须先完成
-以下身份检查；门禁通过前只允许执行身份检查，不得继续其他工作：
+每个新的 Copilot session 在开始任何开发、代码调查、build/test 或线上 GitHub 读取/写入前，
+必须先完成以下身份检查。门禁通过前只允许执行身份检查；任一检查失败或无法确认时，告诉 user
+需要重新登录哪个账号，然后暂停其他工作。
 
-1. 从当前 Copilot session、VS Code Accounts 界面或 Copilot 账号选择器确认 Copilot 使用的 GitHub
-  账号。不得用 `gh`、Git remote、commit author 或系统用户名推断 Copilot 身份。账号必须匹配
-  `*_microsoft`（大小写不敏感）；若身份不可见、无法确认或不匹配，立即告诉 user 重新登录
-  Copilot/VS Code 的 Microsoft 工作账号，然后暂停其他工作。
-2. 运行 `gh auth status --hostname github.com`，再运行 `gh api user --jq .login`确认当前 active `gh`
-  账号。它必须是约定的社区开发账号（当前为 `DinahK-2SO`），且不得匹配 `*_microsoft`。若 `gh`
-  未登录、账号无法确认、登录成 `*_microsoft` 或不是约定的社区开发账号，立即告诉 user 用社区
-  开发账号重新登录 `gh`，然后暂停其他工作。
-3. 只有 Copilot=`*_microsoft` 且 `gh`=约定的社区开发账号时门禁才通过。记录两个账号名和检查时间，
-  但不得记录 token、cookie、credential、account ID 或其他 secret。Copilot 与 `gh`是独立认证面；
-  不得因为其中一侧正确而假定另一侧正确。
-4. 门禁通过后，线上 GitHub PR、issue、review、comment、check 和 GraphQL/REST 交互统一使用当前
-  已验证的 `gh`账号；Git repository 操作使用 command-line `git`及已配置 remote。不得调用
-  GitKraken，不得自动运行 `gh auth login`、切换账号、刷新 token 或修改 credential 配置。
-5. Copilot session 重启、VS Code 账号变化、`gh`认证错误或 user 表示重新登录后，必须重新执行
-  完整门禁。任一检查后来失效时，立即停止线上和本地后续步骤，报告实际账号或 `UNKNOWN`，等待
-  user 完成重新登录。
+1. 从当前 Copilot session、VS Code Accounts 界面或 Copilot 账号选择器确认 Copilot 使用的
+  GitHub 账号。不得用 `gh`、Git remote、commit author 或系统用户名推断 Copilot 身份。
+  账号必须以 `_microsoft` 结尾（大小写不敏感，例如 `xiaomgao_microsoft`），因为 Copilot
+  额度和内部专用模型属于该内部账号。若身份不可见、无法确认或不匹配，告诉 user 重新登录
+  Copilot/VS Code 的 Microsoft 内部账号，并暂停其他工作。
+2. 运行 `gh auth status --hostname github.com`，再运行 `gh api user --jq .login`，确认当前 active
+  `gh` 账号。它必须是 user 通过 `gh auth login` 登录的开源社区开发账号，且不得以
+  `_microsoft` 结尾（例如 `DinahK-2SO`）。若 `gh` 未登录、账号无法确认或账号以
+  `_microsoft` 结尾，告诉 user 使用社区开发账号重新运行 `gh auth login`，并暂停其他工作。
+3. 只有 Copilot 账号以 `_microsoft` 结尾且 `gh` 账号不以 `_microsoft` 结尾时门禁才通过。
+  记录两个账号名和检查时间，但不得记录 token、cookie、credential、account ID 或其他 secret。
+  Copilot 与 `gh` 是独立认证面；不得因为其中一侧正确而假定另一侧正确。
+4. 门禁通过后，线上 GitHub PR、issue、review、comment、check 和 GraphQL/REST 交互统一使用
+  已验证的 `gh` 社区账号；Git repository 操作使用 command-line `git` 及已配置 remote。
+  不得调用 GitKraken，不得由 agent 自动登录、切换账号、刷新 token 或修改 credential 配置。
+5. Copilot session 重启、VS Code 账号变化、`gh` 认证错误或 user 表示重新登录后，必须重新执行
+  完整门禁。任一检查后来失效时，立即停止线上和本地后续步骤，报告实际账号或 `UNKNOWN`，
+  等待 user 完成重新登录。
 
 ### Placeholder 清单
 
