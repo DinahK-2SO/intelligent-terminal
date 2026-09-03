@@ -1177,9 +1177,11 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
 
     bool AIAgentsViewModel::CanEnableAgentPaneYoloMode() const
     {
+        const auto effectiveAgent = _GlobalSettings.EffectiveAcpAgent();
         return !_GlobalSettings.IsYoloModePolicyLocked() &&
+               !effectiveAgent.empty() &&
                !::Microsoft::Terminal::Settings::Model::AgentRegistry::IsYoloSettingUnavailableForDefaultAgent(
-                   std::wstring_view{ _GlobalSettings.AcpAgent() });
+                   std::wstring_view{ effectiveAgent });
     }
 
     bool AIAgentsViewModel::ShowOpenCodeYoloWarning() const

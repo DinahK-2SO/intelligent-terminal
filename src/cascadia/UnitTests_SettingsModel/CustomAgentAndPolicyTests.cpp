@@ -90,6 +90,7 @@ namespace SettingsModelUnitTests
         TEST_METHOD(EffectiveAutoFixFalseWhenDetectionOff);
         TEST_METHOD(AgentPaneYoloModeRoundtripsAndDefaults);
         TEST_METHOD(EffectiveAgentPaneYoloModeFalseForOpenCode);
+        TEST_METHOD(EffectiveAgentPaneYoloModeFalseWhenDefaultAgentBlocked);
         TEST_METHOD(OpenCodeDefaultClearsStoredAgentPaneYoloMode);
         TEST_METHOD(EffectiveAgentPaneYoloModeFalseWhenPolicyBlocked);
         TEST_METHOD(PolicyBlockClearsStoredAgentPaneYoloMode);
@@ -687,6 +688,26 @@ namespace SettingsModelUnitTests
         const auto custom = MakeSettings(
             R"("acpAgent": "custom:local", "agentPane.yoloMode": true)");
         VERIFY_IS_TRUE(custom->GlobalSettings().EffectiveAgentPaneYoloMode());
+    }
+
+    void CustomAgentAndPolicyTests::EffectiveAgentPaneYoloModeFalseWhenDefaultAgentBlocked()
+    {
+        const auto builtIn = MakeSettings(
+            R"("acpAgent": "copilot", "agentPane.yoloMode": true)");
+        SetPolicy(MakePolicy(
+            std::set<std::wstring, AgentPolicy::CaseInsensitiveLess>{ L"gemini" }));
+        VERIFY_ARE_EQUAL(winrt::hstring{}, builtIn->GlobalSettings().EffectiveAcpAgent());
+        VERIFY_IS_TRUE(builtIn->GlobalSettings().AgentPaneYoloMode());
+        VERIFY_IS_FALSE(builtIn->GlobalSettings().EffectiveAgentPaneYoloMode());
+
+        const auto custom = MakeSettings(
+            R"("acpAgent": "custom:local", "agentPane.yoloMode": true)");
+        SetPolicy(MakePolicy(
+            /*allowedAgents*/ std::nullopt,
+            AgentPolicy::PolicyState::Blocked));
+        VERIFY_ARE_EQUAL(winrt::hstring{}, custom->GlobalSettings().EffectiveAcpAgent());
+        VERIFY_IS_TRUE(custom->GlobalSettings().AgentPaneYoloMode());
+        VERIFY_IS_FALSE(custom->GlobalSettings().EffectiveAgentPaneYoloMode());
     }
 
     void CustomAgentAndPolicyTests::OpenCodeDefaultClearsStoredAgentPaneYoloMode()

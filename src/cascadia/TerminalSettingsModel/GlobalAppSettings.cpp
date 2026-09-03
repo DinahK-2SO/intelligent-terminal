@@ -664,9 +664,11 @@ bool GlobalAppSettings::IsAgentSessionHooksPolicyLocked() const
 
 bool GlobalAppSettings::EffectiveAgentPaneYoloMode() const
 {
+    const auto effectiveAgent = EffectiveAcpAgent();
     if (!AgentPolicy::IsYoloModeAllowed() ||
+        effectiveAgent.empty() ||
         ::Microsoft::Terminal::Settings::Model::AgentRegistry::IsYoloSettingUnavailableForDefaultAgent(
-            std::wstring_view{ AcpAgent() }))
+            std::wstring_view{ effectiveAgent }))
     {
         return false;
     }
