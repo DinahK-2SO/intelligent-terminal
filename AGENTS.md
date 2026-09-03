@@ -241,7 +241,29 @@
 13. 若依赖 `<REAL_INTEGRATION>`，最后从 dev-only harness 对 exact publish package 执行真实集成验收。
 14. 对 UI/渲染/交互变更捕获该轮 exact publish HEAD 的 fresh success screenshots 并逐图检查。
 15. 更新本文件的 stage、validation、review triage、artifact inventory 和 open items。
-16. 先 push dev 并确认同步，再 push 已验证的 publish HEAD；记录两个 remote head。
+16. 达到下述 publish confidence gate 后 push dev/publish并创建PR；online review与
+  broader local E2E并行，记录两个remote heads和PR URL。
+
+## PR Creation And Parallel Review
+
+当publish branch已有clean tracked state、current base ancestry、deterministic
+RED-to-GREEN、focused/full relevant source validation和exact-package
+build/deploy/freshness evidence时，可以push并创建PR，不必等待broader local E2E完成。
+
+- 使用ordinary push；未经明确授权不得force-push或rewrite history。
+- 使用项目`.github/PULL_REQUEST_TEMPLATE.md`结构。
+- PR title不得超过20个words。
+- `Summary of the Pull Request`不得超过100个words。
+- `Validation Steps Performed`不得超过100个words。
+- 其他template sections可留空；如填写，保持concise且准确。
+- 不得把未运行、blocked或失败的validation写成PASS。
+- PR创建后，让online checks/review与同一published HEAD的local package/UI/
+  real-integration E2E并行。
+- HEAD变化后重新关联online review/checks与local package evidence；需要时从新HEAD重建。
+- Agent不得merge PR到`main`。
+- Agent不得resolve、dismiss或close任何active review comment/thread，即使后续
+  iteration已经修复、重复或使其outdated。Active comments留给用户review和resolve。
+- 可以push valid fixes并留下commit/evidence reply，但reply必须保持thread active。
 
 ## Implementation Record
 
@@ -370,9 +392,24 @@ Open review items: `<OPEN_ITEMS>`
 - GREEN validation: `<REVIEW_GREEN_EVIDENCE>`
 - Publish commit: `<REVIEW_PUBLISH_COMMIT>`
 
-Public PR 可在未认证时通过 REST endpoints 读取 pull、issue comments、reviews、review
-comments、files 和 HEAD check-runs。Review body 中的 suppressed comments 也必须逐条 triage。
-匿名访问不能回复或 resolve thread；报告限制，不索取凭据，也不使用需要登录的工具做只读 review。
+Review inventory必须覆盖：
+
+- 所有visible inline/file-level comments和active threads。
+- 每个相关review object的完整body，包括suppressed comment/finding sections。
+- Generated/suppressed counts；`0` visible comments不等于没有suppressed finding。
+- Spelling workflow conclusion、全部annotations和相关log summary；绿色check也可能
+  包含需要判断的content annotation。
+
+每条visible、suppressed和spelling finding都必须核对exact HEAD、owning code、
+可复现behavior、tests和安全边界后，独立分类为accept、decline或escalate。不要因自动
+reviewer身份盲目接受，也不要因check为green直接忽略annotation。Spelling triage需区分
+真实repository content问题与external dictionary/network、generated-file或workflow
+infrastructure warning；优先修正文案，不随意扩大allowlist/ignore pattern。
+
+Valid finding先建立deterministic RED，再做最小fix并push。任何reply都必须保持
+`-NoResolve`语义；不得调用resolve模式或outdated-thread cleanup。Review loop完成不要求
+`open threads = 0`：current HEAD已review、checks settled、所有findings完成critical
+triage且valid fixes已push即可停止，active comments继续留给用户。
 
 ## Local-Only Evidence Inventory
 
@@ -407,6 +444,11 @@ Evidence root: `<EVIDENCE_ROOT>`
 - [ ] Token-consuming harness和evidence保持local-only，publish branch与CI均不包含或调用它们。
 - [ ] UI/渲染/交互的 fresh screenshots 已逐图检查并记录 provenance。
 - [ ] Review findings 已逐条 triage，accepted fixes 有 RED/GREEN evidence。
+- [ ] Visible、file-level和suppressed findings全部完成critical triage。
+- [ ] Spelling conclusion、annotations和warnings全部完成critical triage。
+- [ ] 所有active comments保持unresolved，等待用户review。
+- [ ] PR title/summary/validation满足word limits，其他sections为空或concise。
+- [ ] Agent未merge PR到`main`。
 - [ ] Evidence inventory 能映射全部 user-visible assertions。
 - [ ] Dev 与 publish remote heads 已 push 并确认。
 

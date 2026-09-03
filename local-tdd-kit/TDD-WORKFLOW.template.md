@@ -109,9 +109,32 @@ For every behavior change:
 
 - Verify each review comment against the owning code path before accepting it.
 - Fix valid findings; explain declined findings with concrete behavior evidence.
+- Inspect visible inline/file-level comments, every relevant review body including
+  suppressed findings, and generated/suppressed counts.
+- Inspect spelling check conclusions, all annotations and relevant log summaries;
+  distinguish repository content issues from external dictionary/network,
+  generated-file and workflow warnings.
 - Keep the publish diff limited to current product behavior.
 - Preserve historical reasoning in dev-only tracking, not stale product comments/tests.
 - Check `git diff --check`, line endings, generated files and exact dirty paths.
+
+## PR and Parallel Validation
+
+- Once the publish branch is clean and has deterministic RED/GREEN, focused/full relevant
+  source validation and exact-package build/deploy/freshness evidence, ordinary-push it
+  and create a PR while broader local E2E runs in parallel with online review.
+- Follow `.github/PULL_REQUEST_TEMPLATE.md`. Title is at most 20 words; Summary and
+  Validation are each at most 100 words. Other sections may be empty; if used, keep them
+  concise and accurate.
+- Reassociate checks, reviews and local evidence after every published HEAD change.
+- Critically triage every visible, file-level, suppressed and spelling finding against
+  the exact code and behavior; do not blindly accept automated comments or ignore green
+  check annotations.
+- Push valid fixes with deterministic RED/GREEN evidence. Replies may cite the pushed
+  commit but must not resolve the thread.
+- Never merge the PR to `main`. Never resolve, dismiss, close or clean up any active
+  review thread, even when a later iteration fixed it or made it outdated. Leave all
+  active comments for the user.
 
 ## Definition of Done
 
@@ -127,5 +150,10 @@ For every behavior change:
 - [ ] Every skip is explained as an external prerequisite, not a product failure.
 - [ ] Logs/telemetry contain no prohibited sensitive data.
 - [ ] Product/dev-only branch scope is correct.
+- [ ] PR metadata meets the 20/100/100 word limits.
+- [ ] Online review and same-HEAD local E2E ran in parallel.
+- [ ] Visible, file-level, suppressed and spelling findings were critically triaged.
+- [ ] Valid fixes are pushed; every active review thread remains unresolved.
+- [ ] The agent did not merge the PR to `main`.
 - [ ] Commits are pushed and remote synchronization is verified.
 - [ ] Tracking is self-contained enough for another machine/engineer to continue.
