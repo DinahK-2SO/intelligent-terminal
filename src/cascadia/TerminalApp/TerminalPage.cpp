@@ -2383,8 +2383,8 @@ namespace winrt::TerminalApp::implementation
     //   - delegate_agent + delegate_model : the delegate-tab agent identity
     //   - cloud_models + custom_models + custom_model_selection :
     //     credential-free picker metadata and its selected entry.
-    //   - yolo_enabled + yolo_policy_blocked : the policy-aware global
-    //     default and administrative gate.
+    //   - yolo_enabled + yolo_policy_blocked : the per-tab desired state,
+    //     resolved for that tab's current provider, and the administrative gate.
     void TerminalPage::_EmitAgentRuntimeConfigIfChanged()
     {
         const auto current = _CaptureAgentRuntimeConfig();
