@@ -240,14 +240,15 @@ Describe 'Feature suite package selection' -Tag 'Unit' {
 
     It 'keeps OpenCode Yolo title comments aligned with forced-off behavior' {
         $resourceRoot = Join-Path $PSScriptRoot '..\..\..\src\cascadia\TerminalSettingsEditor\Resources'
-        $comments = @(Get-ChildItem -LiteralPath $resourceRoot -Directory | ForEach-Object {
+        $localeDirectories = @(Get-ChildItem -LiteralPath $resourceRoot -Directory)
+        $comments = @($localeDirectories | ForEach-Object {
             [xml]$xml = Get-Content -LiteralPath (Join-Path $_.FullName 'Resources.resw') -Raw
             [string]($xml.root.data |
                     Where-Object name -eq 'AIAgents_YoloOpenCodeWarning.Title' |
                     Select-Object -First 1).comment
         })
 
-        $comments.Count | Should -Be 16
+        $comments.Count | Should -Be $localeDirectories.Count
         @($comments | Select-Object -Unique).Count | Should -Be 1
         $comments[0] | Should -Match 'OpenCode is the Settings default provider'
         $comments[0] | Should -Not -Match 'global Yolo mode is on'
