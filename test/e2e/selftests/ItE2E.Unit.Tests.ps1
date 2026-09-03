@@ -255,6 +255,20 @@ Describe 'Feature suite package selection' -Tag 'Unit' {
     }
 }
 
+Describe 'Yolo Settings save normalization' -Tag 'Unit' {
+    It 'clears unavailable and policy-blocked Yolo before writing Settings' {
+        $mainPagePath = Join-Path $PSScriptRoot '..\..\..\src\cascadia\TerminalSettingsEditor\MainPage.cpp'
+        $source = Get-Content -LiteralPath $mainPagePath -Raw
+        $saveHandler = [regex]::Match(
+            $source,
+            '(?s)void MainPage::SaveButton_Click.*?(?=void MainPage::ResetButton_Click)').Value
+
+        $saveHandler | Should -Match 'ClearAgentPaneYoloModeIfUnavailableDefault\(\);'
+        $saveHandler | Should -Match 'ClearAgentPaneYoloModeIfPolicyBlocked\(\);'
+        $saveHandler | Should -Match '(?s)ClearAgentPaneYoloModeIfUnavailableDefault\(\);.*ClearAgentPaneYoloModeIfPolicyBlocked\(\);.*WriteSettingsToDisk\(\)'
+    }
+}
+
 Describe 'Start-Terminal startup ordering' -Tag 'Unit' {
     It 'waits for the first window before probing COM' {
         InModuleScope ItE2E {
