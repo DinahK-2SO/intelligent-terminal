@@ -8,7 +8,9 @@
 `2026-09-03`: 产品行为和最小scope已经讨论完成。Dev与publish均基于
 `origin/main@b361d91b25dda4b455a7f58ca04909c90f56bae3`。
 尚未修改产品代码、测试或resources，尚未build、commit或push。
-下一步：完成本文清理后停下，等待用户明确授权进入deterministic RED阶段。
+本文已完成旧feature清理，并记录pre-push、PR metadata、parallel review/E2E和
+user-owned comment resolution规则。下一步：停下，等待用户明确授权进入
+deterministic RED阶段。
 
 ## Branches And Worktrees
 
@@ -298,9 +300,89 @@ Production edit之前为每个独立root cause建立deterministic RED：
 - 只在`C:\ado\intelligent-terminal-bugfix`开发和维护本handoff。
 - `C:\ado\intelligent-terminal-yolo-next-publish`保持clean，直到自包含commit通过review。
 - 只复制publishable commits；不得复制本文件或本地evidence。
-- Focused/full source和exact-package validation完成前不push。
+- Focused/full source validation与exact-package build/deploy/freshness达到可信状态后
+  可以push；broader local E2E在PR创建后与online review并行。
 - 未经明确授权不得rewrite inherited history或force-push。
 - `origin/main`前进时，final package evidence前先audit并integrate。
+
+## PR Creation And Review Workflow
+
+### Push confidence gate
+
+当publish branch达到足够可信状态后，不必等待全部broader local E2E完成：
+
+1. Require clean tracked publish state and current audited `origin/main` ancestry.
+2. Require no `AGENTS.md`、local harness、real-provider prompt、raw evidence或其他
+   dev-only path进入publish diff。
+3. Require deterministic RED-to-GREEN、focused/neighboring tests、full relevant source
+   suites和format/diff checks通过。
+4. Require exact publish candidate build/deploy/freshness通过，测试binary与candidate
+   HEAD一致。
+5. 使用ordinary push发布publish branch；不得force-push。
+
+### PR metadata
+
+Push后创建PR并保留`.github/PULL_REQUEST_TEMPLATE.md`的结构：
+
+- PR title不得超过20个words。
+- `## Summary of the Pull Request`不得超过100个words。
+- `## Validation Steps Performed`不得超过100个words。
+- 其他sections没有适用内容时可以留空；如填写，必须尽量concise且准确。
+- 不得把尚未运行、blocked或失败的validation写成PASS。
+- PR body只描述publish中实际实现的behavior，不公开dev-only future gap列表。
+
+### Parallel online review and local E2E
+
+PR创建后立即并行推进：
+
+- Online checks、Copilot review和其他reviewers在published HEAD上运行。
+- 本地从同一exact published HEAD运行broader package/UI/real-provider E2E。
+- 检查spelling workflow的conclusion、annotations和相关log summary；绿色check也可能
+  包含需要判断的content annotations。
+- 每次publish HEAD变化后，重新确认线上review/check对应的SHA；需要新package
+  evidence时从新HEAD重建。
+- Local E2E发现的问题先记录、分类并构造deterministic RED，再决定是否修复。
+
+### Critical review triage
+
+持续monitor线上checks、reviews和所有active comments。Review inventory必须同时包含：
+
+- 所有visible inline/file-level comments和active threads。
+- Copilot每个相关review object的完整body，包括suppressed comment/finding sections。
+- Review summary中的generated/suppressed counts；`0` visible comments不能证明没有
+  suppressed finding。
+- Spelling check的全部annotations，而不只是check conclusion。
+
+对每条visible、suppressed或spelling finding独立判断：
+
+1. 核对comment针对的exact SHA、代码路径和当前实现。
+2. 用现有contract、可复现behavior、tests和安全边界验证其claim。
+3. 分类为valid fix、duplicate/already addressed、out of scope或incorrect，并在
+   dev-only handoff记录理由和证据。
+4. Valid finding先建立deterministic RED，再做最小fix、验证并push新的publish commit。
+5. 不因为comment来自自动reviewer就直接接受，也不因为后续代码碰巧改变相关行就
+   直接忽略。
+
+Spelling findings必须区分repository content问题与external dictionary/network、
+generated-file或workflow infrastructure warning。优先修正文案；不要未经项目惯例
+支持就添加dictionary allowlist或宽泛ignore pattern。
+
+### User-owned merge and comment resolution
+
+- Agent不得把PR merge到`main`。
+- Agent不得resolve、dismiss、close或以其他方式关闭任何active review
+  comment/thread。
+- 即使某条comment已在后续iteration修复、变成duplicate或代码行变为outdated，
+  也必须保持其active状态，供用户亲自review和resolve。
+- 不得调用GraphQL、REST、CLI或UI操作修改active thread的resolution state。
+- 使用review-loop脚本时，所有reply必须保持`-NoResolve`语义；不得运行会resolve
+  thread的模式，也不得运行outdated-thread cleanup。
+- 可以实现并push必要fix，也可以在需要时留下包含commit SHA和证据的reply，
+  但reply不能resolve thread。
+- Review loop的完成条件不是`open threads = 0`。当current HEAD已有review、
+  checks settled、所有comments均完成critical triage且valid fixes已push后即可停止；
+  active comments继续保留给用户。
+- PR merge和active comment resolution均由用户最终执行。
 
 ## Completion Checklist
 
@@ -312,10 +394,17 @@ Production edit之前为每个独立root cause建立deterministic RED：
 - [ ] Settings、policy、`/agent`和prompt-gate focused suites GREEN。
 - [ ] 修改的locales全部通过结构和语义验证。
 - [ ] Full WTA及相关C++ builds/tests GREEN。
-- [ ] Publishable zero-token package E2E GREEN。
-- [ ] Exact publish candidate build/deploy/freshness GREEN。
+- [ ] Pre-push exact publish candidate build/deploy/freshness GREEN。
 - [ ] Dev/publish product trees和commit slices验证完成。
 - [ ] Publish中没有dev-only artifact或real-provider prompt。
+- [ ] Publish branch ordinary-pushed并创建符合word limits和template的PR。
+- [ ] Online review/checks与同HEAD local E2E并行完成。
+- [ ] Publishable zero-token package E2E与所需local-only E2E GREEN或明确BLOCKED。
+- [ ] Visible、file-level和suppressed review findings全部完成critical triage。
+- [ ] Spelling conclusion、annotations和相关warnings全部完成critical triage。
+- [ ] 所有valid review/spelling fixes已验证并push。
+- [ ] 所有active comments保持unresolved，等待用户review。
+- [ ] PR未被agent merge到`main`。
 
 
 # Intelligent Terminal
