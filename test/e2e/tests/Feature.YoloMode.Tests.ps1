@@ -247,6 +247,9 @@ Describe 'Feature Settings Yolo provider compatibility' -ForEach $script:Package
             }
             Invoke-SettingsNav -App $app -NavItem 'AIAgentsNavItem' | Out-Null
 
+            $settingsTree = Get-UiTree -App $app -Depth 8
+            $settingsText = $settingsTree -replace '\s+', ' '
+            $settingsText | Should -Match (Get-WtReswTextRegex -Key 'AIAgents_YoloMode.Header')
             Wait-UiElement -App $app -Selector 'OpenCodeYoloCompatibilityInfoBar' -TimeoutSec 15 | Out-Null
             $title = Get-WtReswTextRegex -Key 'AIAgents_YoloOpenCodeWarning.Title'
             (Get-UiTree -App $app -Selector 'OpenCodeYoloCompatibilityInfoBar' -Depth 4) |
