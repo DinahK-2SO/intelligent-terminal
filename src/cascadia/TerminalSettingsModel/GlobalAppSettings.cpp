@@ -4,6 +4,7 @@
 #include "pch.h"
 #include "GlobalAppSettings.h"
 #include "../inc/AgentPolicy.h"
+#include "../inc/AgentRegistry.h"
 #include "../../types/inc/Utils.hpp"
 #include "JsonUtils.h"
 #include "KeyChordSerialization.h"
@@ -663,11 +664,37 @@ bool GlobalAppSettings::IsAgentSessionHooksPolicyLocked() const
 
 bool GlobalAppSettings::EffectiveAgentPaneYoloMode() const
 {
-    if (!AgentPolicy::IsYoloModeAllowed())
+    if (!AgentPolicy::IsYoloModeAllowed() ||
+        ::Microsoft::Terminal::Settings::Model::AgentRegistry::IsYoloSettingUnavailableForDefaultAgent(
+            std::wstring_view{ AcpAgent() }))
     {
         return false;
     }
     return AgentPaneYoloMode();
+}
+
+bool GlobalAppSettings::ClearAgentPaneYoloModeIfPolicyBlocked()
+{
+    if (!IsYoloModePolicyLocked() || !AgentPaneYoloMode())
+    {
+        return false;
+    }
+
+    AgentPaneYoloMode(false);
+    return true;
+}
+
+bool GlobalAppSettings::ClearAgentPaneYoloModeIfUnavailableDefault()
+{
+    if (!::Microsoft::Terminal::Settings::Model::AgentRegistry::IsYoloSettingUnavailableForDefaultAgent(
+            std::wstring_view{ AcpAgent() }) ||
+        !AgentPaneYoloMode())
+    {
+        return false;
+    }
+
+    AgentPaneYoloMode(false);
+    return true;
 }
 
 bool GlobalAppSettings::IsYoloModePolicyLocked() const

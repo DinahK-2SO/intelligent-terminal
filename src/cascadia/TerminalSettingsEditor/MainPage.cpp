@@ -898,6 +898,9 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
 
     void MainPage::SaveButton_Click(const IInspectable& /*sender*/, const RoutedEventArgs& /*args*/)
     {
+        const auto globals = _settingsClone.GlobalSettings();
+        globals.ClearAgentPaneYoloModeIfUnavailableDefault();
+
         _settingsClone.LogSettingChanges(false);
         if (!_settingsClone.WriteSettingsToDisk())
         {
