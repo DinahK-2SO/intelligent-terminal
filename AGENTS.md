@@ -244,6 +244,29 @@
 16. 达到下述 publish confidence gate 后 push dev/publish并创建PR；online review与
   broader local E2E并行，记录两个remote heads和PR URL。
 
+## Reusable TDD Failure Triage
+
+- **TAEF wrapper结果冲突：** 如果`runut`或aggregate wrapper显示目标test body PASS，但另一个
+  discovery/architecture phase报告no matching tests并使process非零退出，不能把整条命令记为
+  GREEN。定位source-built `TE.exe`和exact test DLL，直接使用`/name:`运行；必须同时满足
+  `Total >= 1`、目标test PASS和exit code `0`。把wrapper问题单独记为infrastructure evidence。
+- **动态inventory：** locale、resource、fixture、provider或case目录必须在测试运行时枚举；
+  parity断言应比较discovered set，不能硬编码当前数量。新增locale时，测试应自动扩大覆盖而不是
+  因旧数字失败。`.resw`还要独立验证XML、BOM、EOL、locked tokens和跨locale comment一致性。
+- **边界wiring RED：** 当缺口是hard-to-host UI/event/save boundary中的missing call、ordering
+  或ownership mutation，可先用最小source-structure test证明该边界，但前提是被调用helper已有
+  behavioral unit coverage。Fix后仍必须build owning project并运行neighboring/package behavior；
+  source test不能替代产品行为oracle。
+- **CRLF-aware diff：** Windows源码使用
+  `git -c core.whitespace=cr-at-eol diff --check`；不要把CRLF中的`\r`误报为trailing whitespace。
+  该命令不替代resource BOM/XML/EOL验证。
+- **非行为source变更与receipt：** source fingerprint覆盖范围内的任何变化（包括code comment）
+  都会使旧receipt不再对应exact HEAD。若要声称final-head freshness，必须从新HEAD重建receipt；
+  只有在diff可证明不改变行为并明确记录parent identity时，behavioral E2E才可复用直接parent结果。
+- **精确process cleanup：** 先按exact installed/AppX root枚举process path并记录PID，再只停止
+  这些明确PID，最后重新枚举并要求为0。不得按`WindowsTerminal`、`wta`、`wtcli`或
+  `OpenConsole`名称全局终止，也不得使用未解析的变量/通配符作为cleanup target。
+
 ## PR Creation And Parallel Review
 
 当publish branch已有clean tracked state、current base ancestry、deterministic
@@ -397,6 +420,10 @@ Review inventory必须覆盖：
 - 所有visible inline/file-level comments和active threads。
 - 每个相关review object的完整body，包括suppressed comment/finding sections。
 - Generated/suppressed counts；`0` visible comments不等于没有suppressed finding。
+- 直接读取raw review body并识别官方zero-comment wording，包括
+  `Comments generated: 0 new`。若automation parser与raw body不一致，记录review ID、
+  exact HEAD、inline count、suppressed section和parser差异；把它分类为tooling bug，不能
+  因此放松exact-head、checks-settled或open-thread reply gates。
 - Spelling workflow conclusion、全部annotations和相关log summary；绿色check也可能
   包含需要判断的content annotation。
 
