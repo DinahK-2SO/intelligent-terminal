@@ -900,6 +900,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
     {
         const auto globals = _settingsClone.GlobalSettings();
         globals.ClearAgentPaneYoloModeIfUnavailableDefault();
+        globals.ClearAgentPaneYoloModeIfPolicyBlocked();
 
         _settingsClone.LogSettingChanges(false);
         if (!_settingsClone.WriteSettingsToDisk())
