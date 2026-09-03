@@ -5,6 +5,26 @@ BeforeAll {
     $script:pipelineScript = (Resolve-Path (Join-Path $PSScriptRoot '..\Invoke-LocalTddPipeline.ps1')).Path
     $script:pipelineStatusScript = (Resolve-Path (Join-Path $PSScriptRoot '..\Get-LocalTddPipelineStatus.ps1')).Path
     $script:reportScript = (Resolve-Path (Join-Path $PSScriptRoot '..\Invoke-LocalTddReport.ps1')).Path
+    $script:recipeSourcesScript = Join-Path $PSScriptRoot '..\Get-AppxRecipePackageSources.ps1'
+}
+
+Describe 'Build recipe source parsing' -Tag 'Unit' {
+    It 'decodes URL-encoded Windows package source paths' {
+        $recipe = Join-Path $TestDrive 'encoded.build.appxrecipe'
+        @'
+<Project>
+  <ItemGroup>
+    <AppxPackagedFile Include="C:\Program Files %28x86%29\Windows Kits\ucrtbase.dll">
+      <PackagePath>ucrtbased.dll</PackagePath>
+    </AppxPackagedFile>
+  </ItemGroup>
+</Project>
+'@ | Set-Content -LiteralPath $recipe -Encoding utf8
+
+        $sources = & $script:recipeSourcesScript -Path $recipe
+        $sources['ucrtbased.dll'] |
+            Should -Be 'C:\Program Files (x86)\Windows Kits\ucrtbase.dll'
+    }
 }
 
 Describe 'Local TDD source fingerprint' -Tag 'Unit' {

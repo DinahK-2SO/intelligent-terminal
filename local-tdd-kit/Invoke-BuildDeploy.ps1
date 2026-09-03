@@ -43,22 +43,6 @@ function Invoke-Step([string]$Name, [scriptblock]$Action) {
 function Get-DevPackage {
     Get-AppxPackage | Where-Object PackageFamilyName -eq $packageFamily | Select-Object -First 1
 }
-function Get-RecipePackageSources([string]$Path) {
-    [xml]$xml = Get-Content -LiteralPath $Path -Raw
-    $sources = [ordered]@{}
-    foreach ($item in $xml.SelectNodes("//*[local-name()='AppxPackagedFile']")) {
-        $packagePath = [string]$item.SelectSingleNode("*[local-name()='PackagePath']").InnerText
-        if (-not $packagePath -or -not $item.Include) {
-            throw "Package recipe contains an incomplete AppxPackagedFile entry: $Path"
-        }
-        if ($sources.Contains($packagePath)) {
-            throw "Package recipe contains duplicate package path '$packagePath': $Path"
-        }
-        $sources[$packagePath] = [IO.Path]::GetFullPath([string]$item.Include)
-    }
-    if ($sources.Count -eq 0) { throw "Package recipe contains no packaged files: $Path" }
-    $sources
-}
 function Stop-ExactPackageProcesses($Package) {
     if (-not $Package -or -not $Package.InstallLocation) { return }
     $root = [IO.Path]::GetFullPath([string]$Package.InstallLocation).TrimEnd('\') + '\'
@@ -130,7 +114,7 @@ Invoke-Step 'Build CascadiaPackage and dependencies' {
 foreach ($required in @($recipe, $stagedWta)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Required package artifact missing: $required" }
 }
-$recipeSources = Get-RecipePackageSources -Path $recipe
+$recipeSources = & (Join-Path $kitRoot 'Get-AppxRecipePackageSources.ps1') -Path $recipe
 foreach ($packagePath in $recipeSources.Keys) {
     $source = $recipeSources[$packagePath]
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
