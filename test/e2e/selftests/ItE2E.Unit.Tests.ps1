@@ -237,6 +237,21 @@ Describe 'Feature suite package selection' -Tag 'Unit' {
         $suite | Should -Not -Match 'requires whitespace-free test paths'
         $suite | Should -Match '-EncodedCommand\s+\$encodedInvocation'
     }
+
+    It 'keeps OpenCode Yolo title comments aligned with forced-off behavior' {
+        $resourceRoot = Join-Path $PSScriptRoot '..\..\..\src\cascadia\TerminalSettingsEditor\Resources'
+        $comments = @(Get-ChildItem -LiteralPath $resourceRoot -Directory | ForEach-Object {
+            [xml]$xml = Get-Content -LiteralPath (Join-Path $_.FullName 'Resources.resw') -Raw
+            [string]($xml.root.data |
+                    Where-Object name -eq 'AIAgents_YoloOpenCodeWarning.Title' |
+                    Select-Object -First 1).comment
+        })
+
+        $comments.Count | Should -Be 16
+        @($comments | Select-Object -Unique).Count | Should -Be 1
+        $comments[0] | Should -Match 'OpenCode is the Settings default provider'
+        $comments[0] | Should -Not -Match 'global Yolo mode is on'
+    }
 }
 
 Describe 'Start-Terminal startup ordering' -Tag 'Unit' {

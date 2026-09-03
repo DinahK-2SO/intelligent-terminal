@@ -843,8 +843,6 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
 
     void AIAgentsViewModel::CurrentAcpAgent(const Editor::AgentEntry& value)
     {
-        namespace Reg = ::Microsoft::Terminal::Settings::Model::AgentRegistry;
-
         if (!value) return;
         if (value.IsAddNew())
         {
