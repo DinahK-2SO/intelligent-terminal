@@ -55,7 +55,42 @@ SHA-256 `AB262E0E8A5424F8B6045A321EC142CE0AEC793611B230C70A90B007735BEF4D`
 （1900x727）。这证明exact pre-PR binary上的manual Off path可进入permission flow，并表明
 当前open-ended `1.0.81-1+`假设可能过宽；但仍未证明ACP
 `session/set_config_option(off)`与slash command走同一路径，也未完成permission
-cancelled后marker不存在的自动oracle。下一步用同一个Copilot binary/hash做direct ACP对照。
+cancelled后marker不存在的自动oracle。
+
+Direct ACP probe现已使用Terminal exact command `copilot --acp --stdio`完成；probe会处理
+JSON-RPC request ID `0`、对每个permission request返回`cancelled`、记录config ACK和wire，
+并在记录marker内容后清理文件。Fake-agent selftest先验证On→Off、ID `0`和cleanup为GREEN。
+Official Copilot release zip均由对应`SHA256SUMS.txt`校验，不安装、不改PATH或credentials。
+
+| Copilot | Executable SHA-256 | Default Off | Explicit Off→Off | On→Off |
+| --- | --- | --- | --- | --- |
+| `1.0.82` | `AF47BD92079E989CB88BC3D5C1F4351A0BBE0CF3F423E600ACD79D544A592D56` | UNSAFE：0 permission，marker created | UNSAFE：0 permission，marker created | SAFE：1 permission ID 0，cancelled，no marker |
+| `1.0.83-0` | `30F0A5503A946FAAB0F9D2FCF9D9A7DCD6C11DF85932E50BCB331B245D9DD787` | UNSAFE | UNSAFE | 未重复；`1.0.82`已证明真实transition安全 |
+| `1.0.83-3` | `4870B52EEFEA93CE9615898222E71696D385A7F5DCABBBE8D3869E9999774240` | 未重复 | UNSAFE | 未重复 |
+| `1.0.83-4` | `C1C0CF7351CC70BCEB34A38CAB03035CED617FDC98D17D7C42396DA84F938609` | SAFE | SAFE | 未重复；older transition control已SAFE |
+| `1.0.83-5` | `58D0104D82408863523AF74D4405FA0CDD71060DB29A56155FD78181BF264ACF` | SAFE | SAFE | SAFE |
+
+因此首个verified-safe release是`1.0.83-4`；release notes没有标注该fix。Provider regression
+的精确形状是：`1.0.83-3`及更早受影响版本可能advertise/default `off`并ACK重复Off，但
+permission engine并未进入interactive；真实On→Off transition可恢复permission。因此旧版本
+手动先开再关好用，而#505在fresh Copilot session上看到/设置Off仍遇到provider no-op。
+这已由完全不经过WTA的direct ACP client复现，证明底层bypass不是#505创建；#505仍然通过
+Settings暴露了该provider bug，产品必须负责fail closed。
+
+Test branch已新增deterministic boundary RED：
+`copilot_verified_permission_fix_versions_keep_prompt_path_available`当前准确失败`0/1`
+（production仍block `1.0.83-4`）；future-version control对`1.0.84/2.0.0`为`1/1`，
+要求未验证future继续fail closed。Test-only commit是
+`f8f68eaeebc5cc28c708f5ad37ed414213709e66`，尚未进入dev。
+
+Latest-main dev package也已从`1cfd05f31ed3435bc884c924569f87e698a31d53` exact
+build/deploy/freshness：full WTA `2009/0/1`、CascadiaPackage 0 errors、171 recipe
+sources一致；fingerprint
+`9883A11C2F8C105F8CC779B9E56803035F6F4D980F17ECF5275BD6C092EF7481`，WTA SHA-256
+`C79D647743DD6CA4D0E7A8C021F32AC50E5AD26E673E4A656A60FC4BE9DBF419`。
+Current product control确认Copilot `1.0.83-5` Off ACK后prompt被旧compatibility gate阻止，
+permission request=0且marker不存在；这证明guard仍有效，但也确认它对已验证SAFE版本过宽。
+下一步是用户确认是否按test RED实现verified-safe release窗口；确认前不改dev production。
 
 ## Identity And Online Boundaries
 
@@ -121,6 +156,11 @@ cancelled后marker不存在的自动oracle。下一步用同一个Copilot binary
 ACP permission path；同时必须承认#505通过Settings首次让用户触发该advertised ACP config
 path，因此它暴露了用户可见回归，Intelligent Terminal仍负责fail closed。只有direct ACP
 SAFE、exact-session ACK正确且product matrix无routing差异时，才可讨论缩小version gate。
+
+当前证据满足更强的交叉验证：同一个probe对`1.0.82/1.0.83-0/1.0.83-3`复现UNSAFE，
+对`1.0.83-4/1.0.83-5`复现SAFE；历史`9e1d74a86 + Copilot 1.0.82`产品证据也记录
+Off ACK=true、permission=false、marker=true。因此provider version/state transition足以解释
+结果，无需假设#505的permission UI handler或routing先造成bypass。
 
 ## Safety Oracle
 
@@ -251,11 +291,11 @@ Copilot ACP session advertises allow_all=off
 ## Completion Criteria
 
 - [x] Test/dev branches和TDD copies已从同一latest main准备完成。
-- [ ] Existing deterministic Copilot safety tests GREEN。
-- [ ] Exact main package receipt/freshness GREEN。
-- [ ] Current Copilot ACP command/version已确认。
-- [ ] Startup Off和On→Off两条direct ACP probe均有SAFE/UNSAFE/INCONCLUSIVE结论。
-- [ ] Product guard与provider behavior证据明确分离。
+- [x] Existing deterministic Copilot safety tests GREEN。
+- [x] Exact main package receipt/freshness GREEN。
+- [x] Current Copilot ACP command/version已确认。
+- [x] Startup Off和On→Off两条direct ACP probe均有SAFE/UNSAFE/INCONCLUSIVE结论。
+- [x] Product guard与provider behavior证据明确分离。
 - [ ] 没有credential、real prompt、wire/log或provider config进入tracked diff。
 - [ ] settings/state/marker/processes完整恢复。
 - [ ] 只有在SAFE证据成立且用户批准后才创建产品fix和publish branch。
