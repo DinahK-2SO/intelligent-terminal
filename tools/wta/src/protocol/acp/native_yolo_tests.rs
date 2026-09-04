@@ -362,6 +362,9 @@ fn copilot_permission_regression_version_boundary_is_fail_closed() {
             .unwrap_or_else(|| panic!("version {version} must fail closed"));
         assert!(reason.contains(version));
         assert!(reason.contains("github/copilot-cli#4537"));
+        assert!(reason.contains("Upgrade to Copilot CLI 1.0.83 stable or later"));
+        assert!(reason.contains("prerelease 1.0.83-4 or later"));
+        assert!(!reason.contains("or earlier"));
     }
 
     state.set_resolved_agent(Some(crate::agent_registry::COPILOT_AGENT_ID), None);

@@ -88,7 +88,7 @@ impl NativeYoloProvider for CopilotYoloProvider {
         has_acp_permission_regression(agent_version).then(|| {
             let version = agent_version.unwrap_or("unknown");
             format!(
-                "GitHub Copilot CLI {version} cannot enforce ACP permission requests while Yolo is off because of github/copilot-cli#4537. Upgrade to Copilot CLI 1.0.83-4 or later, use 1.0.81-0 or earlier, or explicitly enable Yolo if organization policy permits."
+                "GitHub Copilot CLI {version} cannot enforce ACP permission requests while Yolo is off because of github/copilot-cli#4537. Upgrade to Copilot CLI 1.0.83 stable or later, or to prerelease 1.0.83-4 or later. You can explicitly enable Yolo if organization policy permits."
             )
         })
     }
