@@ -5,12 +5,279 @@
 
 ## Current Stage
 
-`2026-09-03`: 产品行为和最小scope已经讨论完成。Dev与publish均基于
-`origin/main@b361d91b25dda4b455a7f58ca04909c90f56bae3`。
-尚未修改产品代码、测试或resources，尚未build、commit或push。
-本文已完成旧feature清理，并记录pre-push、PR metadata、parallel review/E2E和
-user-owned comment resolution规则。下一步：停下，等待用户明确授权进入
-deterministic RED阶段。
+`2026-09-04`: 用户暂停本feature开发，PM需要重新评估OpenCode选择后将Yolo toggle
+强制Off并disabled（灰掉）的产品行为。不得继续修改、push或触发#828 review；PR保持
+OPEN、未merge，publish local/tracking/remote及PR head为
+`12536255734f950e89aff2d138b3df2ad9cb29e6`。Final exact-head Copilot review为
+`5107455497`（0 new、无suppressed）；当前仅保留`TerminalPage.cpp:2100`的scope
+discussion供用户review。Agent之前发布的18条`Valid finding...`回复已按用户要求删除；
+Copilot原comments、18条用户`Fixed in...`总结和scope rationale均保留。除非必要，不得使用
+`DinahK-2SO`账号回复线上thread。下一项独立工作从latest `origin/main`创建新的
+Copilot ACP Yolo-Off investigation branches；本branch只作为暂停handoff保留。
+
+`2026-09-03`: PR #828已创建，当前remote head是test-only
+`1453262cebc6090124b65696e969b46a3a98edfc`，product parent为
+`2cbe7179b83afc25db4158af08ff072d6770fa56`。Latest fetched
+`origin/main@b361d91b25dda4b455a7f58ca04909c90f56bae3`仍是branch base。
+Copilot review `5106424038@2cbe7179b`的16个active comments是同一有效root
+cause：所有locale的`AIAgents_YoloOpenCodeWarning.Title` translator comment仍声称
+InfoBar只在global Yolo On时显示。Exact-head review
+`5106477200@1453262ce`生成`0 new` visible comments，但有1个有效suppressed finding：
+`CurrentAcpAgent`内的`namespace Reg`未使用。Check run `100801552519`的10个spelling
+annotations全部是external cspell dictionary URL 404；check为SUCCESS且没有repository
+content finding，因此不修改产品或dictionary配置。
+
+Translator-comment source selftest先准确RED `0/1`，随后16 locale comment统一到
+OpenCode作为Settings default的forced-Off语义；unused alias已删除。Full ItE2E
+selftests为`25/25`，16 locale XML/BOM/comment parity、Rust format、CRLF-aware diff和IDE
+diagnostics clean；SettingsEditor build为0 errors。Self-contained dev review-fix已提交并
+push为`08fa337ba46535052534f7d3a2bb5b27dbb48d8c`；`AGENTS.md`仍保持dev-only。
+Patch-identical publish candidate是
+`d9071588ac4d1f0d9744c6f7f63c7b544f590a62`，stable patch ID
+`6f85a65809bf550bdc381a2835592d712905eea7`。Exact package build/deploy/launch/
+freshness已通过；source fingerprint是
+`D4F395F07188493BE3A7CAE815185F8D015E20A5FCD8721C9E59F3092CD4D463`，WTA SHA-256是
+`63CD71CC40D4F575BB8E413F3D5369AC83C237B3B75176D3AB2A38F365168F72`。Fresh package
+Yolo E2E为`6/0/1`；C292只因policy ACL未provision而跳过，其他default-provider、
+outgoing-provider、OpenCode、Gemini和permission cases全部通过。下一步：refetch并require
+publish remote仍是`1453262ce`、tracked state clean、candidate fast-forward且latest main
+仍为ancestor；ordinary push `d9071588a`。该guard和push已成功，PR head、publish local/
+tracking/remote均为`d9071588a`。16个active comments均已回复fix SHA/evidence，并确认
+`Open=16`、`OpenWithOurReply=16`、`Resolved=0`。Review request脚本确认Copilot
+`InFlight@d9071588a`；`copilot_work_started` event是`30515390672@20:44:39Z`。
+Online checks已完成：CLA和两个spelling checks SUCCESS，三个report/update jobs按设计
+SKIPPED。Exact-head `check-spelling`有0 annotations；`Check Spelling`的10个annotations
+仍全部是external cspell dictionary URL 404，未指向本PR content，结论WON'T FIX。
+Package cleanup确认0 worktree processes和0 backup markers。下一步：读取该work-start之后
+的exact-head完整review body和suppressed sections；若review尚未提交则不重复触发，保持
+in-flight并等待下一次event。不得resolve任何thread。
+
+Exact-head Copilot review `5106704008@d9071588a`于`20:51:16Z`提交2个visible
+comments、无suppressed section。Locale selftest硬编码`16`是有效fragility；
+static RED找到1个hardcoded match，修复应改为与动态发现的locale directory count比较。
+Resolver `scopeToDefaultProvider=false && usesSettingsDefaultProvider=false`返回现有global
+值不是bug：focused test明确锁定该compatibility branch；本PR只改变default-following和
+`/agent`，profile backend、saved-layout restore、historical resume及其他override owner
+均是用户批准的out-of-scope。把该branch改成false会无授权改变旧行为，因此该finding应
+decline with rationale并保持open。首次16条reply后GraphQL确认`Resolved=0`；之后有11条
+由`DinahK-2SO`账号在并发人工作业中resolve，agent不reopen或干预。下一步：动态化locale
+count、跑focused/full selftests并形成test-only review commit；reply两个新threads时继续
+使用`-NoResolve`。
+
+Locale-count static oracle从`HARDCODED_COUNT_MATCHES=1`变为`0`，dev/publish full
+selftests均为`25/25`。Test-only commits为dev
+`5cf9454f73e048b38fc5bb6164b2caf3a6da0ce7`和publish
+`28ef341e03c8a6215cd745cb9d1f5cd10dcfbc86`；只修改
+`test/e2e/selftests/ItE2E.Unit.Tests.ps1`，不改变`d9071588a` receipt的任何product/package
+input。两个new threads已分别回复accepted-fix evidence和scope-based decline rationale，
+均使用`-NoResolve`。Review request确认
+`InFlight@28ef341e03c8a6215cd745cb9d1f5cd10dcfbc86`。下一步：等待online checks和
+exact-head review，完整检查visible/suppressed comments及每个spelling annotation；任何
+human-resolved thread保持原状，不reopen。
+
+Exact-head Copilot review `5106798437@28ef341e0`于`21:02:50Z`提交1个valid
+finding、无suppressed section：`AllowedAgents`或`AllowCustomAgents`把Settings default
+过滤为空时，raw Yolo preference仍可能让effective getter/UI看似可用。Deterministic
+SettingsModel RED在built-in policy-filtered case准确失败`0/1`。Fix让
+`EffectiveAgentPaneYoloMode`基于`EffectiveAcpAgent()`并在empty时Off，同时让Settings
+`CanEnableAgentPaneYoloMode`使用同一effective identity；raw preference不清除，因此agent
+policy解除后仍可恢复用户选择。Focused test GREEN `1/1`；direct TAEF full
+`CustomAgentAndPolicyTests`为`45/45`、exit 0；ItE2E selftests `25/25`；SettingsEditor
+build 0 errors；diff和IDE diagnostics clean。下一步：提交/推送self-contained dev fix，
+cherry-pick到clean publish，exact package rebuild/deploy/freshness和focused package UI
+回归后再push、reply-without-resolve并请求下一轮review。
+
+Policy-filter fix已提交并push为dev
+`c4a4bf06c3689abf3b29a2b017ea449519b1caa5`，patch-identical publish candidate为
+`a6ea43153fa4d8719a42ce1f2f7f4891e1bb9adb`，stable patch ID
+`9fa30a7a6d0060816b72015ad2728e8a24991e5c`。Exact package build/deploy/launch/
+freshness GREEN；source fingerprint是
+`902DAA033426955F0EAB220D07D2E1D20D216FBFCD24CF943B22B2BCB435E53E`，WTA SHA-256是
+`EFB00D566A3E5697F205E1BB4535A41D59D61F45B86D7783C5A0DDF55CD7F9D4`，171个recipe
+sources一致。Fresh zero-token Yolo package suite为`6/0/1`；仅C292因policy-write
+precondition未provision而skip，其他case全部通过。下一步：require publish remote仍为
+`28ef341e0`、latest main ancestry和clean tracked state后ordinary-push `a6ea43153`；
+该guard和push已成功，publish local/tracking/remote及PR head均为`a6ea43153`。Valid
+finding已回复commit、`45/45`和package evidence并保持open；review request确认
+`InFlight@a6ea43153fa4d8719a42ce1f2f7f4891e1bb9adb`。下一步：等待online checks和
+exact-head review，读取visible/suppressed/spelling结果；不resolve任何thread。
+Online checks现已完成：CLA和两个spelling checks SUCCESS，report/update jobs按设计
+SKIPPED。`check-spelling`为0 annotations；`Check Spelling`的10个annotations仍全是
+external cspell dictionary URL 404，无PR content finding。Copilot review尚在生成，不重复
+触发；下一步是等待最低间隔后单次读取exact-head review。
+
+Exact-head review `5107018834@a6ea43153`于`21:30:08Z`提交`0 new` visible
+comments，但有1个valid suppressed finding：Settings Save只调用OpenCode unavailable
+normalizer，未在同一write boundary清除policy-blocked Yolo，可能短暂写入policy-invalid
+`true`。Source-boundary selftest准确RED `0/1`，要求两种normalizer都在
+`WriteSettingsToDisk`之前；MainPage新增唯一
+`ClearAgentPaneYoloModeIfPolicyBlocked()`调用后同filter GREEN `1/1`。Full selftests
+`26/26`、Settings policy class `45/45`、SettingsEditor build 0 errors、diff和IDE
+diagnostics clean。下一步：提交/推送dev fix，cherry-pick到publish并从exact candidate
+重建/deploy/freshness、跑zero-token package regression；再push/reply-without-resolve/
+request next review。
+
+Settings Save fix已提交并push为dev
+`dc4d9c37f01c353f65a0d2a40b02c5d638da7266`；patch-identical publish candidate是
+`1e736f6a94478144671cebb048452c4c627275fe`，stable patch ID
+`6c1fde23fc5a32b3e91a72a8f2bff9b2ee067f6c`。Exact package build/deploy/launch/
+freshness GREEN；source fingerprint是
+`09CD7F20AFA4BB7169573E97A6B5A2D6BFF89FF56B78DA454058BD31CA251B00`，WTA SHA-256是
+`6B7CE71A6CF6D236060D350503799E8B4B850EA8DB676451F59A6E9AC8E9383E`，171个recipe
+sources一致。Fresh zero-token Yolo为`6/0/1`，仍仅C292因policy-write prerequisite
+skip。Guarded push已成功，publish local/tracking/remote及PR head均为`1e736f6a9`。
+Suppressed finding没有可回复thread，因此未创建额外PR comment；review request确认
+`InFlight@1e736f6a94478144671cebb048452c4c627275fe`。下一步：等待online checks与
+exact-head review，读取visible/suppressed/spelling结果；不resolve任何thread。
+
+Exact-head review `5107203932@1e736f6a9`于`21:55:29Z`提交`0 new` visible
+comments和1个valid suppressed finding：outbound `rebind_agent`在helper接受前optimistic
+把`Tab::AgentCurrentId`改成target，使mid-rebind hot Yolo update可能把target当actual。
+Rebind payload已独立携带target identity/Yolo；actual identity应只来自helper status。
+Identity-ownership source test准确RED `0/1`；删除唯一outbound assignment后GREEN `1/1`，
+且保留status-owned assignment。Full ItE2E selftests `27/27`，LocalTests build 0 errors，
+focused default/hot Yolo和rebind routing `3/3`，diff/IDE diagnostics clean。下一步：
+提交/推送dev fix，cherry-pick到publish，exact package rebuild/deploy/freshness并重跑包含
+outgoing-provider race的zero-token Yolo suite；然后push/request next review。
+
+Identity fix已提交并push为dev
+`621ad76eeb7859469a222b89844cd094425ba52b`；patch-identical publish candidate是
+`b9d07e00215c8f0d9fb075f8b8de5e2654b901f1`，stable patch ID
+`381dc5fec9e38a1c19aa56596b414997d7b51d6c`。Exact package build/deploy/launch/
+freshness GREEN；source fingerprint是
+`9EF71C3FE6613166BED2F4D9CDF0F42F31A7D281122299C0C0C5CA61A60FECC8`，WTA SHA-256是
+`6E27286D309481A2A8F84E3F911DB8332B23DB84C8F3BDEE33D23E7FC2E9C36F`，171个recipe
+sources一致。Fresh zero-token Yolo `6/0/1`，outgoing-provider race明确PASS，仍仅C292
+environment skip。Guarded push已成功，publish local/tracking/remote及PR head均为
+`b9d07e002`；suppressed finding无thread。Review request确认
+`InFlight@b9d07e00215c8f0d9fb075f8b8de5e2654b901f1`。下一步：等待online checks和
+exact-head review，读取visible/suppressed/spelling结果；不resolve任何thread。
+
+Exact-head review `5107372007@b9d07e002`于`22:19:30Z`提交`0 new` visible
+comments和1个valid suppressed documentation finding：`_EmitAgentRuntimeConfigIfChanged`
+header仍把`yolo_enabled`描述成window-wide global default，实际已是按tab/current provider
+resolved desired state。Static stale-wording oracle准确RED `1`；comment更新后
+`STALE=0`、`CURRENT=1`，无product logic改变。下一步：提交/推送dev comment，cherry-pick
+publish；为保持final-head exact source receipt仍重建/deploy/freshness，然后push/request
+next review。
+
+Comment-only commits为dev
+`d8cf7c41c2fabcba6a26ecb5e7e84c93a5b9083e`和patch-identical publish candidate
+`12536255734f950e89aff2d138b3df2ad9cb29e6`，stable patch ID
+`2556721e780b9caa907db69a3a09336584d4037c`。Exact package build/deploy/launch/
+freshness GREEN；source fingerprint是
+`1DF1B10065B028D7BDF72A49CED98E16DA1545BAC4D3669A9B99F8307996F455`，WTA SHA-256是
+`5BFC81ED9CE8140EB60BE669406D25B61BAAE9384216BB40066F5CD479F19AC8`，171个recipe
+sources一致。因本commit仅改comment，behavioral package evidence沿用fresh parent
+`b9d07e002`的`6/0/1`。Guarded push成功，publish local/tracking/remote及PR head均为
+`125362557`；review request确认
+`InFlight@12536255734f950e89aff2d138b3df2ad9cb29e6`。下一步：等待online checks与
+exact-head review；若visible/suppressed均无新finding，运行review-loop convergence
+snapshot，同时保持所有human-owned active threads unresolved。
+
+Final exact-head review `5107455497@125362557`于`22:34:28Z`完成：39/39 files
+reviewed，`Comments generated: 0 new`，无suppressed section且0 inline comments。
+Exact-head checks全部SUCCESS或按设计SKIPPED；两个spelling checks中一个0 annotations，
+另一个仍仅10个external dictionary URL 404，均无content finding。Official
+`02-check-review-status.ps1`因其已知regex不识别当前
+`Comments generated: 0 new`格式而错误输出`NoNewComments=false`；GitHub raw body校正后的
+authoritative snapshot是`ReviewAtHead=true`、`NoNewComments=true`、
+`SuppressedSection=false`、`InlineComments=0`、`OpenThreadsAwaitingReply=0`、
+`ChecksSuccessfulOrSkipped=true`、`CorrectedConverged=true`。唯一active thread是
+`TerminalPage.cpp:2100`的intentional profile/layout compatibility handoff，已有完整
+decline rationale，保持unresolved供用户review。PR #828仍OPEN且未merge。
+
+Final identities：dev local/remote
+`d8cf7c41c2fabcba6a26ecb5e7e84c93a5b9083e`（仅本handoff保持tracked local
+modification）；publish local/tracking/remote、PR head和registered build worktree均为
+`12536255734f950e89aff2d138b3df2ad9cb29e6`；latest
+`origin/main@b361d91b25dda4b455a7f58ca04909c90f56bae3`仍是ancestor。Exact package
+launch cleanup后0 package processes。Automatic development/review loop完成；下一步仅为
+用户审查/resolve剩余active thread并决定是否merge，agent不得merge或resolve。
+
+`2026-09-03`: 用户已授权按本文TDD workflow进入autopilot开发。Identity gate已通过：
+Copilot使用内部账号，active `gh`是社区账号`DinahK-2SO`。Primary dev是
+`user/DinahK-2SO/yolo-mode-next-dev@2262cf37d`，其3个base-ahead commits只修改
+本handoff；product tree仍等于`origin/main@b361d91b`。Clean publish仍是
+`user/DinahK-2SO/yolo-mode-next-publish@b361d91b`。TDD support files的权威branch是
+`user/DinahK-2SO/local-tdd-kit@b0942f961`。
+
+Ownership审计结论：SettingsModel负责OpenCode effective-Off和provider notice；
+SettingsEditor负责OpenCode draft clear/disabled UI；AppLogic是policy block把实际setting
+写回磁盘的单一owner。`Tab`需要只为`/agent`记录scope marker，避免本PR改变明确out-of-scope
+的profile/restore行为。TerminalPage使用一个pure resolver计算tab desired Yolo，并在helper
+startup、agent-ready、rebind payload和targeted `agent_config_changed`中复用。WTA只在现有
+rebind wire接收resolved `yolo_enabled`/policy值，更新现有YoloState并继续复用native provider
+coordinator、ACK、timeout和prompt gate。下一步：先运行现有Settings/Yolo baseline；然后添加
+Settings behavior、inheritance resolver和WTA rebind state的deterministic RED，不先编辑
+production。
+
+Baseline：WTA Yolo `76/76`，SettingsModel `41/41`，Terminal binding/runtime-config
+focused `2/2`。RED evidence：
+
+- `EffectiveAgentPaneYoloModeFalseForOpenCode`返回true而期望false；
+  `YoloSettingsNoticeTracksSelectedProviderAndPreference`在OpenCode+Off返回None而期望
+  Unavailable（Settings focused `3/5`）。
+- `settings_agent_rebind_applies_resolved_yolo_before_new_session`保留旧provider的global true
+  （WTA `0/1`）。
+- Terminal LocalTests compile仅因缺失
+  `_ResolveAutomaticYoloForAgentBinding`失败（12个同根missing-member diagnostics）。
+- SettingsModel compile仅因缺失
+  `ClearAgentPaneYoloModeIfPolicyBlocked`失败（2个同根missing-member diagnostics）。
+
+下一步：实现SettingsModel/AgentRegistry/OpenCode UI/policy normalizer并立即重跑同一
+Settings filters；然后实现Terminal resolver/wire和WTA rebind state。
+
+Implementation已完成第一轮并经过两次独立review。第一轮发现OpenCode clamp可能影响
+out-of-scope profile/restore以及custom provider notification遗漏；第二轮进一步发现
+Settings-default/current-provider ownership、legacy OpenCode Save fallback和unavailable
+OpenCode warning priority缺口。每项都先补了focused RED再修复。最终设计使用Tab上的
+`/agent` scope marker和pure resolver；profile/restore在本PR保持旧行为。WTA rebind target
+有generation-fenced optional wire fields，旧host缺字段时保持当前state。
+
+Current GREEN：Settings Yolo `6/6`、SettingsModel full class `43/43`、Terminal resolver/
+binding/runtime focused `4/4`、WTA Yolo `78/78`、rebind neighbors `6/6`、full WTA
+`2009/0/1`，SettingsEditor/TestHost builds 0 errors，Rust format/diff/IDE diagnostics clean，
+16 locale XML/BOM/comment/locked-token validation clean。Baseline package RED是OpenCode toggle
+仍enabled（suite `3/1/1`）以及`/agent gemini`未产生native Off（targeted `0/1`）。
+Complete TerminalApp LocalTests为`74/34/0`：34个Tab tests全部在共享
+`_initializeTerminalPage`以环境错误`0x8000ffff`失败，未进入test body；本feature focused
+Tab/Settings tests在独立process均通过。下一步：最终独立diff review，形成不含本文件的
+publishable dev commit，复制到clean publish worktree，再从可部署layout构建exact candidate
+并运行package GREEN。
+
+Convergence review又发现并驱动了两个有效修复round。Hot Settings provider+Yolo变化不能
+从previous settings推断helper实际provider；Tab现在记录master-attested/target canonical ID，
+pure hot resolver覆盖outgoing、already-switched和unknown fallback。OpenCode forced clear
+现在由GlobalAppSettings共享normalizer拥有，Settings lazy Save、AI Agents ViewModel、FRE、
+custom deletion和internal selected-agent persistence全部复用。对应compile RED和focused
+GREEN均已记录。E2E selftest Describe count RED `23/24`已修复为`24/24`。
+
+Frozen source totals：SettingsModel `44/44`，Terminal Yolo/binding focused `6/6`，
+WTA Yolo `78/78`、rebind `6/6`、full WTA `2009/0/1`，ItE2E selftests `24/24`；
+SettingsEditor和TestHost builds 0 errors；16 locale XML/BOM/comment/locked-token checks、
+Rust format、diff check和IDE diagnostics clean。Final independent review reports no
+remaining significant issue. Next command：stage every modified publishable path except
+`AGENTS.md`, commit one self-contained feature slice, then cherry-pick it into clean publish。
+
+Publishable dev commit是`0b0048103845e993fa6ce95360b26631948529da`；patch-identical
+publish commit是`2cbe7179b83afc25db4158af08ff072d6770fa56`，stable patch ID
+`fb06448264100fd68dbdca6843b391b18db3a241`，两者product tree在`AGENTS.md`之外
+零差异。Exact publish full WTA再次`2009/0/1`，CascadiaPackage build 0 errors。
+TDD build helper首次被URL-encoded `Program Files %28x86%29` recipe source阻塞；
+support branch新增behavioral RED→GREEN parser fix并push为
+`user/DinahK-2SO/local-tdd-kit@a6a015edc`（BuildDeploy selftests `19/19`）。
+第二次deploy遇到transient `resources.pri` user-mapped section `0x800704C8`；
+Restart Manager确认locker已消失后，deploy retry成功。
+
+Exact receipt/freshness通过：source fingerprint
+`DBFBC995A4CA1DCDA3DFDBEB6A0419DE4F366BF967E07B0FB477FF4766672D11`，
+WTA SHA-256 `98F30748E9642284126110F6BD8E86557C1778FC7B157AD151AEA7EA11A8CBBE`，
+171个recipe source/AppX hashes一致。Package Yolo E2E `6/0/1`；仅未provision的
+policy ACL case C292跳过，C291/C294/C295均在release report标为[x]。Package processes
+和config backup markers均为0。下一步：refetch/guard main与remote refs，ordinary push
+dev/publish，创建符合20/100/100限制的template PR，然后让online review与local broader
+E2E并行。
 
 ## Branches And Worktrees
 
@@ -20,8 +287,11 @@ deterministic RED阶段。
 - Clean publish:
   `user/DinahK-2SO/yolo-mode-next-publish` /
   `C:\ado\intelligent-terminal-yolo-next-publish`.
-- Pull request: not created.
+- Pull request: `https://github.com/microsoft/intelligent-terminal/pull/828`.
 - Tracking issue: not assigned.
+- TDD support:
+  `user/DinahK-2SO/local-tdd-kit` /
+  `C:\ado\intelligent-terminal-local-tdd-kit`.
 
 `AGENTS.md`只属于dev worktree。Publish worktree不得包含本文件、本地harness、
 真实provider prompt、raw logs、screenshots、provider homes或ignored evidence。
@@ -389,22 +659,22 @@ generated-file或workflow infrastructure warning。优先修正文案；不要�
 - [x] Product behavior和minimal scope已确认。
 - [x] Dev/publish worktrees来自同一`origin/main`。
 - [x] 旧feature branch、review、evidence和test进度已从当前handoff清除。
-- [ ] 每个root cause有deterministic RED。
-- [ ] Owning abstractions中的minimal implementation完成。
-- [ ] Settings、policy、`/agent`和prompt-gate focused suites GREEN。
-- [ ] 修改的locales全部通过结构和语义验证。
-- [ ] Full WTA及相关C++ builds/tests GREEN。
-- [ ] Pre-push exact publish candidate build/deploy/freshness GREEN。
-- [ ] Dev/publish product trees和commit slices验证完成。
-- [ ] Publish中没有dev-only artifact或real-provider prompt。
-- [ ] Publish branch ordinary-pushed并创建符合word limits和template的PR。
-- [ ] Online review/checks与同HEAD local E2E并行完成。
-- [ ] Publishable zero-token package E2E与所需local-only E2E GREEN或明确BLOCKED。
-- [ ] Visible、file-level和suppressed review findings全部完成critical triage。
-- [ ] Spelling conclusion、annotations和相关warnings全部完成critical triage。
-- [ ] 所有valid review/spelling fixes已验证并push。
-- [ ] 所有active comments保持unresolved，等待用户review。
-- [ ] PR未被agent merge到`main`。
+- [x] 每个root cause有deterministic RED。
+- [x] Owning abstractions中的minimal implementation完成。
+- [x] Settings、policy、`/agent`和prompt-gate focused suites GREEN。
+- [x] 修改的locales全部通过结构和语义验证。
+- [x] Full WTA及相关C++ builds/tests GREEN。
+- [x] Pre-push exact publish candidate build/deploy/freshness GREEN。
+- [x] Dev/publish product trees和commit slices验证完成。
+- [x] Publish中没有dev-only artifact或real-provider prompt。
+- [x] Publish branch ordinary-pushed并创建符合word limits和template的PR。
+- [x] Online review/checks与同HEAD local E2E并行完成。
+- [x] Publishable zero-token package E2E与所需local-only E2E GREEN或明确BLOCKED。
+- [x] Visible、file-level和suppressed review findings全部完成critical triage。
+- [x] Spelling conclusion、annotations和相关warnings全部完成critical triage。
+- [x] 所有valid review/spelling fixes已验证并push。
+- [x] 所有active comments保持unresolved，等待用户review。
+- [x] PR未被agent merge到`main`。
 
 
 # Intelligent Terminal
