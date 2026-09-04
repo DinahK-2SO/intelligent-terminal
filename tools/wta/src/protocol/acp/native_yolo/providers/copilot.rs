@@ -16,8 +16,7 @@ pub(super) struct CopilotYoloProvider;
 
 pub(super) static ADAPTER: CopilotYoloProvider = CopilotYoloProvider;
 
-// github/copilot-cli#4537 starts at 1.0.81-1 and remains open. Keep the
-// upper bound open until a later release passes the denied-permission probe.
+// github/copilot-cli#4537 affects 1.0.81-1 through 1.0.83-3.
 fn has_acp_permission_regression(version: Option<&str>) -> bool {
     let Some(version) = version else {
         return true;
@@ -39,9 +38,9 @@ fn has_acp_permission_regression(version: Option<&str>) -> bool {
     let (Some(major), Some(minor), Some(patch), None) = parsed else {
         return true;
     };
-    match (major, minor, patch).cmp(&(1, 0, 81)) {
+    let version = (major, minor, patch);
+    match version.cmp(&(1, 0, 81)) {
         std::cmp::Ordering::Less => false,
-        std::cmp::Ordering::Greater => true,
         std::cmp::Ordering::Equal => match prerelease {
             Some(prerelease) => prerelease
                 .split('.')
@@ -49,6 +48,18 @@ fn has_acp_permission_regression(version: Option<&str>) -> bool {
                 .and_then(|part| part.parse::<u64>().ok())
                 .is_none_or(|build| build >= 1),
             None => true,
+        },
+        std::cmp::Ordering::Greater => match version.cmp(&(1, 0, 83)) {
+            std::cmp::Ordering::Less => true,
+            std::cmp::Ordering::Equal => match prerelease {
+                Some(prerelease) => prerelease
+                    .split('.')
+                    .next()
+                    .and_then(|part| part.parse::<u64>().ok())
+                    .is_none_or(|build| build < 4),
+                None => false,
+            },
+            std::cmp::Ordering::Greater => false,
         },
     }
 }
@@ -77,7 +88,7 @@ impl NativeYoloProvider for CopilotYoloProvider {
         has_acp_permission_regression(agent_version).then(|| {
             let version = agent_version.unwrap_or("unknown");
             format!(
-                "GitHub Copilot CLI {version} cannot enforce ACP permission requests while Yolo is off because of github/copilot-cli#4537. Use Copilot CLI 1.0.81-0 or earlier, or explicitly enable Yolo if organization policy permits."
+                "GitHub Copilot CLI {version} cannot enforce ACP permission requests while Yolo is off because of github/copilot-cli#4537. Upgrade to Copilot CLI 1.0.83-4 or later, use 1.0.81-0 or earlier, or explicitly enable Yolo if organization policy permits."
             )
         })
     }

@@ -333,17 +333,28 @@ fn copilot_selector_requires_advertised_off_value() {
 fn copilot_permission_regression_version_boundary_is_fail_closed() {
     let state = NativeYoloState::new();
 
-    for version in ["1.0.80", "1.0.81-0"] {
+    for version in [
+        "1.0.80",
+        "1.0.81-0",
+        "1.0.83-4",
+        "v1.0.83-4",
+        "1.0.83-5",
+        "1.0.83",
+        "1.0.84",
+        "2.0.0",
+    ] {
         state.set_resolved_agent(Some(crate::agent_registry::COPILOT_AGENT_ID), Some(version));
         let session_id = record_copilot_yolo_state(&state, version, "off");
         assert_eq!(
             state.disabled_prompt_block_reason(&session_id),
             None,
-            "version {version} predates the ACP permission regression"
+            "version {version} is outside the affected Copilot range"
         );
     }
 
-    for version in ["1.0.81-1", "1.0.81", "1.0.82", "1.0.83-3", "invalid"] {
+    for version in [
+        "1.0.81-1", "1.0.81", "1.0.82", "1.0.83-0", "1.0.83-3", "invalid",
+    ] {
         state.set_resolved_agent(Some(crate::agent_registry::COPILOT_AGENT_ID), Some(version));
         let session_id = record_copilot_yolo_state(&state, version, "off");
         let reason = state
