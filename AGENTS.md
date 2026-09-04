@@ -20,16 +20,16 @@
 必须先完成以下身份检查。门禁通过前只允许执行身份检查；任一检查失败或无法确认时，告诉 user
 需要重新登录哪个账号，然后暂停其他工作。
 
-1. 从当前 Copilot session、VS Code Accounts 界面或 Copilot 账号选择器确认 Copilot 使用的
-  GitHub 账号。不得用 `gh`、Git remote、commit author 或系统用户名推断 Copilot 身份。
-  账号必须以 `_microsoft` 结尾（大小写不敏感，例如 `xiaomgao_microsoft`），因为 Copilot
-  额度和内部专用模型属于该内部账号。若身份不可见、无法确认或不匹配，告诉 user 重新登录
-  Copilot/VS Code 的 Microsoft 内部账号，并暂停其他工作。
+1. 从当前 Copilot session、VS Code Accounts 界面或 Copilot 账号选择器确认界面明确显示
+  `当前用户标记 │ @xiaomgao_microsoft`。这是本模板唯一允许通过的 Copilot 身份；不得仅凭
+  `_microsoft` 后缀，也不得用 `gh`、Git remote、commit author 或系统用户名推断。若该标记
+  不可见、无法确认或不是 `@xiaomgao_microsoft`，告诉 user 重新登录 Copilot/VS Code 的
+  Microsoft 内部账号，并暂停其他工作。
 2. 运行 `gh auth status --hostname github.com`，再运行 `gh api user --jq .login`，确认当前 active
   `gh` 账号。它必须是 user 通过 `gh auth login` 登录的开源社区开发账号，且不得以
   `_microsoft` 结尾（例如 `DinahK-2SO`）。若 `gh` 未登录、账号无法确认或账号以
   `_microsoft` 结尾，告诉 user 使用社区开发账号重新运行 `gh auth login`，并暂停其他工作。
-3. 只有 Copilot 账号以 `_microsoft` 结尾且 `gh` 账号不以 `_microsoft` 结尾时门禁才通过。
+3. 只有当前用户标记精确为 `@xiaomgao_microsoft` 且 `gh` 账号不以 `_microsoft` 结尾时门禁才通过。
   记录两个账号名和检查时间，但不得记录 token、cookie、credential、account ID 或其他 secret。
   Copilot 与 `gh` 是独立认证面；不得因为其中一侧正确而假定另一侧正确。
 4. 门禁通过后，线上 GitHub PR、issue、review、comment、check 和 GraphQL/REST 交互统一使用
