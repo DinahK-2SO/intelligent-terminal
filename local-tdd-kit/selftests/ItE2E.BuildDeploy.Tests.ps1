@@ -184,7 +184,7 @@ param(
 )
 @{ Launch = `$Launch.IsPresent; Configuration = `$Configuration } |
     ConvertTo-Json | Set-Content -LiteralPath '$logLiteral' -Encoding utf8
-`$effectiveSourcePaths = if (`$SourcePaths) { `$SourcePaths } else { @('local-tdd-kit') }
+`$effectiveSourcePaths = if (`$SourcePaths) { `$SourcePaths } else { @('src') }
 `$fingerprint = & '$fingerprintLiteral' -RepoRoot '$repoLiteral' -SourcePaths `$effectiveSourcePaths
 New-Item -ItemType Directory -Force -Path (Split-Path '$packageSourceLiteral' -Parent), '$appxLiteral' | Out-Null
 'fixture artifact' | Set-Content -LiteralPath '$packageSourceLiteral' -Encoding utf8
@@ -280,7 +280,7 @@ throw 'synthetic build failure'
     }
 
     It 'fails final verification when product source changes during E2E' {
-        $sourceProbe = Join-Path $script:repoRoot "local-tdd-kit\pipeline-source-$([guid]::NewGuid().ToString('N')).txt"
+        $sourceProbe = Join-Path $script:repoRoot "src\pipeline-source-$([guid]::NewGuid().ToString('N')).txt"
         $sourceProbeLiteral = $sourceProbe.Replace("'", "''")
         $fakeReport = Join-Path $script:caseDir 'Mutating-Report.ps1'
         @"

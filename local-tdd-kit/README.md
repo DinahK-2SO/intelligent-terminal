@@ -18,6 +18,13 @@ Invoke-Pester local-tdd-kit/selftests/ItE2E.Input.Tests.ps1 -Tag Input
 Copy `TDD-WORKFLOW.template.md` into the issue's dev-only tracking location and
 replace every placeholder before changing product code.
 
+For a local-only investigation that must not add the kit to the feature diff,
+copy the kit contents to an ignored `.local-tdd-kit-run\kit` directory instead.
+Add `.local-tdd-kit-run/` to the repository's local Git exclude, record the
+source kit commit in the task handoff, and run the copied selftests before use.
+The selftests are location-independent; reports and provider evidence remain
+under the ignored `.local-tdd-kit-run\artifacts` tree.
+
 ## Live Validation
 
 An installed Intelligent Terminal package and an unlocked interactive desktop are
