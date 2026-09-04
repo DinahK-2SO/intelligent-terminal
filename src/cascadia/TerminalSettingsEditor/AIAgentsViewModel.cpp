@@ -809,6 +809,14 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
                     self->_RemoveCustomModelProvider(id);
                 }
             }));
+        _GlobalSettings.CustomModelSelection(
+            ::Microsoft::Terminal::CustomModels::SelectionId(id, modelId));
+        namespace Reg = ::Microsoft::Terminal::Settings::Model::AgentRegistry;
+        if (Reg::SupportsByok(std::wstring_view{ _GlobalSettings.EffectiveAcpAgent() }))
+        {
+            _GlobalSettings.AcpModel(L"");
+            _NotifyChanges(L"AcpModel", L"CurrentAcpModelEntry");
+        }
         _CommitCustomModelProviders();
         removeUncommittedCredential.release();
         CancelCustomModelProvider();
