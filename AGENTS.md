@@ -34,6 +34,29 @@ Canonical build/deploy selftests为`19/19`，重新复制后的dev ignored kit f
 Copilot Yolo permission tests；然后从latest main exact package build/deploy/freshness。
 完成这些前不得运行真实prompt或编辑产品。
 
+用户提供的exact pre-#505 baseline是已安装Store package
+`Microsoft.IntelligentTerminal_0.2.2433.0_x64__8wekyb3d8bbwe`。原bundle为
+`C:\Users\xiaomgao\Downloads\Microsoft.IntelligentTerminal_0.2.2433.0_8wekyb3d8bbwe.msixbundle`，
+59,198,930 bytes，SHA-256
+`2BF9CB7CBB96C141EB2EC3C0CB4F799A0CD721D473AF2E1C0B888A449FE94FBA`；x64 MSIX
+SHA-256 `0C2468A90008B4564460CF939188CFCF8CC0D50E1FD7618CA1B00D0CEF325EFE`。
+WindowsTerminal/wtcli product version是`0.2.260831003-experimental`，证明build date为
+2026-08-31，早于#505 merge `b361d91b@2026-09-03T18:54:35+08:00`；packaged WTA
+SHA-256 `62CC4A266B24E89BC1E32818A7D2E9DD26DE5021DCA388AF1E214A6B257844A4`且
+`wta --help`中没有Yolo或allow-all host option。
+
+当前resolved `copilot.exe`报告`GitHub Copilot CLI 1.0.83-5`，SHA-256
+`58D0104D82408863523AF74D4405FA0CDD71060DB29A56155FD78181BF264ACF`。用户说明在上述
+Store package中先通过manual `/allow-all off`和`/config`关闭Yolo；随后相同marker shell
+prompt显示`[Y] Allow once / Always allow / [N] Deny` permission UI，tool尚未获准执行。
+Evidence：
+`.local-tdd-kit-run\artifacts\copilot-acp-yolo-off\manual-pre-yolo-pr-copilot-1.0.83-5-permission.png`，
+SHA-256 `AB262E0E8A5424F8B6045A321EC142CE0AEC793611B230C70A90B007735BEF4D`
+（1900x727）。这证明exact pre-PR binary上的manual Off path可进入permission flow，并表明
+当前open-ended `1.0.81-1+`假设可能过宽；但仍未证明ACP
+`session/set_config_option(off)`与slash command走同一路径，也未完成permission
+cancelled后marker不存在的自动oracle。下一步用同一个Copilot binary/hash做direct ACP对照。
+
 ## Identity And Online Boundaries
 
 - 本Copilot session继续使用已确认的Microsoft内部账号；active `gh`已重新验证为社区账号
@@ -75,6 +98,11 @@ Copilot Yolo permission tests；然后从latest main exact package build/deploy/
 “Yolo PR merge前手动`/allow-all on`→`/allow-all off`可以正常询问权限”是重要control，
 但不能单独证明ACP config path安全。Copilot自己的slash command和ACP
 `session/set_config_option`可能走不同permission-policy实现。
+
+当前用户截图已把该control具体化到exact Store `0.2.2433.0`和Copilot `1.0.83-5`，
+因此调查不得再笼统声称所有`1.0.81-1+`场景都已知UNSAFE。它当前可标记为
+`manual slash Off = permission request observed on exact pre-#505 binary`；完整SAFE仍要求
+拒绝permission后marker不存在。
 
 结论必须建立在以下同版本矩阵上：
 
