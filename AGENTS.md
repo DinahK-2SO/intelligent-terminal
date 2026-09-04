@@ -3,16 +3,13 @@
 > 本文件用于新 feature、行为变更和回归修复的 test-driven development、发布验证与交接。
 > 产品行为、已提交测试和可复现证据始终是最终事实来源。
 
-## 使用前必读
+## 本实例使用规则
 
-复制或开始使用本模板时，先完成以下操作：
-
-1. 替换所有 `<PLACEHOLDER>`。可用 `rg -n '<[A-Z0-9_]+>' AGENTS.md` 检查遗漏。
-2. 补充所有标记为 `[必填]` 的章节；不适用的 `[可选]` 章节应删除，而不是保留空壳。
-3. 将示例命令、测试名、路径、branch、remote、package、binary 和 hash 改为当前 feature 的真实值。
-4. 在开发过程中持续更新 `Current Stage`、验证结果、review triage 和 evidence inventory；不要只在结束时补写。
-5. UI、渲染或交互变更必须保留 RED/GREEN 截图和最终真实用户流程截图。纯后端变更可删除截图条款，但必须说明替代的可观察证据。
-6. 涉及真实 agent、云服务、硬件或其他外部依赖时，保留相应的真实集成验收章节；否则删除该条件章节。
+1. 本文件已实例化为 issue #790 的 dev-only TDD 交接；持续更新实际阶段、命令、结果和证据路径。
+2. 当前阶段只建立 exact-baseline RED、行为矩阵和截图，不修改产品实现。
+3. UI、渲染和交互证据必须来自明确选择的 Dev package，并记录 source、package 和 live binary identity。
+4. agent pane 使用本地 deterministic ACP fixture；不提交真实模型请求，不依赖 provider quota。
+5. baseline 若不能在预期 oracle 上失败，停止产品修改并记录实际行为。
 
 ## GitHub 双账号门禁
 
@@ -39,34 +36,36 @@
   完整门禁。任一检查后来失效时，立即停止线上和本地后续步骤，报告实际账号或 `UNKNOWN`，
   等待 user 完成重新登录。
 
-### Placeholder 清单
+### 当前身份记录
 
-- `[必填]` `<FEATURE_NAME>`、`<FEATURE_SUMMARY>`、`<USER_VISIBLE_GOAL>`、`<OUT_OF_SCOPE>`
-- `[必填]` `<BASE_COMMIT>`、`<DEV_BRANCH>`、`<DEV_REMOTE>`、`<PUBLISH_BRANCH>`、`<PUBLISH_REMOTE>`、`<ISSUE_OR_PR>`
-- `[必填]` `<OWNING_CODE_PATH>`、`<OWNING_ABSTRACTION>`、`<NEAREST_TEST>`、`<FOCUSED_TEST_COMMAND>`、`<FULL_TEST_COMMAND>`
-- `[必填]` `<RED_ORACLE>`、`<EXPECTED_FAILURE>`、`<GREEN_ORACLE>`、`<INVARIANTS>`、`<GUARDRAILS>`
-- `[按需]` `<E2E_SUITE>`、`<E2E_COMMAND>`、`<FIXTURE>`、`<PACKAGE_NAME>`、`<BINARY_PATHS>`、`<DEPLOY_COMMAND>`
-- `[按需]` `<EVIDENCE_ROOT>`、`<SCREENSHOT_MATRIX>`、`<REAL_INTEGRATION>`、`<REVIEW_EVIDENCE_DIR>`
-- `[按需]` `<REAL_USER_E2E_COMMAND>`、`<REAL_PROVIDER_MATRIX>`、`<REAL_USER_TASK>`、`<REAL_USER_COST_BOUND>`、`<REAL_USER_EVIDENCE_DIR>`、`<PACKAGE_SELECTOR_ENV>`、`<EXACT_PACKAGE_SELECTOR>`
-- `[持续更新]` `<CURRENT_STAGE>`、`<PUBLISHABLE_COMMIT>`、`<PUBLISH_HEAD>`、`<VALIDATION_RESULTS>`、`<OPEN_ITEMS>`
+- 检查时间：2026-09-04 13:52 +08:00
+- Copilot 当前用户标记：`@xiaomgao_microsoft`
+- GitHub CLI active account：`DinahK-2SO`
+- 结论：双账号门禁通过；未记录 token、cookie 或 credential。
 
 ## Feature Metadata
 
-- Feature: `<FEATURE_NAME>`
-- Summary: `<FEATURE_SUMMARY>`
-- User-visible goal: `<USER_VISIBLE_GOAL>`
-- Base: `<BASE_COMMIT>`
-- Dev branch: `<DEV_BRANCH>` -> `<DEV_REMOTE>`
-- Publish branch: `<PUBLISH_BRANCH>` -> `<PUBLISH_REMOTE>`
-- Issue / pull request: `<ISSUE_OR_PR>`
-- Evidence root: `<EVIDENCE_ROOT>`
-- Current publishable commit: `<PUBLISHABLE_COMMIT>`
-- Current publish head: `<PUBLISH_HEAD>`
-- Out of scope: `<OUT_OF_SCOPE>`
+- Feature: Agent pane Ctrl+mouse-wheel zoom parity
+- Summary: Establish deterministic RED coverage for Ctrl+wheel text zoom in terminal and agent panes, including ordinary-wheel negative controls.
+- User-visible goal: Ctrl+wheel changes text size consistently in both pane types while ordinary wheel retains scrolling behavior.
+- Base: `fbe0b12ec501b5db1a90962ad7e1bbd0c7d3597b`
+- Dev branch: `user/DinahK-2SO/agent-pane-zooming` -> `Dinah`
+- Publish branch: `user/DinahK-2SO/agent-pane-zooming-publish` -> `origin`
+- Issue / pull request: `microsoft/intelligent-terminal#790`
+- Evidence root: `local-tdd-kit\artifacts\issue-790-agent-pane-zoom`
+- Current publishable commit: none; baseline and test design only
+- Current publish head: `fbe0b12ec501b5db1a90962ad7e1bbd0c7d3597b`
+- Out of scope: Product fix, unrelated selection/paste behavior, global UI scaling, provider-generated responses, and PR creation.
 
 ## Current Stage
 
-`<DATE>`: `<CURRENT_STAGE>`
+`2026-09-04`: Exact-baseline RED established. The publish worktree
+`C:\bugfix\intelligent-terminal-worktrees\agent-pane-zooming-publish` is clean and pinned to
+`fbe0b12ec501b5db1a90962ad7e1bbd0c7d3597b`, matching `origin/main`. Its loose Dev package is
+built, deployed, hash-recorded, and selected with `ITE2E_PACKAGE=Dev`. Physical HWND wheel input
+produces the expected matrix: terminal Ctrl+wheel PASS (`27 -> 26` rows), agent plain wheel PASS
+(viewport changes, draft preserved, `12 -> 12` rows), and agent Ctrl+wheel RED (`12 -> 12` rows
+while the viewport changes). Product implementation remains intentionally not started.
 
 记录当前处于 RED、实现、focused GREEN、full validation、exact publish validation、
 真实集成验收或 review follow-up 中的哪一步。包含阻塞项和下一条可执行命令。
@@ -126,23 +125,26 @@
 
 ### User-Visible Contract
 
-- `<USER_VISIBLE_BEHAVIOR_1>`
-- `<USER_VISIBLE_BEHAVIOR_2>`
-- `<ERROR_OR_EDGE_BEHAVIOR>`
-- `<ACCESSIBILITY_OR_INPUT_BEHAVIOR>`
-- `<PERFORMANCE_OR_LIFECYCLE_BEHAVIOR>`
+- With `experimental.scrollToZoom=true`, Ctrl+wheel up over an ordinary terminal pane increases rendered terminal glyph height and Ctrl+wheel down restores or decreases it.
+- With the same setting, Ctrl+wheel over the agent pane changes the wrapped TermControl font size rather than delivering a chat-scroll wheel event to WTA.
+- Plain wheel over the agent pane still scrolls overflowing chat content without changing the draft or rendered font size.
+- Ctrl+wheel must be injected through the real window/pointer path at coordinates inside the target pane; command actions or direct TermControl calls are not substitutes.
+- Repeated opposite-direction zoom steps must remain bounded and reversible within one live tab; opening, hiding, or restoring the agent pane must not be required to observe the change.
 
 每条 contract 都必须能映射到至少一个自动化断言或人工可观察证据。不要只描述内部状态。
 
 ### Preserved Invariants
 
-- `<INVARIANTS>`
+- Existing plain-wheel agent chat scrolling, draft preservation, mouse selection, right-click paste, terminal scrollback, and Ctrl+Shift+wheel opacity behavior remain unchanged.
 - 未涉及的输入方式、已有 workflow、设置迁移和兼容行为保持不变。
 - 不扩大 feature 的 ownership boundary，不顺手修复无关问题。
 
 ### Guardrails
 
-- `<GUARDRAILS>`
+- Pin `ITE2E_PACKAGE=Dev`; validate HWND/PID ownership before physical input; restore cursor, settings, state, and only test-owned processes in `finally`.
+- Use a deterministic local ACP fixture and unique visible markers; do not rely on model text or network authentication.
+- A RED result requires successful input injection plus unchanged visible row count in the
+  fixed-height agent control; setup or foreground failures are BLOCKED, not product RED.
 - 不通过测试专用 product path、硬编码 fixture 输出或不可达状态满足验收。
 - 不以内部字段变化代替真实输出或用户流程验证。
 - 只格式化 touched files，避免 repository-wide mechanical churn。
@@ -150,18 +152,20 @@
 ## Ownership Hypothesis
 
 ```text
-<USER_OR_SYSTEM_INPUT>
-  -> <ENTRY_POINT>
-  -> <STATE_OR_DOMAIN_OWNER>
-  -> <RENDER_OR_OUTPUT_OWNER>
-  -> <OBSERVABLE_RESULT>
+physical Ctrl+mouse-wheel at a pane coordinate
+  -> XAML/TermControl pointer-wheel routing
+  -> Pane and TerminalPage active-control dispatch
+  -> TermControl ControlInteractivity font adjustment or WTA VT mouse delivery
+  -> fixed-height pane row count and screenshots show zoom or unintended viewport scrolling
 ```
 
-- Owning code path: `<OWNING_CODE_PATH>`
-- Owning abstraction: `<OWNING_ABSTRACTION>`
-- Falsifiable hypothesis: `<HYPOTHESIS>`
-- Cheapest discriminating check: `<CHEAPEST_CHECK>`
-- Nearest existing test / fixture / helper: `<NEAREST_TEST>`
+- Owning code path: `src\cascadia\TerminalApp\Pane.cpp`, `src\cascadia\TerminalApp\AppActionHandlers.cpp`, and `src\cascadia\TerminalControl\ControlInteractivity.cpp`
+- Owning abstraction: Pane-level routing between an `AgentPaneContent` wrapper and its underlying `TermControl`
+- Falsifiable hypothesis: Ordinary terminal Ctrl+wheel reaches `ControlInteractivity::_mouseZoomHandler`, while the agent pane's mouse-tracking TermControl sends the wheel to WTA before the zoom branch; the missing pane-level bypass prevents parity.
+- Cheapest discriminating check: Compare product-reported visible row count before and after real
+  Ctrl+wheel input at UIA-selected TermControl coordinates, while recording whether the captured
+  agent viewport changed.
+- Nearest existing test / fixture / helper: `test\e2e\tests\Feature.AgentMouse.Tests.ps1`, `test\e2e\ItE2E\Public\AgentInput.ps1`, `local-tdd-kit\ItE2E\Public\Ui.ps1`, and `local-tdd-kit\fixtures\Mock-AcpChatAgent.ps1`
 
 在首次 product edit 前必须能够写出上述 hypothesis 和 check。若 check 不能区分候选原因，
 只补一次邻近读取或测试，然后选择最小可逆 edit；不要无限扩展调查范围。
@@ -181,12 +185,13 @@
   后再 restore 文件，也不要把 dev-only acceptance commit 带入 publish。
 - 不修改或回退无关的用户改动。若无关改动不阻塞当前工作，保持原状。
 - 不 force-add ignored evidence。需要提交 review evidence 时，复制最终选定文件到
-  `<REVIEW_EVIDENCE_DIR>`。
+  `.github\review-evidence\issue-790\`。
 - 未经明确要求，不创建额外 branch、不重写历史、不使用 destructive git command。
 
 ## Test Reuse And Framework Boundaries
 
-- 首先复用或扩展 `<NEAREST_TEST>`、`<FIXTURE>` 和 `<E2E_SUITE>`。
+- 首先复用或扩展 `Feature.AgentMouse.Tests.ps1`、`Mock-AcpChatAgent.ps1` 和 dev-only
+  `Issue790.AgentPaneZoom.Tests.ps1`。
 - 新增测试应落在 ownership 最近的现有 suite 中，并只引入使 regression 稳定所需的
   最小 helper 或 deterministic fixture。
 - 当现有 framework 无法执行真实用户操作时，可在 dev-only 范围建立模块化 local
@@ -201,24 +206,32 @@
 
 ### Baseline Identity
 
-- Source commit: `<BASE_COMMIT>`
-- Build command: `<BASELINE_BUILD_COMMAND>`
-- Package / deployment: `<PACKAGE_NAME>` / `<DEPLOY_COMMAND>`
-- Relevant binaries: `<BINARY_PATHS>`
-- Source/deployed hashes: `<BASELINE_HASHES>`
+- Source commit: `fbe0b12ec501b5db1a90962ad7e1bbd0c7d3597b`
+- Build command: `cmd.exe /d /c "cd /d C:\bugfix\intelligent-terminal-worktrees\agent-pane-zooming-publish && call tools\razzle.cmd && bcz no_clean"`
+- Package / deployment: `IntelligentTerminal_rd9vj3e6a2mbr` / `C:\bugfix\intelligent-terminal-worktrees\agent-pane-zooming-publish\build\scripts\Invoke-IntelligentTerminalDebugDeployment.ps1`
+- Relevant binaries: publish worktree `bin\x64\Debug\WindowsTerminal.exe`, `bin\x64\Debug\wtcli\wtcli.exe`, and packaged `src\cascadia\CascadiaPackage\bin\x64\Debug\AppX\WindowsTerminal.exe`
+- Source/deployed hashes: `WindowsTerminal.exe`
+  `0F9080992844B5D032849474F2F44AB2C5C1AD7B095AAE88CFD72D456228969A`, `wta.exe`
+  `6D063033EE05C22CC159139E78983612E66B453C9604F649671FCFFB685CF4A4`, and `wtcli.exe`
+  `0B9936EE6CF2564951BD3B26AD371EDEE5E4484493C6FCA9A8485711C0B3D074`
 
 ### Reproduction
 
 1. 从 exact baseline build 并部署，记录 commit、package path、binary size 和 SHA-256。
-2. 使用 `<FIXTURE_OR_REAL_INPUT>` 建立最小场景，并验证 setup preconditions。
-3. 通过真实 entry point 执行 `<USER_ACTION>`。
+2. 使用本地 deterministic ACP fixture、一个普通 shell marker 和一个 overflowing agent transcript 建立最小场景，并验证 setup preconditions。
+3. 通过真实 HWND 上的 physical Ctrl+wheel 和 plain wheel 执行用户操作。
 4. 捕获实际输出、日志、测试报告；UI 变更同时保存 RED screenshot。
-5. 证明失败只发生在 `<RED_ORACLE>`，而不是 setup、连接、fixture 或错误 binary。
+5. 证明失败只发生在 agent-pane zoom oracle，而不是 setup、连接、fixture、terminal control case 或错误 binary。
 
-- RED oracle: `<RED_ORACLE>`
-- Expected failure location/message: `<EXPECTED_FAILURE>`
-- Setup evidence: `<RED_SETUP_EVIDENCE>`
-- RED artifact paths: `<RED_ARTIFACTS>`
+- RED oracle: At fixed control height, terminal-pane rows decrease after Ctrl+wheel, but agent-pane
+  rows remain unchanged while both plain wheel and Ctrl+wheel move the agent transcript viewport.
+- Expected failure location/message: `Issue790.AgentPaneZoom.Tests.ps1:212` reports
+  `Expected the actual value to be less than 12 ... viewportChanged=True, but got 12.`
+- Setup evidence: `identity\package.json`, `identity\deployment-result.json`,
+  `identity\terminal-before.json`, `identity\terminal-after.json`, `identity\agent-before.json`,
+  `identity\agent-after.json`, and the passing plain-wheel control in `focused-red\results.xml`.
+- RED artifact paths: `local-tdd-kit\artifacts\issue-790-agent-pane-zoom\baseline-fbe0b12ec\focused-red\`
+  and `local-tdd-kit\artifacts\issue-790-agent-pane-zoom\baseline-fbe0b12ec\screenshots\`.
 
 如果 baseline 不能在预期 oracle 上失败，停止 product edit，先报告现有行为和证据。
 
@@ -226,19 +239,20 @@
 
 1. 找到最近的 existing test、fixture、helper 和 E2E suite。
 2. build/deploy exact baseline，并记录 binary identity。
-3. 只运行新 case，确认它按 `<EXPECTED_FAILURE>` RED。
+3. 只运行新 case，确认 agent-pane visible-row assertion按预期 RED。
 4. 添加 ownership 最近的最小 unit/state/render regression，并确认 RED。
-5. 在 `<OWNING_ABSTRACTION>` 做最小实现。
-6. 首次 substantive edit 后立即运行 `<FOCUSED_TEST_COMMAND>`；不要先扩大改动范围。
+5. 在 Pane-level agent-wrapper mouse routing boundary 做最小实现。
+6. 首次 substantive edit 后立即运行
+   `$env:ITE2E_PACKAGE='Dev'; Invoke-Pester local-tdd-kit\examples\Issue790.AgentPaneZoom.Tests.ps1 -Tag Issue790`；不要先扩大改动范围。
 7. 若失败支持 hypothesis，修复同一 slice 并重复 focused check；若 falsify hypothesis，
    只向真正 owner 邻近移动一步。
-8. focused GREEN 后运行 neighboring tests、`<FULL_TEST_COMMAND>` 和 required build。
-9. 运行 `<E2E_COMMAND>`，从真实入口验证 `<GREEN_ORACLE>`。
+8. focused GREEN 后运行 neighboring `Feature.AgentMouse.Tests.ps1`、TerminalApp LocalTests 和 required package build。
+9. 运行 `$env:ITE2E_PACKAGE='Dev'; Invoke-Pester local-tdd-kit\examples\Issue790.AgentPaneZoom.Tests.ps1 -Tag Issue790`，从真实入口验证两类 pane 均缩放且 plain wheel 不退化。
 10. 提交 publishable commit；将 dev-only evidence/orchestration 另作 commit。
 11. clean publish worktree 直接 cherry-pick publishable commit。
 12. 从 exact publish HEAD用同步、无tool-timeout执行build/deploy，校验source/deployed binary
   SHA-256，并在同一turn继续重跑E2E；也可用durable local-TDD pipeline一次完成这些phase。
-13. 若依赖 `<REAL_INTEGRATION>`，最后从 dev-only harness 对 exact publish package 执行真实集成验收。
+13. 本 feature 不依赖真实 provider；deterministic local ACP fixture 即为 agent process boundary。
 14. 对 UI/渲染/交互变更捕获该轮 exact publish HEAD 的 fresh success screenshots 并逐图检查。
 15. 更新本文件的 stage、validation、review triage、artifact inventory 和 open items。
 16. 达到下述 publish confidence gate 后 push dev/publish并创建PR；online review与
@@ -290,12 +304,15 @@ build/deploy/freshness evidence时，可以push并创建PR，不必等待broader
 
 ## Implementation Record
 
-- Behavioral change: `<IMPLEMENTATION_SUMMARY>`
-- State / API changes: `<STATE_OR_API_CHANGES>`
-- Preserved invariants: `<INVARIANTS>`
-- Performance implications: `<PERFORMANCE_IMPLICATIONS>`
-- Security / privacy implications: `<SECURITY_IMPLICATIONS>`
-- Rejected alternatives and rationale: `<REJECTED_ALTERNATIVES>`
+- Behavioral change: None yet; baseline-only phase.
+- State / API changes: None yet.
+- Preserved invariants: Plain wheel scrolling, draft preservation, terminal scrollback, existing mouse selection/paste, and settings restoration.
+- Performance implications: None in baseline phase; future fix must perform only constant-time event routing.
+- Security / privacy implications: Physical input is scoped to verified test-owned HWND/PID; no credentials or model prompts are captured.
+- Rejected alternatives and rationale: Direct `AdjustFontSize` invocation and keyboard action
+  dispatch do not prove the physical Ctrl+wheel routing bug; UIA TextPattern was not reliable in
+  this build, so UIA is used only to target the physical control while product-reported row count
+  and captured pane text provide the deterministic oracle.
 
 记录最终实现的事实，不保留已经失效的设计猜测。若 ownership hypothesis 被证伪，更新
 Ownership Hypothesis 并说明哪个 check 改变了判断。
@@ -304,116 +321,78 @@ Ownership Hypothesis 并说明哪个 check 改变了判断。
 
 | Layer | Command / Method | Expected | Result | Evidence |
 |---|---|---|---|---|
-| Focused RED | `<FOCUSED_RED_COMMAND>` | `<EXPECTED_FAILURE>` | `<RESULT>` | `<PATH_OR_LOG>` |
-| Focused GREEN | `<FOCUSED_TEST_COMMAND>` | `<GREEN_ORACLE>` | `<RESULT>` | `<PATH_OR_LOG>` |
-| Neighboring tests | `<NEIGHBOR_TEST_COMMAND>` | No regression | `<RESULT>` | `<PATH_OR_LOG>` |
-| Full relevant suite | `<FULL_TEST_COMMAND>` | All pass | `<RESULT>` | `<PATH_OR_LOG>` |
-| Explicit build | `<BUILD_COMMAND>` | 0 errors | `<RESULT>` | `<PATH_OR_LOG>` |
-| Packaged / deployed E2E | `<E2E_COMMAND>` | `<GREEN_ORACLE>` | `<RESULT>` | `<PATH_OR_LOG>` |
-| Static analysis | `<STATIC_ANALYSIS_COMMAND>` | `<EXPECTED>` | `<RESULT>` | `<PATH_OR_LOG>` |
-| Real integration `[可选]` | `<REAL_INTEGRATION_COMMAND>` | User workflow passes | `<RESULT>` | `<PATH_OR_LOG>` |
+| Bootstrap | `pwsh -NoProfile -File local-tdd-kit\bootstrap.ps1 -Check` | Required tools and selected Dev package available | Passed: PowerShell 7.6.5, Pester 6.1.0, Windows App CLI, Git, Cargo, Dev package, and 158 ItE2E functions | `baseline-fbe0b12ec\bootstrap-check.txt` |
+| Focused RED | `$env:ITE2E_PACKAGE='Dev'; pwsh -NoProfile -File local-tdd-kit\Invoke-LocalTddReport.ps1 -Path local-tdd-kit\examples\Issue790.AgentPaneZoom.Tests.ps1 -Tag Issue790 -OutDir local-tdd-kit\artifacts\issue-790-agent-pane-zoom\baseline-fbe0b12ec\focused-red` | Terminal and plain-wheel controls pass; agent Ctrl+wheel fails zoom assertion | Passed 2, failed 1; only agent Ctrl+wheel failed with rows `12 -> 12` and `viewportChanged=True` | `baseline-fbe0b12ec\focused-red\report.html`, `results.xml`, `summary.md` |
+| Plain-wheel control | Issue-specific physical wheel case | Chat scrolls; draft and font size unchanged | Passed: viewport changed, draft remained visible, rows `12 -> 12` | `baseline-fbe0b12ec\focused-red\results.xml`, `screenshots\agent-before-plain-wheel.png`, `agent-after-plain-wheel.png` |
+| Focused GREEN | Same issue-specific suite after product fix | Both pane types zoom; controls pass | Not started | future exact-publish evidence |
+| Neighboring tests | `$env:ITE2E_PACKAGE='Dev'; Invoke-Pester test\e2e\tests\Feature.AgentMouse.Tests.ps1` | No regression | Not started | future report |
+| Full relevant suite | `cmd.exe /d /c "call tools\razzle.cmd && runut TerminalApp.LocalTests.dll"` plus relevant ItE2E | All pass | Not started | future report |
+| Explicit build | explicit-target WTA `cargo build`, then publish-worktree `bx` in `src\cascadia\CascadiaPackage` | 0 errors and complete AppX payload | Passed after building the initially missing explicit-target `wta.exe` | built AppX and `identity\package.json` |
+| Packaged / deployed E2E | issue-specific suite pinned with `ITE2E_PACKAGE=Dev` | Deterministic baseline RED | Passed controls and reproduced one expected product failure | baseline Pester report, identity JSON, and six screenshots |
+| Static analysis | `git -c core.whitespace=cr-at-eol diff --cached --check` | No whitespace errors | Passed | staging receipt |
 
 ### Exact Publish Identity
 
-- Publish commit: `<PUBLISH_HEAD>`
-- Package identity/path: `<PACKAGE_IDENTITY_AND_PATH>`
-- Source binaries and SHA-256: `<SOURCE_BINARY_HASHES>`
-- Deployed/live binaries and SHA-256: `<DEPLOYED_BINARY_HASHES>`
-- Identity conclusion: `<HASH_MATCH_RESULT>`
+- Publish commit: `fbe0b12ec501b5db1a90962ad7e1bbd0c7d3597b`
+- Package identity/path: `IntelligentTerminal_0.8.0.2_x64__rd9vj3e6a2mbr` at
+  `C:\bugfix\intelligent-terminal-worktrees\agent-pane-zooming-publish\src\cascadia\CascadiaPackage\bin\x64\Debug\AppX`
+- Source binaries and SHA-256: `WindowsTerminal.exe`
+  `0F9080992844B5D032849474F2F44AB2C5C1AD7B095AAE88CFD72D456228969A`, `wta.exe`
+  `6D063033EE05C22CC159139E78983612E66B453C9604F649671FCFFB685CF4A4`, `wtcli.exe`
+  `0B9936EE6CF2564951BD3B26AD371EDEE5E4484493C6FCA9A8485711C0B3D074`
+- Deployed/live binaries and SHA-256: the Dev package is registered directly from the exact
+  publish-worktree AppX path above, with the same three hashes.
+- Identity conclusion: Exact baseline source, registered loose package, and exercised Dev package
+  all resolve to publish HEAD `fbe0b12ec501b5db1a90962ad7e1bbd0c7d3597b`; deployment preserved
+  both `settings.json` and `state.json`.
 
 测试 source 可以来自 dev-only harness，但被测 app/package 必须来自 exact publish HEAD。
 显式设置 package selector，避免 harness 自动选择 Store、Release 或其他已安装版本。
 
-## Real Integration Acceptance `[可选]`
+## External Dependency Boundary
 
-仅在 feature 涉及 agent、云服务、硬件、认证 provider 或其他真实依赖时保留本节。
-
-- Integration/provider: `<REAL_INTEGRATION>`
-- Version/model when observable: `<INTEGRATION_VERSION>`
-- Preconditions: 已安装、已认证、通过正常 product settings 选择；不记录 secret。
-- Workflow: 启动 exact publish package，连接真实依赖，提交唯一且无害的输入，等待真实结果，
-  执行 `<USER_ACTION>`，并断言 product-owned state/output。
-- Forbidden substitutes: mock/custom command、replay、injected completed state、fake provider。
-- Result and evidence: `<REAL_INTEGRATION_RESULT_AND_ARTIFACTS>`
-
-无法运行真实验收时，workflow 状态是 blocked，而不是 complete 或 skipped。
-
-### Simulated Real-User E2E `[按需]`
-
-当 feature 的完整价值依赖真实 agent/provider/model/tool、云服务或硬件时，使用本节定义
-“自动化驱动的真实用户体验”。它不是 mock E2E：harness 可以自动点击、输入和断言，但被测
-package、外部依赖、用户入口、模型回合和最终副作用必须是真实的。
-
-**Local-only硬边界：**只要本流程会提交真实模型请求或消耗token/provider quota，测试源码、
-runner、provider配置和结果报告都不得进入publish branch或CI。它们只能存在于dev-only worktree
-和ignored/local evidence root中，由开发者手动运行。publish/CI可以验证同一产品入口的mock或
-zero-token部分，但不能把这些结果冒充真实provider验收。被测package仍必须来自exact publish HEAD。
-
-1. **固定 exact publish identity。** 在 publish worktree 获取最新base和publish ref，要求
-  两者均为本地HEAD的ancestor，并记录完整SHA。被测package必须由该SHA构建；dev-only
-  harness可以提供test source，但不能替代publish binary。
-2. **build、deploy并验证freshness。** 运行full relevant suite和`<BUILD_COMMAND>`，部署
-  `<PACKAGE_NAME>`，核对source fingerprint、HEAD、recipe/staging source、installed/live
-  layout及关键binary SHA-256。显式设置package selector，不允许`Auto`误选其他安装版本。
-3. **记录真实前置条件。** 为`<REAL_PROVIDER_MATRIX>`记录provider/adapter版本、认证状态、
-  model和实际承担推理成本的backend。不要登录、刷新或收集凭据。缺失认证、quota、服务、
-  设备或provider-owned policy/trust前置条件时标记`BLOCKED`，不能静默skip后声称完成。
-4. **通过正常产品入口执行。** 从exact package启动，使用正常Settings/UI/CLI入口选择依赖，
-  在唯一的disposable workspace中完成连接。不得直接修改内部map、注入completed state或使用
-  test-only product route。若harness必须临时准备外部provider配置，该步骤必须最小、可逆、
-  处于`try/finally`内，并明确标为fixture setup而非产品UX覆盖。
-5. **产生可判定的真实结果。** 执行`<REAL_USER_TASK>`，其成本上限为
-  `<REAL_USER_COST_BOUND>`。优先使用唯一marker和安全的read/write/execute操作，使测试可同时
-  断言真实模型响应、真实副作用、正确target和product-owned state。initialize、catalog、
-  handshake或模型文字声明本身不构成端到端PASS。
-6. **严格分类结果。** `PASS`要求完整用户入口、真实外部操作和所有最终oracle成功；模型未按
-  要求调用工具、marker缺失、target错误、产品startup budget超时、状态未恢复或cleanup失败均
-  为`FAIL`。只有产品边界外且已记录的前置条件不可用才是`BLOCKED`。不要把产品失败改写为
-  environment skip，也不要通过预热隐藏cold-start失败。
-7. **恢复和证据。** 在`finally`中只停止本轮进程，逐字节恢复产品及provider配置，删除临时
-  workspace，并保持真实认证不变。把报告、最小日志摘录和必要截图写入
-  `<REAL_USER_EVIDENCE_DIR>`，记录publish SHA、package path/hash、版本/model/backend、cwd、
-  duration和每行`PASS`/`FAIL`/`BLOCKED`。不得保存secret、account ID、无关prompt或无关终端内容。
-
-Command shape:
-
-```powershell
-$env:<PACKAGE_SELECTOR_ENV> = '<EXACT_PACKAGE_SELECTOR>'
-<REAL_USER_E2E_COMMAND>
-```
-
-若本节保留，必须把`<PACKAGE_SELECTOR_ENV>`和`<EXACT_PACKAGE_SELECTOR>`加入本feature的按需
-placeholder并替换；若项目没有package selector，则删除这两行并说明exact-target机制。
+No authenticated or quota-consuming provider is required. The baseline test uses the packaged
+WTA helper with a deterministic local ACP fixture, so the real process, ConPTY, XAML pointer,
+TermControl, and rendering boundaries are exercised without model output.
 
 ## Visual Evidence `[UI/渲染/交互变更必填]`
 
-- Screenshot matrix: `<SCREENSHOT_MATRIX>`
+- Screenshot matrix:
+  - ordinary terminal before Ctrl+wheel and after Ctrl+wheel up;
+  - agent pane before Ctrl+wheel and after Ctrl+wheel up showing unchanged text size and shifted transcript;
+  - agent pane before and after plain wheel showing transcript movement with unchanged draft/font;
+  - cleanup/restored state after opposite-direction wheel or test teardown.
 - Required states: failing baseline、before action、after action、recovery/edge states。
 - Required provenance: exact publish commit、package path、source/deployed hashes、capture command。
 - Required inspection: product UI 非空且可辨识；目标状态可见；layout 稳定；无 overlap、clipping、
   透明/全黑帧、错误窗口、启动占位画面或 mock 内容冒充真实验收。
 - Automated checks: 在可行时加入 target HWND、nonblack pixel、dimensions 和 distinct-frame checks；
   自动检查不能替代逐图人工检查。
-- Latest evidence directory: `<LATEST_SCREENSHOT_DIR>`
+- Latest evidence directory:
+  `local-tdd-kit\artifacts\issue-790-agent-pane-zoom\baseline-fbe0b12ec\screenshots\`
+- Inspection result: terminal text becomes visibly larger and rows change `27 -> 26`; agent text
+  size remains unchanged at 12 rows after Ctrl+wheel while the transcript moves; plain wheel also
+  moves the transcript without changing row count or losing the draft. All six frames show the
+  intended Dev package UI with readable, nonblank content and no clipping or overlap.
 
 每轮触及同一 user-visible path 的修复都要重新截图。不得用旧截图加新测试报告代替本轮证据。
 
 ## Review Triage
 
-Current review status: `<REVIEW_STATUS>`
+Current review status: Not started; no PR exists and no product fix has been authored.
 
-Open review items: `<OPEN_ITEMS>`
+Open review items: None. Baseline RED and behavior matrix must be completed before implementation or review.
 
 每轮 review 追加一条记录：
 
-- Date / review ID / head SHA: `<REVIEW_ITERATION>`
-- Finding path and summary: `<FINDING>`
-- Decision: `<ACCEPT_DECLINE_ESCALATE>`
-- Technical rationale: `<RATIONALE>`
-- RED evidence: `<REVIEW_RED_EVIDENCE>`
-- Fix or response: `<RESOLUTION>`
-- GREEN validation: `<REVIEW_GREEN_EVIDENCE>`
-- Publish commit: `<REVIEW_PUBLISH_COMMIT>`
+- Date / review ID / head SHA: not applicable before PR creation
+- Finding path and summary: none
+- Decision: none
+- Technical rationale: implementation intentionally deferred
+- RED evidence: pending exact-baseline E2E
+- Fix or response: none
+- GREEN validation: not started
+- Publish commit: baseline `fbe0b12ec501b5db1a90962ad7e1bbd0c7d3597b`
 
 Review inventory必须覆盖：
 
@@ -440,16 +419,15 @@ triage且valid fixes已push即可停止，active comments继续留给用户。
 
 ## Local-Only Evidence Inventory
 
-Evidence root: `<EVIDENCE_ROOT>`
+Evidence root: `local-tdd-kit\artifacts\issue-790-agent-pane-zoom`
 
 | Artifact | Path | Proves | Commit/package identity |
 |---|---|---|---|
-| RED screenshot/log | `<PATH>` | `<ASSERTION>` | `<IDENTITY>` |
-| Focused test report | `<PATH>` | `<ASSERTION>` | `<IDENTITY>` |
-| E2E report | `<PATH>` | `<ASSERTION>` | `<IDENTITY>` |
-| GREEN screenshots | `<PATH>` | `<ASSERTION>` | `<IDENTITY>` |
-| Real integration evidence `[可选]` | `<PATH>` | `<ASSERTION>` | `<IDENTITY>` |
-| Fixture/provider/wire log `[可选]` | `<PATH>` | `<ASSERTION>` | `<IDENTITY>` |
+| RED screenshots/log | `baseline-fbe0b12ec\screenshots\` and `focused-red\` | Terminal zoom control works, agent Ctrl+wheel remains unchanged, plain wheel still scrolls | Exact Dev package from baseline `fbe0b12ec` |
+| Focused test report | `baseline-fbe0b12ec\focused-red\` | Physical input reached verified HWND and failed only the agent zoom oracle | Exact Dev package from baseline `fbe0b12ec` |
+| E2E identity report | `baseline-fbe0b12ec\identity\` | Source, AppX, installed layout, live process, HWND and pane bounds match | Exact Dev package from baseline `fbe0b12ec` |
+| GREEN screenshots | future exact-publish evidence | Both pane types zoom and controls remain stable | Not started |
+| Deterministic fixture log | `baseline-fbe0b12ec\fixture\` | Agent pane is live and plain wheel crosses ConPTY into WTA | Exact Dev package from baseline `fbe0b12ec` |
 
 - 列出 ignored screenshots、pane captures、fixture logs、test reports、local harness、scripts、
   wire captures 和 provider configurations，并说明每个 artifact 证明哪条 contract。
@@ -460,29 +438,29 @@ Evidence root: `<EVIDENCE_ROOT>`
 
 - [ ] 所有必填 placeholder 已替换；不适用章节已删除。
 - [ ] Active task checklist 已清空；没有不冲突的插问导致workflow提前结束。
-- [ ] Exact baseline 已 build/deploy，并在预期 behavioral oracle 上 RED。
+- [x] Exact baseline 已 build/deploy，并在预期 behavioral oracle 上 RED。
 - [ ] Focused regression 先 RED 后 GREEN。
 - [ ] Neighboring tests、full relevant suite、explicit build 和 static analysis 已完成。
 - [ ] Publishable 与 dev-only commits 边界清晰。
-- [ ] Exact publish HEAD 已 build/deploy，source/deployed hashes 一致。
+- [x] Exact publish HEAD 已 build/deploy，source/deployed hashes 一致。
 - [ ] Packaged/deployed E2E 对 exact publish binary GREEN。
 - [ ] 真实外部依赖验收已完成，或明确标记 blocked。
 - [ ] Simulated real-user E2E包含真实外部操作、严格结果分类、完整cleanup和exact identity evidence。
-- [ ] Token-consuming harness和evidence保持local-only，publish branch与CI均不包含或调用它们。
-- [ ] UI/渲染/交互的 fresh screenshots 已逐图检查并记录 provenance。
+- [x] Token-consuming harness和evidence保持local-only，publish branch与CI均不包含或调用它们。
+- [x] UI/渲染/交互的 fresh screenshots 已逐图检查并记录 provenance。
 - [ ] Review findings 已逐条 triage，accepted fixes 有 RED/GREEN evidence。
 - [ ] Visible、file-level和suppressed findings全部完成critical triage。
 - [ ] Spelling conclusion、annotations和warnings全部完成critical triage。
 - [ ] 所有active comments保持unresolved，等待用户review。
 - [ ] PR title/summary/validation满足word limits，其他sections为空或concise。
 - [ ] Agent未merge PR到`main`。
-- [ ] Evidence inventory 能映射全部 user-visible assertions。
+- [x] Evidence inventory 能映射全部 user-visible assertions。
 - [ ] Dev 与 publish remote heads 已 push 并确认。
 
 ## Optional Follow-Ups
 
-- `<FOLLOW_UP_1>`
-- `<FOLLOW_UP_2>`
+- After baseline RED, add the smallest ownership-nearest unit/source test before product implementation.
+- After focused GREEN, decide whether the reusable physical wheel helper belongs in publishable `test\e2e` or remains dev-only pending a separate harness PR.
 
 只记录不属于当前 contract 的后续工作，并为其使用独立 issue、branch 或 PR。
 
