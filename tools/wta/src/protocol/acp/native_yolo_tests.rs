@@ -369,6 +369,35 @@ fn copilot_permission_regression_version_boundary_is_fail_closed() {
 }
 
 #[test]
+fn copilot_verified_permission_fix_versions_keep_prompt_path_available() {
+    let state = NativeYoloState::new();
+
+    for version in ["1.0.83-4", "1.0.83-5"] {
+        state.set_resolved_agent(Some(crate::agent_registry::COPILOT_AGENT_ID), Some(version));
+        let session_id = record_copilot_yolo_state(&state, version, "off");
+        assert_eq!(
+            state.disabled_prompt_block_reason(&session_id),
+            None,
+            "version {version} passed the direct ACP denied-permission probe"
+        );
+    }
+}
+
+#[test]
+fn copilot_unverified_future_version_remains_fail_closed() {
+    let state = NativeYoloState::new();
+
+    for version in ["1.0.84", "2.0.0"] {
+        state.set_resolved_agent(Some(crate::agent_registry::COPILOT_AGENT_ID), Some(version));
+        let session_id = record_copilot_yolo_state(&state, version, "off");
+        assert!(
+            state.disabled_prompt_block_reason(&session_id).is_some(),
+            "unverified future version {version} must fail closed"
+        );
+    }
+}
+
+#[test]
 fn fresh_privileged_config_without_restore_fails_disable_closed() {
     for (name, options) in [
         ("missing-restore", r#"[{"value":"on","name":"On"}]"#),
