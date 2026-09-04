@@ -9134,11 +9134,9 @@ fn buffer_to_text(buf: &ratatui::buffer::Buffer) -> String {
     out
 }
 
-/// Render (C063 "prompt out-of-focus appearance"): when keyboard focus leaves the agent pane
-/// (`pane_focused = false`) the input box must still look correct — the prompt marker and the
-/// connection placeholder still paint, the box is not blanked or broken. Only the caret styling
-/// changes (a solid REVERSED block when focused → DIM when not; input.rs:69/90), which is the
-/// intended out-of-focus appearance.
+/// Render (C063 "prompt out-of-focus appearance"): the input border is the
+/// agent pane's focus indicator. It turns cyan while the pane owns keyboard
+/// focus and returns to the subdued border when focus leaves.
 #[test]
 fn render_input_box_intact_when_pane_unfocused() {
     let _g = crate::test_support::lock_locale();
@@ -9147,18 +9145,33 @@ fn render_input_box_intact_when_pane_unfocused() {
     app.state = ConnectionState::Connected;
 
     // Focused baseline: the input box paints the prompt + connected placeholder.
-    app.pane_focused = true;
-    let focused = render_to_text(&mut app, 80, 24);
+    app.handle_event(AppEvent::FocusChanged(true));
+    assert!(app.pane_focused);
+    let focused_buffer = render_to_buffer(&mut app, 80, 24);
+    let focused = buffer_to_text(&focused_buffer);
     let placeholder = rust_i18n::t!("input.placeholder.connected").into_owned();
     assert!(
         focused.contains('>') && focused.contains(&placeholder),
         "sanity: the focused input must paint the prompt + placeholder; rendered:\n{focused}"
     );
+    let focused_input = app
+        .input_dialog_area
+        .expect("focused input must record its rendered area");
+    let focused_border = focused_buffer
+        .cell((focused_input.x + focused_input.width - 1, focused_input.y))
+        .expect("focused input must paint a top-right border");
+    assert_eq!(
+        focused_border.style().fg,
+        crate::theme::INPUT_BORDER_FOCUSED.fg,
+        "focused agent pane must highlight the input border"
+    );
 
     // Focus leaves the pane: the input box must remain intact (prompt + placeholder still there),
     // i.e. losing focus does not blank or corrupt the input surface.
-    app.pane_focused = false;
-    let unfocused = render_to_text(&mut app, 80, 24);
+    app.handle_event(AppEvent::FocusChanged(false));
+    assert!(!app.pane_focused);
+    let unfocused_buffer = render_to_buffer(&mut app, 80, 24);
+    let unfocused = buffer_to_text(&unfocused_buffer);
     assert!(
         unfocused.contains('>'),
         "the out-of-focus input must still paint the prompt marker; rendered:\n{unfocused}"
@@ -9166,6 +9179,20 @@ fn render_input_box_intact_when_pane_unfocused() {
     assert!(
         unfocused.contains(&placeholder),
         "the out-of-focus input must still paint the connection placeholder (box intact); rendered:\n{unfocused}"
+    );
+    let unfocused_input = app
+        .input_dialog_area
+        .expect("unfocused input must record its rendered area");
+    let unfocused_border = unfocused_buffer
+        .cell((
+            unfocused_input.x + unfocused_input.width - 1,
+            unfocused_input.y,
+        ))
+        .expect("unfocused input must paint a top-right border");
+    assert_eq!(
+        unfocused_border.style().fg,
+        crate::theme::INPUT_BORDER.fg,
+        "unfocused agent pane must restore the subdued input border"
     );
 }
 
