@@ -1106,7 +1106,7 @@ async fn dispatch_prompt_busy_tab_emits_agent_busy_and_drops() {
 }
 
 #[tokio::test]
-async fn copilot_permission_regression_blocks_prompt_when_yolo_is_off() {
+async fn copilot_yolo_off_uses_standard_prompt_path() {
     let local = tokio::task::LocalSet::new();
     local
         .run_until(async {
@@ -1130,7 +1130,7 @@ async fn copilot_permission_regression_blocks_prompt_when_yolo_is_off() {
                 .insert("0".to_string(), session_id);
 
             dispatch_prompt(
-                test_prompt(1, "must not reach unsafe Copilot ACP", false),
+                test_prompt(1, "Copilot Yolo off uses the standard prompt path", false),
                 &h.conn,
                 &tab_to_session,
                 &memo,
@@ -1147,27 +1147,9 @@ async fn copilot_permission_regression_blocks_prompt_when_yolo_is_off() {
                 &h.proposal_channels,
             );
 
-            let failure = tokio::time::timeout(std::time::Duration::from_secs(2), async {
-                loop {
-                    match h.event_rx.recv().await {
-                        Some(AppEvent::AgentError { message, .. }) => break message,
-                        Some(_) => continue,
-                        None => panic!("event channel closed before the compatibility error"),
-                    }
-                }
-            })
-            .await
-            .expect("affected Copilot must fail closed before prompt dispatch");
-            assert!(failure.contains("1.0.82"));
-            assert!(failure.contains("permission"));
-            assert!(
-                h.seen_prompts.lock().unwrap().is_empty(),
-                "the prompt must not cross the ACP send boundary"
-            );
-            assert!(
-                in_flight.lock().unwrap().is_empty(),
-                "the rejected prompt must release the single-flight gate"
-            );
+            let chunk = next_agent_chunk(&mut h.event_rx).await;
+            assert!(chunk.contains("Copilot Yolo off uses the standard prompt path"));
+            assert_eq!(h.seen_prompts.lock().unwrap().len(), 1);
         })
         .await;
 }
