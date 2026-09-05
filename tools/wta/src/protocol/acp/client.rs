@@ -2565,13 +2565,19 @@ fn provider_command_blocked_by_policy(command_name: &str) -> String {
     .into_owned()
 }
 
-fn provider_disable_pending() -> String {
+fn provider_permission_contract_blocked(error: &str) -> String {
     t!(
         "system.config_update_failed",
         option = "Yolo",
-        error = "the provider has not acknowledged the required nonprivileged session state"
+        error = error
     )
     .into_owned()
+}
+
+fn provider_disable_pending() -> String {
+    provider_permission_contract_blocked(
+        "the provider has not acknowledged the required nonprivileged session state",
+    )
 }
 
 fn publish_retryable_lazy_yolo_error(event_tx: &mpsc::UnboundedSender<AppEvent>, session_id: &str) {
