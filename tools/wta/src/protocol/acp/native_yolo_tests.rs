@@ -330,59 +330,6 @@ fn copilot_selector_requires_advertised_off_value() {
 }
 
 #[test]
-fn copilot_permission_regression_version_boundary_is_fail_closed() {
-    let state = NativeYoloState::new();
-
-    for version in [
-        "1.0.80",
-        "1.0.81-0",
-        "1.0.83-4",
-        "v1.0.83-4",
-        "1.0.83-5",
-        "1.0.83",
-        "1.0.84",
-        "2.0.0",
-    ] {
-        state.set_resolved_agent(Some(crate::agent_registry::COPILOT_AGENT_ID), Some(version));
-        let session_id = record_copilot_yolo_state(&state, version, "off");
-        assert_eq!(
-            state.disabled_prompt_block_reason(&session_id),
-            None,
-            "version {version} is outside the affected Copilot range"
-        );
-    }
-
-    for version in [
-        "1.0.81-1", "1.0.81", "1.0.82", "1.0.83-0", "1.0.83-3", "invalid",
-    ] {
-        state.set_resolved_agent(Some(crate::agent_registry::COPILOT_AGENT_ID), Some(version));
-        let session_id = record_copilot_yolo_state(&state, version, "off");
-        let reason = state
-            .disabled_prompt_block_reason(&session_id)
-            .unwrap_or_else(|| panic!("version {version} must fail closed"));
-        assert!(reason.contains(version));
-        assert!(reason.contains("github/copilot-cli#4537"));
-        assert!(reason.contains("Upgrade to Copilot CLI 1.0.83 stable or later"));
-        assert!(reason.contains("prerelease 1.0.83-4 or later"));
-        assert!(!reason.contains("or earlier"));
-    }
-
-    state.set_resolved_agent(Some(crate::agent_registry::COPILOT_AGENT_ID), None);
-    let session_id = record_copilot_yolo_state(&state, "unknown-version", "off");
-    assert!(
-        state.disabled_prompt_block_reason(&session_id).is_some(),
-        "an unparseable or absent Copilot version cannot attest permission enforcement"
-    );
-
-    state.set_resolved_agent(Some(crate::agent_registry::CLAUDE_AGENT_ID), Some("1.0.82"));
-    assert_eq!(
-        state.disabled_prompt_block_reason(&session_id),
-        None,
-        "the Copilot regression must not affect other providers"
-    );
-}
-
-#[test]
 fn fresh_privileged_config_without_restore_fails_disable_closed() {
     for (name, options) in [
         ("missing-restore", r#"[{"value":"on","name":"On"}]"#),
